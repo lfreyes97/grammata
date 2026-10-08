@@ -1,0 +1,23 @@
+[package]
+name = "typst-editor"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = { version = "0.36", features = ["default"] }
+egui = "0.36"
+egui_code_editor = "0.4.2"
+egui_dock = { version = "0.21.1", features = ["serde"] }
+egui-phosphor = "0.14.0"
+hayro = "0.7.1"
+rfd = "0.17.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+# Las dependencias (hayro, vello_cpu…) se optimizan también en debug:
+# sin esto el render de páginas PDF es ~20× más lento en `cargo run`.
+[profile.dev.package."*"]
+opt-level = 3
+
+[dev-dependencies]
+egui_kittest = { version = "0.36.2", features = ["eframe", "wgpu", "snapshot"] }
