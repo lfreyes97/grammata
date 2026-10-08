@@ -16,6 +16,13 @@ pub struct OutlineCache {
     items: Vec<outline::Item>,
 }
 
+/// Forward synctex: (página, y) del fichero/línea en el built actual.
+fn preview_pos(st: &State, file: Option<&str>, line: usize) -> Option<(usize, f32)> {
+    let doc = st.docs.cur();
+    let sync = &st.compiler.built.get(&doc.id)?.sync;
+    crate::engine::page_for_line(sync, file, line)
+}
+
 pub fn outline(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
     let doc = st.docs.cur();
@@ -70,14 +77,18 @@ pub fn outline(st: &mut State, ui: &mut egui::Ui) {
                         )
                         .on_hover_text(format!("Línea {}", it.line));
                     if r.clicked() {
-                        jump = Some(it.char_idx);
+                        jump = Some((it.char_idx, it.line));
                     }
                 });
             }
         });
     });
-    if let Some(c) = jump {
+    if let Some((c, line)) = jump {
         st.actions.push(Action::Select { start: c, end: c });
+        // Forward synctex: la preview acompaña al salto.
+        if let Some((page, y)) = preview_pos(st, None, line) {
+            st.actions.push(Action::GotoPreviewPage { page, y });
+        }
     }
 }
 
@@ -122,6 +133,10 @@ pub fn problems(st: &mut State, ui: &mut egui::Ui) {
     }
 
     let mut act = None;
+    let mut go = None;
+    // Owned para no prestar `st` dentro de los closures (abajo se usa &mut).
+    let root = doc.root_dir();
+    let sync = built.map(|b| b.sync.clone()).unwrap_or_default();
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 6)).show(ui, |ui| {
             for d in diags {
@@ -159,13 +174,19 @@ pub fn problems(st: &mut State, ui: &mut egui::Ui) {
                     && let (Some(line), Some(col)) = (d.line, d.col) {
                         act = Some(match &d.file {
                             None => Action::JumpTo { line, col },
-                            Some(f) => Action::OpenAt { path: doc.root_dir().join(f), line, col },
+                            Some(f) => Action::OpenAt { path: root.join(f), line, col },
                         });
+                        // Forward synctex: la preview acompaña al salto.
+                        go = crate::engine::page_for_line(&sync, d.file.as_deref(), line)
+                            .map(|(page, y)| Action::GotoPreviewPage { page, y });
                     }
             }
         });
     });
     if let Some(a) = act {
+        st.actions.push(a);
+    }
+    if let Some(a) = go {
         st.actions.push(a);
     }
 }

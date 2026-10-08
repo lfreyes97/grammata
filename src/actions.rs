@@ -32,6 +32,9 @@ pub enum Action {
     GotoLinePrompt,
     /// Salta a L:C (desde 1) del documento actual.
     JumpTo { line: usize, col: usize },
+    /// Desplaza la vista previa a la página (0-based) y altura en puntos.
+    /// Es el "forward" del synctex: outline y problemas la empujan al saltar.
+    GotoPreviewPage { page: usize, y: f32 },
     /// Selecciona el rango de chars `[start, end)` del documento actual.
     Select { start: usize, end: usize },
     TogglePanel(Panel),

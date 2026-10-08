@@ -6,6 +6,7 @@
 
 use crate::diagnostics::Diagnostic;
 use crate::doc::DocId;
+use crate::engine::SyncEntry;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -30,6 +31,8 @@ pub struct Output {
     pub pdf: Option<Arc<Vec<u8>>>,
     pub diagnostics: Vec<Diagnostic>,
     pub ms: u128,
+    /// Entradas synctex de esta compilación (vacío si falló).
+    pub sync: Vec<SyncEntry>,
 }
 
 /// Último resultado por documento (para cambiar de pestaña sin recompilar).
@@ -39,6 +42,8 @@ pub struct Built {
     pub pdf: Option<(Key, Arc<Vec<u8>>)>,
     pub diagnostics: Vec<Diagnostic>,
     pub ms: u128,
+    /// Synctex del último PDF válido (como `pdf`: de la rev anterior si falla).
+    pub sync: Vec<SyncEntry>,
 }
 
 pub struct Compiler {
@@ -93,14 +98,18 @@ impl Compiler {
             if self.in_flight == Some(out.key) {
                 self.in_flight = None;
             }
-            let prev_pdf = self.built.remove(&out.key.doc).and_then(|b| b.pdf);
+            let prev = self.built.remove(&out.key.doc);
+            let prev_pdf = prev.as_ref().and_then(|b| b.pdf.clone());
+            let prev_sync = prev.map(|b| b.sync).unwrap_or_default();
+            let has_pdf = out.pdf.is_some();
             let pdf = match out.pdf {
                 Some(p) => Some((out.key, p)),
                 None => prev_pdf,
             };
+            let sync = if has_pdf { out.sync } else { prev_sync };
             self.built.insert(
                 out.key.doc,
-                Built { key: out.key, pdf, diagnostics: out.diagnostics, ms: out.ms },
+                Built { key: out.key, pdf, diagnostics: out.diagnostics, ms: out.ms, sync },
             );
             got.push(out.key);
         }
@@ -121,7 +130,7 @@ fn run(job: &Job) -> Output {
     match out {
         Ok(c) => {
             let pdf = c.pdf.map(Arc::new);
-            Output { key: job.key, pdf, diagnostics: c.diags, ms: c.ms }
+            Output { key: job.key, pdf, diagnostics: c.diags, ms: c.ms, sync: c.sync }
         }
         Err(_) => {
             let diagnostics = vec![crate::diagnostics::Diagnostic {
@@ -132,7 +141,7 @@ fn run(job: &Job) -> Output {
                 message: "error interno del compilador (panic)".to_string(),
                 hints: Vec::new(),
             }];
-            Output { key: job.key, pdf: None, diagnostics, ms: 0 }
+            Output { key: job.key, pdf: None, diagnostics, ms: 0, sync: Vec::new() }
         }
     }
 }

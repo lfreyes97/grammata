@@ -7,6 +7,7 @@
 
 use crate::actions::Action;
 use crate::compile::Key;
+use crate::engine::SyncEntry;
 use crate::layout::Panel;
 use crate::pdf_render::{self, Event, Job, PdfRenderer};
 use crate::session::{FitMode, Prefs};
@@ -14,6 +15,7 @@ use crate::theme::{self, Palette};
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Sense, Vec2, pos2, vec2};
 use egui_phosphor::regular as icon;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Puntos PDF → px lógicos al 100 % (tamaño real a 96 dpi).
@@ -31,6 +33,9 @@ struct PageTex {
     generation: u64,
 }
 
+/// Ancho lógico de cada miniatura (px).
+const THUMB_W: f32 = 132.0;
+
 /// Lo que la vista previa necesita saber del resto de la app.
 pub struct Info {
     pub compiling: bool,
@@ -39,6 +44,10 @@ pub struct Info {
     /// El PDF mostrado es de una versión anterior del texto.
     pub stale: bool,
     pub has_build: bool,
+    /// Entradas synctex del built cargado (para el clic inverso).
+    pub sync: Vec<SyncEntry>,
+    /// Carpeta del documento (para abrir incluidos desde el clic).
+    pub root: PathBuf,
 }
 
 pub struct Preview {
@@ -49,13 +58,32 @@ pub struct Preview {
     sizes: Vec<Vec2>,
     textures: HashMap<usize, PageTex>,
     pub current_page: usize,
-    scroll_to: Option<usize>,
+    scroll_to: Option<(usize, f32)>,
     load_error: Option<String>,
     /// Zoom efectivo del último frame (en modo ajustar lo calcula el ancho).
     pub effective_zoom: f32,
     last_content_h: f32,
     last_offset: Vec2,
+    /// Press del ratón para distinguir clic de arrastre (inverso synctex).
+    press: Option<Pos2>,
+    /// Tira de miniaturas: texturas por página + escala pedida por página.
+    show_thumbs: bool,
+    thumbs: HashMap<usize, egui::TextureHandle>,
+    thumb_want: HashMap<usize, f32>,
+    /// Lupa: amplía la zona bajo el cursor.
+    lens: bool,
+    lens_tex: Option<(usize, f32, egui::TextureHandle)>,
+    lens_want: Option<(usize, f32)>,
+    /// (ratón, página, x_pt, y_pt) bajo el cursor para la lente.
+    lens_hit: Option<(Pos2, usize, f32, f32)>,
+    /// Presentación a pantalla completa (F11).
+    pub presentation: bool,
 }
+
+/// Ampliación de la lupa respecto a la vista.
+const LENS_MAG: f32 = 2.5;
+/// Lado de la lente en px lógicos.
+const LENS_SIZE: f32 = 260.0;
 
 impl Preview {
     pub fn new(ctx: egui::Context) -> Self {
@@ -71,6 +99,15 @@ impl Preview {
             effective_zoom: 1.0,
             last_content_h: 0.0,
             last_offset: Vec2::ZERO,
+            press: None,
+            show_thumbs: false,
+            thumbs: HashMap::new(),
+            thumb_want: HashMap::new(),
+            lens: false,
+            lens_tex: None,
+            lens_want: None,
+            lens_hit: None,
+            presentation: false,
         }
     }
 
@@ -92,6 +129,8 @@ impl Preview {
         self.generation = self.renderer.load(data);
         self.loaded = Some(key);
         self.load_error = None;
+        self.thumbs.clear();
+        self.thumb_want.clear();
     }
 
     pub fn clear(&mut self) {
@@ -103,13 +142,28 @@ impl Preview {
         self.sizes.clear();
         self.textures.clear();
         self.current_page = 0;
-        self.scroll_to = Some(0);
+        self.scroll_to = Some((0, 0.0));
     }
 
     pub fn goto_page(&mut self, p: usize) {
+        self.goto_position(p, 0.0);
+    }
+
+    /// Desplaza a la página (0-based) y altura en puntos dentro de ella.
+    pub fn goto_position(&mut self, p: usize, y: f32) {
         if !self.sizes.is_empty() {
-            self.scroll_to = Some(p.min(self.sizes.len() - 1));
+            let p = p.min(self.sizes.len() - 1);
+            self.scroll_to = Some((p, y.max(0.0)));
         }
+    }
+
+    /// Activa/desactiva la presentación a pantalla completa.
+    pub fn set_presentation(&mut self, ctx: &egui::Context, on: bool) {
+        self.presentation = on;
+        if !on {
+            self.lens_hit = None;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));
     }
 
     /// Recoge páginas y metadatos del hilo de render.
@@ -125,6 +179,22 @@ impl Preview {
                     self.load_error = Some(error);
                 }
                 Event::Page { generation, job, image } if generation == self.generation => {
+                    // Las miniaturas y la lupa viajan por el mismo canal: se
+                    // distinguen por su escala pedida (estable por frame).
+                    if self.thumb_want.get(&job.page).is_some_and(|&s| (s - job.scale).abs() < 1e-6) {
+                        let tex = ctx.load_texture(
+                            format!("pdf-thumb-{}", job.page),
+                            image,
+                            egui::TextureOptions::LINEAR,
+                        );
+                        self.thumbs.insert(job.page, tex);
+                        continue;
+                    }
+                    if self.lens_want.is_some_and(|(p, s)| p == job.page && (s - job.scale).abs() < 1e-6) {
+                        let tex = ctx.load_texture("pdf-lens", image, egui::TextureOptions::LINEAR);
+                        self.lens_tex = Some((job.page, job.scale, tex));
+                        continue;
+                    }
                     match self.textures.get_mut(&job.page) {
                         Some(t) => {
                             t.tex.set(image, egui::TextureOptions::LINEAR);
@@ -149,18 +219,200 @@ impl Preview {
     pub fn ui(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, info: &Info, actions: &mut Vec<Action>) {
         let pal = theme::palette(ui.ctx());
         self.toolbar(ui, prefs, info, &pal, actions);
+        self.canvas(ui, prefs, &pal, info, actions);
+    }
 
+    /// Lienzo (páginas o estado vacío + banner). Compartido entre panel y presentación.
+    fn canvas(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, pal: &Palette, info: &Info, actions: &mut Vec<Action>) {
         let canvas = egui::Frame::new().fill(pal.canvas);
         canvas.show(ui, |ui| {
             ui.set_min_size(ui.available_size());
             if self.sizes.is_empty() {
-                self.empty_state(ui, info, &pal, actions);
+                self.empty_state(ui, info, pal, actions);
                 return;
             }
-            self.pages(ui, prefs, &pal);
-            if info.errors > 0 && info.stale {
-                error_banner(ui, &pal, info.errors, actions);
+            if self.show_thumbs && self.sizes.len() > 1 {
+                ui.horizontal_top(|ui| {
+                    self.thumb_strip(ui, pal);
+                    ui.vertical(|ui| {
+                        self.pages(ui, prefs, pal, info, actions);
+                        if info.errors > 0 && info.stale {
+                            error_banner(ui, pal, info.errors, actions);
+                        }
+                    });
+                });
+            } else {
+                self.pages(ui, prefs, pal, info, actions);
+                if info.errors > 0 && info.stale {
+                    error_banner(ui, pal, info.errors, actions);
+                }
             }
+        });
+        self.draw_lens(ui, pal);
+    }
+
+    /// Presentación: lienzo a pantalla completa + controles flotantes.
+    pub fn present(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, info: &Info, actions: &mut Vec<Action>) {
+        let pal = theme::palette(ui.ctx());
+        self.canvas(ui, prefs, &pal, info, actions);
+        let n = self.sizes.len();
+        egui::Area::new(ui.id().with("present-bar"))
+            .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -14.0))
+            .order(egui::Order::Foreground)
+            .show(ui.ctx(), |ui| {
+                egui::Frame::new()
+                    .fill(pal.surface.gamma_multiply(0.92))
+                    .stroke(egui::Stroke::new(1.0, pal.border_strong))
+                    .corner_radius(CornerRadius::same(12))
+                    .inner_margin(egui::Margin::symmetric(10, 6))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            if crate::widgets::icon_button(ui, icon::X, "Salir  (Esc)").clicked() {
+                                let ctx = ui.ctx().clone();
+                                self.set_presentation(&ctx, false);
+                            }
+                            ui.add_enabled_ui(n > 0, |ui| {
+                                if crate::widgets::icon_button(ui, icon::CARET_UP, "Página anterior").clicked() {
+                                    self.goto_page(self.current_page.saturating_sub(1));
+                                }
+                                let txt = if n == 0 {
+                                    "– / –".to_string()
+                                } else {
+                                    format!("{} / {}", self.current_page + 1, n)
+                                };
+                                ui.label(egui::RichText::new(txt).monospace().color(pal.text));
+                                if crate::widgets::icon_button(ui, icon::CARET_DOWN, "Página siguiente").clicked() {
+                                    self.goto_page(self.current_page + 1);
+                                }
+                            });
+                            ui.label(
+                                egui::RichText::new(format!("{:.0} %", self.effective_zoom * 100.0))
+                                    .monospace()
+                                    .small()
+                                    .color(pal.text_dim),
+                            )
+                            .on_hover_text("Zoom (Ctrl+rueda)");
+                        });
+                    });
+            });
+    }
+
+    /// Lente de aumento sobre la zona del cursor (usa la textura dedicada).
+    fn draw_lens(&mut self, ui: &mut egui::Ui, pal: &Palette) {
+        if !self.lens {
+            return;
+        }
+        let Some((mouse, _page, x_pt, y_pt)) = self.lens_hit else { return };
+        let ctx = ui.ctx();
+        let ppp = ctx.pixels_per_point();
+        // Posición: junto al cursor, dentro del panel.
+        let screen = ui.max_rect();
+        let mut pos = mouse + vec2(18.0, 18.0);
+        pos.x = pos.x.min(screen.max.x - LENS_SIZE - 8.0);
+        pos.y = pos.y.min(screen.max.y - LENS_SIZE - 8.0);
+        pos.x = pos.x.max(screen.min.x + 8.0);
+        pos.y = pos.y.max(screen.min.y + 8.0);
+        egui::Area::new(ui.id().with("lens"))
+            .fixed_pos(pos)
+            .order(egui::Order::Foreground)
+            .show(ctx, |ui| {
+                ui.set_min_size(vec2(LENS_SIZE, LENS_SIZE));
+                ui.set_max_size(vec2(LENS_SIZE, LENS_SIZE));
+                if let Some((lp, ls, tex)) = &self.lens_tex {
+                    let _ = lp;
+                    let [tw, th] = tex.size();
+                    let (tw, th) = (tw as f32, th as f32);
+                    // Subrect de LENS_SIZE*ppp texeles centrado en el cursor:
+                    // a esa densidad equivale a 1:1 en pantalla.
+                    let half = LENS_SIZE * ppp * 0.5;
+                    let cx = x_pt * ls;
+                    let cy = y_pt * ls;
+                    let x0 = (cx - half).clamp(0.0, (tw - 2.0 * half).max(0.0));
+                    let y0 = (cy - half).clamp(0.0, (th - 2.0 * half).max(0.0));
+                    let uv = Rect::from_min_max(
+                        pos2(x0 / tw.max(1.0), y0 / th.max(1.0)),
+                        pos2((x0 + 2.0 * half) / tw.max(1.0), (y0 + 2.0 * half) / th.max(1.0)),
+                    );
+                    egui::Frame::new()
+                        .fill(Color32::WHITE)
+                        .stroke(egui::Stroke::new(1.5, pal.accent))
+                        .corner_radius(CornerRadius::same(10))
+                        .inner_margin(0.0)
+                        .show(ui, |ui| {
+                            let (rect, _) = ui.allocate_exact_size(vec2(LENS_SIZE, LENS_SIZE), Sense::hover());
+                            let painter = ui.painter_at(rect);
+                            painter.image(tex.id(), rect, uv, Color32::WHITE);
+                            // Cruz central.
+                            let c = rect.center();
+                            painter.line_segment(
+                                [c - vec2(7.0, 0.0), c + vec2(7.0, 0.0)],
+                                egui::Stroke::new(1.0, pal.accent),
+                            );
+                            painter.line_segment(
+                                [c - vec2(0.0, 7.0), c + vec2(0.0, 7.0)],
+                                egui::Stroke::new(1.0, pal.accent),
+                            );
+                        });
+                } else {
+                    egui::Frame::new()
+                        .fill(pal.surface)
+                        .stroke(egui::Stroke::new(1.0, pal.border_strong))
+                        .corner_radius(CornerRadius::same(10))
+                        .inner_margin(0.0)
+                        .show(ui, |ui| {
+                            ui.centered_and_justified(|ui| {
+                                ui.spinner();
+                            });
+                        });
+                }
+            });
+    }
+
+    /// Tira lateral de miniaturas: clic salta a la página.
+    fn thumb_strip(&mut self, ui: &mut egui::Ui, pal: &Palette) {
+        ui.vertical(|ui| {
+            ui.set_min_width(THUMB_W + 16.0);
+            ui.set_max_width(THUMB_W + 16.0);
+            egui::ScrollArea::vertical().id_salt("pdf-thumbs").auto_shrink([false, false]).show(ui, |ui| {
+                let mut go = None;
+                for (i, s) in self.sizes.iter().enumerate() {
+                    let h = THUMB_W * s.y / s.x.max(1.0);
+                    let selected = i == self.current_page;
+                    let frame = egui::Frame::new()
+                        .fill(Color32::WHITE)
+                        .stroke(egui::Stroke::new(
+                            if selected { 2.0 } else { 1.0 },
+                            if selected { pal.accent } else { pal.border_strong },
+                        ))
+                        .corner_radius(CornerRadius::same(3))
+                        .inner_margin(2.0);
+                    let r = frame
+                        .show(ui, |ui| {
+                            ui.set_min_size(vec2(THUMB_W, h));
+                            if let Some(tex) = self.thumbs.get(&i) {
+                                ui.add(
+                                    egui::Image::from_texture(egui::load::SizedTexture::from_handle(tex))
+                                        .fit_to_exact_size(vec2(THUMB_W, h)),
+                                );
+                            } else {
+                                ui.centered_and_justified(|ui| {
+                                    ui.spinner();
+                                });
+                            }
+                        })
+                        .response
+                        .interact(Sense::click())
+                        .on_hover_text(format!("Ir a la página {}", i + 1));
+                    if r.clicked() {
+                        go = Some(i);
+                    }
+                    ui.add_space(6.0);
+                }
+                if let Some(i) = go {
+                    self.goto_page(i);
+                }
+            });
         });
     }
 
@@ -213,6 +465,34 @@ impl Preview {
                     ui.label(egui::RichText::new(format!("{}  {txt}", icon::FILE_TEXT)).monospace().color(pal.text_dim));
                     if crate::widgets::icon_button(ui, icon::CARET_DOWN, "Página siguiente  (AvPág)").clicked() {
                         self.goto_page(self.current_page + 1);
+                    }
+                });
+
+                ui.add_enabled_ui(n > 1, |ui| {
+                    if crate::widgets::icon_toggle(ui, self.show_thumbs, icon::IMAGES, "Miniaturas").clicked() {
+                        self.show_thumbs = !self.show_thumbs;
+                        if !self.show_thumbs {
+                            self.thumbs.clear();
+                            self.thumb_want.clear();
+                        }
+                    }
+                });
+
+                ui.add_enabled_ui(n > 0, |ui| {
+                    if crate::widgets::icon_toggle(ui, self.lens, icon::MAGNIFYING_GLASS, "Lupa (aumenta la zona del cursor)").clicked() {
+                        self.lens = !self.lens;
+                        if !self.lens {
+                            self.lens_tex = None;
+                            self.lens_want = None;
+                            self.lens_hit = None;
+                        }
+                    }
+                });
+
+                ui.add_enabled_ui(n > 0, |ui| {
+                    if crate::widgets::icon_button(ui, icon::PRESENTATION, "Presentación  (F11)").clicked() {
+                        let ctx = ui.ctx().clone();
+                        self.set_presentation(&ctx, true);
                     }
                 });
 
@@ -270,7 +550,7 @@ impl Preview {
         });
     }
 
-    fn pages(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, pal: &Palette) {
+    fn pages(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, pal: &Palette, info: &Info, actions: &mut Vec<Action>) {
         let avail = ui.available_size();
         let max_w = self.sizes.iter().map(|s| s.x).fold(1.0, f32::max) * PT_TO_PX;
         let max_h = self.sizes.iter().map(|s| s.y).fold(1.0, f32::max) * PT_TO_PX;
@@ -294,9 +574,10 @@ impl Preview {
         let content_w = (max_w * zoom + 2.0 * MARGIN).max(avail.x - scrollbar);
 
         let mut area = egui::ScrollArea::both().id_salt("pdf-canvas").auto_shrink([false, false]);
-        if let Some(p) = self.scroll_to.take() {
+        if let Some((p, y)) = self.scroll_to.take() {
             let top = tops.get(p).copied().unwrap_or(0.0);
-            area = area.vertical_scroll_offset((top - MARGIN * 0.5).max(0.0));
+            // Muestra el punto con contexto encima (30 % del viewport).
+            area = area.vertical_scroll_offset((top + y * PT_TO_PX * zoom - MARGIN * 0.5).max(0.0));
         } else if self.last_content_h > 0.0 && (content_h - self.last_content_h).abs() > 0.5 && (zoom - self.effective_zoom).abs() > 1e-4 {
             // Zoom: conserva la posición relativa del scroll.
             let k = content_h / self.last_content_h;
@@ -357,8 +638,71 @@ impl Preview {
                 }
             }
             visible.extend(near);
+            let hover = ui.input(|i| i.pointer.hover_pos());
+            // Miniaturas: una por página a escala fija (estable ante zoom).
+            if self.show_thumbs && self.sizes.len() > 1 {
+                for (i, s) in self.sizes.iter().enumerate() {
+                    let ts = THUMB_W * ppp / s.x.max(1.0);
+                    self.thumb_want.insert(i, ts);
+                    if !self.thumbs.contains_key(&i) {
+                        visible.push(Job { page: i, scale: ts });
+                    }
+                }
+            } else {
+                self.thumb_want.clear();
+            }
+            // Lupa: job dedicado a alta escala para la página bajo el cursor.
+            self.lens_hit = None;
+            if self.lens {
+                if let Some(m) = hover {
+                    if let Some((i, x, y)) = page_pos(origin, &tops, &self.sizes, zoom, content_w, m) {
+                        self.lens_hit = Some((m, i, x, y));
+                        let want_lens = desired_scale(self.sizes[i], zoom, ppp) * LENS_MAG;
+                        let fresh = self
+                            .lens_tex
+                            .as_ref()
+                            .is_some_and(|(p, s, _)| *p == i && (*s - want_lens).abs() < 1e-6);
+                        self.lens_want = Some((i, want_lens));
+                        if !fresh {
+                            visible.push(Job { page: i, scale: want_lens });
+                        }
+                    } else {
+                        self.lens_want = None;
+                    }
+                } else {
+                    self.lens_want = None;
+                }
+            } else {
+                self.lens_want = None;
+            }
             self.renderer.set_jobs(self.generation, visible);
             self.evict(&keep);
+            // Inverso synctex: clic sin arrastre en una página → salto al código.
+            if ui.input(|i| i.pointer.primary_pressed()) {
+                self.press = hover;
+            } else if ui.input(|i| i.pointer.primary_down()) {
+                if let (Some(down), Some(cur)) = (self.press, hover) {
+                    if down.distance(cur) >= 6.0 {
+                        self.press = None;
+                    }
+                }
+            } else {
+                // primary_released (o sin botón): si hubo press cerca, es clic.
+                let click = self.press.take().and_then(|down| {
+                    hover.filter(|up| down.distance(*up) < 6.0).map(|up| (down, up))
+                });
+                if let Some((_, up)) = click {
+                    if let Some((page, _, y)) = page_pos(origin, &tops, &self.sizes, zoom, content_w, up) {
+                        if let Some(e) = crate::engine::line_for_pos(&info.sync, page, y) {
+                            actions.push(match &e.file {
+                                None => Action::JumpTo { line: e.line, col: e.col },
+                                Some(f) => Action::OpenAt { path: info.root.join(f), line: e.line, col: e.col },
+                            });
+                        }
+                    }
+                }
+                self.press = None;
+            }
         });
         self.last_content_h = content_h;
         self.last_offset = out.state.offset;
@@ -395,10 +739,24 @@ impl Preview {
     }
 }
 
+/// Página bajo el punto de pantalla y su posición en puntos (coords de frame).
+/// Replica la geometría del bucle de dibujado para el clic inverso y la lupa.
+fn page_pos(origin: Pos2, tops: &[f32], sizes: &[Vec2], zoom: f32, content_w: f32, p: Pos2) -> Option<(usize, f32, f32)> {
+    for (i, s) in sizes.iter().enumerate() {
+        let size = *s * PT_TO_PX * zoom;
+        let min = origin + vec2((content_w - size.x) * 0.5, tops.get(i).copied().unwrap_or(0.0));
+        if Rect::from_min_size(min, size).contains(p) {
+            let x = ((p.x - min.x) / (PT_TO_PX * zoom)).max(0.0);
+            let y = ((p.y - min.y) / (PT_TO_PX * zoom)).max(0.0);
+            return Some((i, x, y));
+        }
+    }
+    None
+}
+
 /// Escala de render (px de pantalla por punto PDF), cuantizada a pasos de
 /// 2^(1/8) para no re-renderizar en cada frame de un zoom continuo.
-fn desired_scale(page_pt: Vec2, zoom: f32, ppp: f32) -> f32 {
-    let raw = zoom * PT_TO_PX * ppp;
+fn desired_scale(page_pt: Vec2, zoom: f32, ppp: f32) -> f32 {    let raw = zoom * PT_TO_PX * ppp;
     let q = 2f32.powf((raw.log2() * 8.0).round() / 8.0);
     let cap = pdf_render::MAX_SIDE / page_pt.x.max(page_pt.y).max(1.0);
     q.min(cap)

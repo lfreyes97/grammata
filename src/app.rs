@@ -116,6 +116,8 @@ impl State {
             errors: built.map(|b| diagnostics::count(&b.diagnostics).0).unwrap_or(0),
             stale: self.preview.loaded.is_some_and(|k| k.rev != doc.rev),
             has_build: built.is_some(),
+            sync: built.map(|b| b.sync.clone()).unwrap_or_default(),
+            root: doc.root_dir(),
         }
     }
 }
@@ -242,6 +244,13 @@ impl App {
             if k(M::CTRL, K::G) { a.push(Action::GotoLinePrompt) }
             if k(M::CTRL, K::E) { a.push(Action::ExportPdf) }
             if k(M::NONE, K::F5) { a.push(Action::Compile) }
+            if k(M::NONE, K::F11) {
+                let on = !self.st.preview.presentation;
+                self.st.preview.set_presentation(ctx, on);
+            }
+            if k(M::NONE, K::Escape) && self.st.preview.presentation {
+                self.st.preview.set_presentation(ctx, false);
+            }
             if k(M::NONE, K::F3) { self.st.editor.pending_step = Some(1) }
             if k(M::CTRL, K::Equals) || k(M::CTRL, K::Plus) { a.push(Action::FontDelta(1.0)) }
             if k(M::CTRL, K::Minus) { a.push(Action::FontDelta(-1.0)) }
@@ -394,6 +403,7 @@ impl App {
                 self.st.modal = Some(Modal::GotoLine(l.to_string()));
             }
             Action::JumpTo { line, col } => self.jump_to(line, col),
+            Action::GotoPreviewPage { page, y } => self.st.preview.goto_position(page, y),
             Action::Select { start, end } => {
                 self.st.editor.goto = Some(Goto { doc: cur, start, end, focus: true });
                 layout::focus_doc(&mut self.dock, cur);
@@ -792,16 +802,24 @@ impl eframe::App for App {
             .resizable(false)
             .show(ui, |ui| chrome::status_bar(&mut self.st, ui));
 
-        let style = self.dock_style(&ctx);
-        egui::CentralPanel::default().frame(egui::Frame::new().fill(pal.chrome)).show(ui, |ui| {
-            editor::find_bar(&mut self.st, ui);
-            DockArea::new(&mut self.dock)
-                .style(style)
-                .show_add_buttons(false)
-                .show_leaf_collapse_buttons(false)
-                .show_leaf_close_all_buttons(false)
-                .show_inside(ui, &mut Viewer { st: &mut self.st });
-        });
+        // Presentación: solo el lienzo del PDF a pantalla completa.
+        if self.st.preview.presentation {
+            let info = self.st.preview_info();
+            egui::CentralPanel::default().frame(egui::Frame::new().fill(pal.chrome)).show(ui, |ui| {
+                self.st.preview.present(ui, &mut self.st.prefs, &info, &mut self.st.actions);
+            });
+        } else {
+            let style = self.dock_style(&ctx);
+            egui::CentralPanel::default().frame(egui::Frame::new().fill(pal.chrome)).show(ui, |ui| {
+                editor::find_bar(&mut self.st, ui);
+                DockArea::new(&mut self.dock)
+                    .style(style)
+                    .show_add_buttons(false)
+                    .show_leaf_collapse_buttons(false)
+                    .show_leaf_close_all_buttons(false)
+                    .show_inside(ui, &mut Viewer { st: &mut self.st });
+            });
+        }
 
         // Doc actual = pestaña de documento activa en el nodo con foco.
         if let Some((_, Tab::Doc(id))) = self.dock.find_active_focused() {

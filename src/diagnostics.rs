@@ -7,7 +7,7 @@ use crate::engine::EngineWorld;
 use typst::World as _;
 use typst::WorldExt as _;
 use typst::diag::{Severity as TSeverity, SourceDiagnostic};
-use typst::syntax::{FileId, VirtualRoot};
+use typst::syntax::{FileId, Span, VirtualRoot};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Severity {
@@ -86,8 +86,21 @@ fn map(world: &EngineWorld, main: FileId, src: &[SourceDiagnostic]) -> Vec<Diagn
         .collect()
 }
 
-/// Cómo se muestra el fichero de un diagnóstico: el main como `None`
-/// (documento actual), el resto relativo a la raíz o `paquete:ruta`.
+/// Ubica un `Span` del compilador: (fichero, línea, columna 1-based).
+/// Comparte lógica con `map` (que parte de `DiagSpan`).
+pub fn locate_span(world: &EngineWorld, main: FileId, span: Span) -> (Option<String>, Option<usize>, Option<usize>) {
+    let Some(id) = span.id() else { return (None, None, None) };
+    let rel = display_path(main, id);
+    let lc = world
+        .range(span)
+        .and_then(|r| world.source(id).ok().map(|s| (s, r.start)))
+        .and_then(|(s, b)| {
+            let b = b.min(s.text().len());
+            s.lines().byte_to_line_column(b)
+        })
+        .map(|(l, c)| (l + 1, c + 1));
+    (rel, lc.map(|p| p.0), lc.map(|p| p.1))
+}
 fn display_path(main: FileId, id: FileId) -> Option<String> {
     if id == main {
         return None;
