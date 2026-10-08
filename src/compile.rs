@@ -163,3 +163,29 @@ pub fn typst_version() -> Option<String> {
     // "typst 0.15.1 (9dfd3a08)" → "typst 0.15.1"
     Some(s.split(" (").next().unwrap_or(&s).trim().to_string())
 }
+
+/// Familias de fuentes de `typst fonts` (una por línea), ordenadas y sin
+/// duplicados. Tarda ~0.2 s: llamar una vez y cachear (ver `FormatBar`).
+pub fn typst_fonts() -> Vec<String> {
+    let out = Command::new("typst").arg("fonts").output();
+    let Ok(out) = out else { return Vec::new() };
+    parse_fonts(&String::from_utf8_lossy(&out.stdout))
+}
+
+fn parse_fonts(s: &str) -> Vec<String> {
+    let mut v: Vec<String> = s.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parsea_fuentes() {
+        let v = parse_fonts("DejaVu Sans\nDejaVu Sans\n  \nLibertinus Serif\n");
+        assert_eq!(v, vec!["DejaVu Sans".to_string(), "Libertinus Serif".to_string()]);
+    }
+}

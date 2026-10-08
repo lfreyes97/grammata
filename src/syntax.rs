@@ -1,36 +1,4 @@
-//! Resaltado Typst para egui_code_editor y snippets de autocompletado.
-
-use std::collections::BTreeSet;
-use std::sync::LazyLock;
-
-/// `#` inicia palabra para que `#table` sea un token (keyword con `#`).
-pub static TYPST: LazyLock<egui_code_editor::Syntax> = LazyLock::new(|| {
-    egui_code_editor::Syntax::new("typst")
-        .with_comment("//")
-        .with_comment_multiline(["/*", "*/"])
-        .with_word_start(BTreeSet::from(['#']))
-        .with_keywords(BTreeSet::from([
-            // control y declaración (con y sin #)
-            "#let", "#set", "#show", "#import", "#include", "#for", "#while", "#if",
-            "#else", "#context", "#return", "#break", "#continue",
-            "let", "set", "show", "import", "include", "for", "while", "if", "else",
-            "context", "as", "in", "and", "or", "not", "is", "return", "break",
-            "continue", "none", "auto", "true", "false",
-            // funciones habituales (forma #nombre)
-            "#table", "#figure", "#image", "#text", "#link", "#heading", "#list",
-            "#enum", "#math", "#equation", "#cite", "#ref", "#label", "#outline",
-            "#page", "#block", "#grid", "#stack", "#counter", "#state", "#query",
-            "#align", "#pad", "#place", "#hide", "#line", "#rect", "#circle",
-            "#ellipse", "#polygon", "#path", "#curve", "#caption", "#footnote",
-            "#bibliography", "#terms", "#par", "#quote", "#strong", "#emph",
-            "#highlight", "#strike", "#super", "#sub", "#smallcaps", "#box",
-            "#v", "#h", "#pagebreak", "#colbreak", "#columns", "#raw", "#lorem",
-        ]))
-        .with_types(BTreeSet::from([
-            "int", "float", "length", "angle", "ratio", "color", "str", "bool",
-            "array", "dictionary", "content", "stroke", "alignment", "direction",
-        ]))
-});
+//! Snippets del autocompletado `#…`.
 
 pub struct Completion {
     pub name: &'static str,

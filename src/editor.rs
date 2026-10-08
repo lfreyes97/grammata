@@ -25,6 +25,9 @@ pub struct EditorUi {
     pub find: Find,
     /// F3 / Mayús+F3 pendiente (se resuelve con acceso al doc).
     pub pending_step: Option<i32>,
+    /// Ancla de la barra de formato: (doc, posición en pantalla del final de
+    /// la selección). La escribe `doc_tab`; la lee `formatbar::show`.
+    pub sel_anchor: Option<(DocId, egui::Pos2)>,
 }
 
 #[derive(Clone, Copy)]
@@ -183,19 +186,8 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
     let rows = ((ui.available_height() / row_h).floor() as usize).max(4);
     let view = ui.max_rect();
     let doc = &mut st.docs.list[di];
-    // El ajuste de línea de egui_code_editor solo funciona sin números de línea.
-    ui.add_space(4.0);
-    let (out, _) = egui_code_editor::CodeEditor::default()
-        .id_source(format!("editor-{id}"))
-        .with_rows(rows)
-        .with_fontsize(font)
-        .with_theme(theme::code_theme(pal.dark))
-        .with_numlines(!wrap)
-        .with_wrap(wrap)
-        .desired_width(f32::INFINITY)
-        .vscroll(true)
-        .with_clickable_links(true)
-        .show(ui, &mut doc.text, &syntax::TYPST);
+    let opt = crate::code_view::Options { font_size: font, wrap, rows };
+    let out = crate::code_view::show(ui, &format!("editor-{id}"), &mut doc.text, &opt, &pal);
     if out.response.changed() {
         doc.touch();
         st.needs_persist = true;
@@ -211,6 +203,13 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
         let (a, b) = (r.primary.index.0, r.secondary.index.0);
         st.editor.cursor = Some(a);
         st.editor.selection = Some((a.min(b), a.max(b)));
+        // Ancla de la barra de formato (coords de pantalla del cursor activo).
+        if a != b {
+            let p = out.galley.pos_from_cursor(r.primary).translate(out.galley_pos.to_vec2());
+            st.editor.sel_anchor = Some((st.docs.list[di].id, p.center()));
+        } else {
+            st.editor.sel_anchor = None;
+        }
     }
     if let Some(g) = st.editor.goto.filter(|g| g.doc == id) {
         st.editor.goto = None;
@@ -250,8 +249,8 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
 }
 
 /// Lleva `target` (px de pantalla) al centro del editor si no está a la vista.
-/// Se toca el estado del ScrollArea externo de egui_code_editor directamente:
-/// `scroll_to_rect` desde fuera no le llega (lo consumen sus scroll internos).
+/// Se toca el estado del ScrollArea de `code_view` directamente: un
+/// `scroll_to_rect` pedido desde fuera de su closure no le llega.
 fn scroll_into_view(ui: &egui::Ui, id: DocId, view: egui::Rect, target: egui::Rect, row_h: f32) {
     if view.shrink2(egui::vec2(0.0, row_h * 2.0)).contains(target.center()) {
         return;

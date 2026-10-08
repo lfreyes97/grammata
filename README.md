@@ -48,7 +48,9 @@ Sesión (pestañas, preferencias y diseño del dock) en
 - **Problemas**: diagnósticos de `--diagnostic-format short` (errores, advertencias,
   pistas); clic salta a la línea, también en archivos incluidos. Con errores se conserva
   la última vista previa válida y se avisa con un banner.
-- **Editor**: `egui_code_editor` con sintaxis Typst propia y temas a juego; autocompletado
+- **Editor**: widget propio (`code_view.rs`) con resaltado del analizador oficial
+  `typst-syntax` (entiende marcado, código y matemáticas como el compilador), números de
+  línea compatibles con el ajuste de línea y resalte de la línea actual; autocompletado
   de `#funciones` en un popup junto al cursor (el snippet deja seleccionado el hueco
   `..`); búsqueda con coincidencias resaltadas; cerrar con cambios pide confirmación.
 - **Estilo**: paleta propia claro/oscuro (`theme.rs`), Inter + monoespaciada del sistema
@@ -63,18 +65,20 @@ Sesión (pestañas, preferencias y diseño del dock) en
 | `actions.rs` | `Action`: lo que pueden pedir menús, barras, atajos y paneles |
 | `chrome.rs` | barra superior, barra de estado y diálogos |
 | `editor.rs` | pestaña de documento, autocompletado, barra de búsqueda |
+| `code_view.rs` | widget de edición: `TextEdit` + números de línea + resaltado cacheado |
+| `highlight.rs` | resaltado y detección de ecuaciones con `typst-syntax` |
 | `preview.rs` | lienzo PDF virtualizado, zoom, navegación |
 | `pdf_render.rs` | hilo de rasterizado con `hayro` |
 | `compile.rs` | hilo de compilación con la CLI de typst |
 | `diagnostics.rs` | parser de diagnósticos de typst |
 | `panels.rs` | paneles Esquema y Problemas |
-| `symbols.rs` | panel de símbolos (tabla validada contra typst) y detección de modo matemático |
+| `symbols.rs` | panel de símbolos (tabla validada contra typst) |
 | `snippets.rs` | panel de snippets, marcadores `${…}`, snippets del usuario |
 | `layout.rs` | pestañas del dock, paneles, diseños predefinidos |
 | `session.rs` | sesión persistente |
 | `theme.rs` | paleta, estilos de egui/dock/editor, fuentes |
 | `widgets.rs` | botones e iconos reutilizables |
-| `doc.rs`, `text.rs`, `outline.rs`, `syntax.rs` | documentos, utilidades de texto, esquema, sintaxis y snippets |
+| `doc.rs`, `text.rs`, `outline.rs`, `syntax.rs` | documentos, utilidades de texto, esquema, snippets del autocompletado |
 
 ## Pruebas
 

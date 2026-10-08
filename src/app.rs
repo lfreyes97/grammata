@@ -6,6 +6,7 @@ use crate::compile::{self, Compiler, Key};
 use crate::diagnostics;
 use crate::doc::{Doc, DocId, Docs};
 use crate::editor::{self, EditorUi, Goto};
+use crate::formatbar::FormatBar;
 use crate::layout::{self, Panel, Preset, Tab};
 use crate::panels::{self, OutlineCache};
 use crate::preview::{self, Preview};
@@ -97,6 +98,7 @@ pub struct State {
     pub recent_symbols: Vec<String>,
     pub snippet_query: String,
     pub user_snippets: Vec<UserSnippet>,
+    pub fmt: FormatBar,
     force_compile: bool,
 }
 
@@ -180,6 +182,7 @@ impl App {
             recent_symbols: session.recent_symbols,
             snippet_query: String::new(),
             user_snippets: snippets::load_user(),
+            fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
         };
         let mut app = Self { st, dock, dock_style: None, last_persist: Instant::now(), title: String::new() };
@@ -439,6 +442,7 @@ impl App {
                 self.st.needs_persist = true;
             }
             Action::InsertSnippet(body) => self.insert(&body, false),
+            Action::PrefixLines(prefix) => self.prefix_lines(&prefix),
             Action::NewSnippet => {
                 let body = self.selected_text();
                 self.st.modal = Some(Modal::EditSnippet(snippets::Editing { index: None, name: String::new(), body }));
@@ -465,6 +469,26 @@ impl App {
             Some((a, b)) if a < b => doc.text.chars().skip(a).take(b - a).collect(),
             _ => String::new(),
         }
+    }
+
+    /// Alterna un prefijo de línea en el rango seleccionado (ver
+    /// `formatbar::toggle_prefix`). Mantiene la selección sobre el bloque.
+    fn prefix_lines(&mut self, prefix: &str) {
+        let doc = self.st.docs.cur();
+        let len = doc.text.chars().count();
+        let (a, b) = match (self.st.editor.selection, self.st.editor.cursor) {
+            (Some((a, b)), _) => (a.min(len), b.min(len)),
+            (None, Some(c)) => (c.min(len), c.min(len)),
+            (None, None) => (len, len),
+        };
+        let id = doc.id;
+        let (text, na, nb) = crate::formatbar::toggle_prefix(&doc.text, a, b, prefix);
+        let d = self.st.docs.cur_mut();
+        d.text = text;
+        d.touch();
+        self.st.editor.goto = Some(Goto { doc: id, start: na, end: nb, focus: true });
+        layout::focus_doc(&mut self.dock, id);
+        self.st.needs_persist = true;
     }
 
     /// Inserta una plantilla en el cursor (sustituyendo la selección).
@@ -801,6 +825,9 @@ impl eframe::App for App {
                     self.on_doc_changed();
                 }
         }
+
+        // Barra flotante de formato (tras el dock: usa el ancla del frame).
+        crate::formatbar::show(&mut self.st, &ctx);
 
         if let Some(Modal::EditSnippet(e)) = &mut self.st.modal {
             match snippets::edit_modal(&ctx, e) {

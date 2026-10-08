@@ -4,7 +4,6 @@
 //! no definen colores propios.
 
 use egui::{Color32, CornerRadius, FontFamily, FontId, Margin, Stroke, TextStyle, vec2};
-use egui_code_editor::ColorTheme;
 
 #[derive(Clone, Copy)]
 pub struct Palette {
@@ -28,6 +27,28 @@ pub struct Palette {
     pub err: Color32,
     /// Fondo del lienzo de la vista previa.
     pub canvas: Color32,
+    pub syntax: SyntaxColors,
+}
+
+/// Colores del resaltado (ver `highlight.rs`).
+#[derive(Clone, Copy)]
+pub struct SyntaxColors {
+    pub comment: Color32,
+    pub punctuation: Color32,
+    pub escape: Color32,
+    pub strong: Color32,
+    pub link: Color32,
+    pub raw: Color32,
+    pub label: Color32,
+    pub heading: Color32,
+    pub list: Color32,
+    pub math: Color32,
+    pub keyword: Color32,
+    pub operator: Color32,
+    pub number: Color32,
+    pub string: Color32,
+    pub function: Color32,
+    pub interpolated: Color32,
 }
 
 const fn hex(rgb: u32) -> Color32 {
@@ -52,6 +73,24 @@ pub const DARK: Palette = Palette {
     warn: hex(0xe5b84b),
     err: hex(0xef6b6b),
     canvas: hex(0x0f1115),
+    syntax: SyntaxColors {
+        comment: hex(0x6b7280),
+        punctuation: hex(0x8b93a1),
+        escape: hex(0xc3a6ff),
+        strong: hex(0xffffff),
+        link: hex(0x7cc4ff),
+        raw: hex(0x93d18b),
+        label: hex(0xc3a6ff),
+        heading: hex(0x3fb5c6),
+        list: hex(0xe5b84b),
+        math: hex(0x5fd3c4),
+        keyword: hex(0xf07fa6),
+        operator: hex(0xa0a7b4),
+        number: hex(0xe5b84b),
+        string: hex(0x93d18b),
+        function: hex(0x7cc4ff),
+        interpolated: hex(0xf2a46b),
+    },
 };
 
 pub const LIGHT: Palette = Palette {
@@ -72,6 +111,24 @@ pub const LIGHT: Palette = Palette {
     warn: hex(0xb07d12),
     err: hex(0xd64545),
     canvas: hex(0xdfe2e7),
+    syntax: SyntaxColors {
+        comment: hex(0x8b92a0),
+        punctuation: hex(0x6b7280),
+        escape: hex(0x7148c8),
+        strong: hex(0x000000),
+        link: hex(0x1f63c9),
+        raw: hex(0x2a7f3a),
+        label: hex(0x7148c8),
+        heading: hex(0x1d8a99),
+        list: hex(0x9a5a00),
+        math: hex(0x0f7f73),
+        keyword: hex(0xb8265f),
+        operator: hex(0x575e6c),
+        number: hex(0x9a5a00),
+        string: hex(0x2a7f3a),
+        function: hex(0x1f63c9),
+        interpolated: hex(0xb4561b),
+    },
 };
 
 pub fn palette_for(dark: bool) -> Palette {
@@ -80,44 +137,6 @@ pub fn palette_for(dark: bool) -> Palette {
 
 pub fn palette(ctx: &egui::Context) -> Palette {
     palette_for(ctx.global_style().visuals.dark_mode)
-}
-
-const DARK_CODE: ColorTheme = ColorTheme {
-    name: "Typst oscuro",
-    dark: true,
-    bg: "1b1e24",
-    cursor: "3fb5c6",
-    selection: "264a52",
-    comments: "6b7280",
-    functions: "7cc4ff",
-    keywords: "f07fa6",
-    literals: "dfe3ea",
-    numerics: "e5b84b",
-    punctuation: "a0a7b4",
-    strs: "93d18b",
-    types: "3fb5c6",
-    special: "c3a6ff",
-};
-
-const LIGHT_CODE: ColorTheme = ColorTheme {
-    name: "Typst claro",
-    dark: false,
-    bg: "fbfbfc",
-    cursor: "1d8a99",
-    selection: "c8e7ec",
-    comments: "8b92a0",
-    functions: "1f63c9",
-    keywords: "b8265f",
-    literals: "1d2128",
-    numerics: "9a5a00",
-    punctuation: "575e6c",
-    strs: "2a7f3a",
-    types: "1d8a99",
-    special: "7148c8",
-};
-
-pub fn code_theme(dark: bool) -> ColorTheme {
-    if dark { DARK_CODE } else { LIGHT_CODE }
 }
 
 pub fn apply(ctx: &egui::Context, dark: bool) {

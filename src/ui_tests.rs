@@ -64,6 +64,12 @@ fn recorrido_de_la_ui() {
     wait(&mut h, "primera compilación", rendered_pages);
     wait(&mut h, "render de páginas", |a| a.st.preview.fresh_pages() >= 1);
     shot(&mut h, "01-inicio");
+    // Ajuste de línea con números de línea (antes eran incompatibles).
+    h.state_mut().st.actions.push(Action::ToggleWrap);
+    put_cursor_at_end(&mut h);
+    shot(&mut h, "01b-ajuste");
+    h.state_mut().st.actions.push(Action::ToggleWrap);
+    h.run_steps(2);
 
     // Autocompletado: `#ta` + Tab.
     put_cursor_at_end(&mut h);

@@ -48,6 +48,10 @@ pub enum Action {
     InsertMath(String),
     /// Inserta un snippet (`${}` cursor, `${sel}` selección).
     InsertSnippet(String),
+    /// Alterna un prefijo de línea (`- `, `= `…) en cada línea tocada por la
+    /// selección (o la línea del cursor): lo pone si falta, lo quita si todas
+    /// lo llevan. Los rivales del mismo grupo se sustituyen (`== ` → `= `).
+    PrefixLines(String),
     /// Diálogo de snippet nuevo con la selección actual.
     NewSnippet,
     EditSnippet(usize),
