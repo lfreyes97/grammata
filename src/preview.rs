@@ -173,9 +173,9 @@ impl Preview {
                     prefs.zoom = step_zoom(z, -1);
                 }
                 let label = match prefs.fit {
-                    FitMode::Width => "Ancho".to_string(),
-                    FitMode::Page => "Página".to_string(),
-                    FitMode::Manual => format!("{:.0} %", z * 100.0),
+                    FitMode::Width => format!("{}  Ancho", icon::ARROWS_OUT_LINE_HORIZONTAL),
+                    FitMode::Page => format!("{}  Página", icon::FRAME_CORNERS),
+                    FitMode::Manual => format!("{}  {:.0} %", icon::MAGNIFYING_GLASS, z * 100.0),
                 };
                 ui.menu_button(egui::RichText::new(label).monospace(), |ui| {
                     ui.set_min_width(170.0);
@@ -210,7 +210,7 @@ impl Preview {
                         self.goto_page(self.current_page.saturating_sub(1));
                     }
                     let txt = if n == 0 { "– / –".to_string() } else { format!("{} / {}", self.current_page + 1, n) };
-                    ui.label(egui::RichText::new(txt).monospace().color(pal.text_dim));
+                    ui.label(egui::RichText::new(format!("{}  {txt}", icon::FILE_TEXT)).monospace().color(pal.text_dim));
                     if crate::widgets::icon_button(ui, icon::CARET_DOWN, "Página siguiente  (AvPág)").clicked() {
                         self.goto_page(self.current_page + 1);
                     }
@@ -231,7 +231,7 @@ impl Preview {
                             actions.push(Action::ShowPanel(Panel::Problems));
                         }
                     } else if info.stale && !info.auto {
-                        ui.label(egui::RichText::new("desactualizado").small().color(pal.warn))
+                        ui.label(egui::RichText::new(format!("{} desactualizado", icon::WARNING)).small().color(pal.warn))
                             .on_hover_text("Autocompilar está desactivado: pulsa F5");
                     }
                 });
@@ -325,6 +325,13 @@ impl Preview {
                 }
                 keep.push(i);
                 let rect = local.translate(origin.to_vec2());
+                // Snap a píxeles físicos: con filtro LINEAR un rect fraccional
+                // (p. ej. por centrar la página) re-muestrea toda la textura
+                // y el texto se ve borroso aunque la escala sea 1:1.
+                let rect = Rect::from_min_max(
+                    pos2((rect.min.x * ppp).round() / ppp, (rect.min.y * ppp).round() / ppp),
+                    pos2((rect.max.x * ppp).round() / ppp, (rect.max.y * ppp).round() / ppp),
+                );
                 let want = desired_scale(*s, zoom, ppp);
                 let tex = self.textures.get(&i);
                 let fresh = tex.is_some_and(|t| t.generation == self.generation && t.scale == want);
