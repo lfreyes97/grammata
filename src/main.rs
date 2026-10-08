@@ -1,10 +1,14 @@
 mod actions;
 mod app;
 mod chrome;
+mod code_view;
 mod compile;
 mod diagnostics;
 mod doc;
 mod editor;
+mod engine;
+mod formatbar;
+mod highlight;
 mod layout;
 mod outline;
 mod panels;

@@ -1,17 +1,15 @@
-//! Compilación con la CLI de typst en un hilo aparte.
+//! Compilación Typst embebida en un hilo aparte (sin CLI).
 //!
-//! El texto va por stdin y el PDF sale por stdout: sin temporales, y con
-//! `--root` = carpeta del documento para que las rutas relativas funcionen.
+//! El buffer vivo del editor se compila en proceso con el mismo `root` que
+//! antes (carpeta del documento para rutas relativas). El hilo usa stack
+//! generoso y `catch_unwind`: un fallo del compilador no tumba la app.
 
-use crate::diagnostics::{self, Diagnostic};
+use crate::diagnostics::Diagnostic;
 use crate::doc::DocId;
 use std::collections::HashMap;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::time::Instant;
 
 /// Identifica una versión concreta de un documento.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -24,6 +22,7 @@ struct Job {
     key: Key,
     text: String,
     root: PathBuf,
+    filename: String,
 }
 
 pub struct Output {
@@ -55,6 +54,8 @@ impl Compiler {
         let (tx_out, rx) = channel::<Output>();
         std::thread::Builder::new()
             .name("typst-compile".into())
+            // El compilador evalúa recursivamente: stack generoso como el CLI.
+            .stack_size(64 << 20)
             .spawn(move || {
                 while let Ok(mut job) = rx_job.recv() {
                     // Si se encolaron varias, solo cuenta la última.
@@ -76,11 +77,11 @@ impl Compiler {
         self.built.get(&key.doc).is_some_and(|b| b.key == key)
     }
 
-    pub fn request(&mut self, key: Key, text: String, root: PathBuf) {
+    pub fn request(&mut self, key: Key, text: String, root: PathBuf, filename: String) {
         if self.in_flight == Some(key) {
             return;
         }
-        if self.tx.send(Job { key, text, root }).is_ok() {
+        if self.tx.send(Job { key, text, root, filename }).is_ok() {
             self.in_flight = Some(key);
         }
     }
@@ -111,55 +112,38 @@ impl Compiler {
     }
 }
 
+/// Compila el buffer en proceso (sin CLI). Un panic del compilador no puede
+/// tumbar la app: se convierte en diagnóstico.
 fn run(job: &Job) -> Output {
-    let t0 = Instant::now();
-    let res = typst(&job.root, &job.text, &["-"], &[]);
-    let (pdf, diagnostics) = match res {
-        Ok((stdout, stderr, ok)) => {
-            let diags = diagnostics::parse(&stderr);
-            let pdf = (ok && stdout.starts_with(b"%PDF")).then(|| Arc::new(stdout));
-            (pdf, diags)
+    let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::engine::compile_pdf(&job.text, &job.root, &job.filename)
+    }));
+    match out {
+        Ok(c) => {
+            let pdf = c.pdf.map(Arc::new);
+            Output { key: job.key, pdf, diagnostics: c.diags, ms: c.ms }
         }
-        Err(e) => (None, diagnostics::parse(&format!("error: {e}"))),
-    };
-    Output { key: job.key, pdf, diagnostics, ms: t0.elapsed().as_millis() }
+        Err(_) => {
+            let diagnostics = vec![crate::diagnostics::Diagnostic {
+                severity: crate::diagnostics::Severity::Error,
+                file: None,
+                line: None,
+                col: None,
+                message: "error interno del compilador (panic)".to_string(),
+                hints: Vec::new(),
+            }];
+            Output { key: job.key, pdf: None, diagnostics, ms: 0 }
+        }
+    }
 }
 
-/// Ejecuta `typst compile - <out>` con `text` por stdin.
-/// Devuelve (stdout, stderr, éxito).
-pub fn typst(
-    root: &Path,
-    text: &str,
-    output: &[&str],
-    extra: &[&str],
-) -> Result<(Vec<u8>, String, bool), String> {
-    let mut child = Command::new("typst")
-        .arg("compile")
-        .args(["--diagnostic-format", "short", "--root"])
-        .arg(root)
-        .args(extra)
-        .arg("-")
-        .args(output)
-        .current_dir(root)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("no se pudo ejecutar `typst` (¿está en el PATH?): {e}"))?;
-    // stdin en otro hilo: si typst llenara stdout antes de leer todo, no hay bloqueo.
-    let mut stdin = child.stdin.take().expect("stdin piped");
-    let text = text.to_owned();
-    let writer = std::thread::spawn(move || {
-        let _ = stdin.write_all(text.as_bytes());
-    });
-    let out = child.wait_with_output().map_err(|e| e.to_string())?;
-    let _ = writer.join();
-    Ok((out.stdout, String::from_utf8_lossy(&out.stderr).into_owned(), out.status.success()))
-}
-
+/// Versión del compilador embebido (fijada en Cargo.toml, sin deriva CLI).
 pub fn typst_version() -> Option<String> {
-    let o = Command::new("typst").arg("--version").output().ok()?;
-    let s = String::from_utf8_lossy(&o.stdout);
-    // "typst 0.15.1 (9dfd3a08)" → "typst 0.15.1"
-    Some(s.split(" (").next().unwrap_or(&s).trim().to_string())
+    Some("typst 0.15.1 (embebido)".to_string())
 }
+
+/// Familias de fuentes del motor embebido (antes: shell a `typst fonts`).
+pub fn typst_fonts() -> Vec<String> {
+    crate::engine::font_families()
+}
+

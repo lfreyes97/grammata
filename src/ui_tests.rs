@@ -64,6 +64,12 @@ fn recorrido_de_la_ui() {
     wait(&mut h, "primera compilación", rendered_pages);
     wait(&mut h, "render de páginas", |a| a.st.preview.fresh_pages() >= 1);
     shot(&mut h, "01-inicio");
+    // Ajuste de línea con números de línea (antes eran incompatibles).
+    h.state_mut().st.actions.push(Action::ToggleWrap);
+    put_cursor_at_end(&mut h);
+    shot(&mut h, "01b-ajuste");
+    h.state_mut().st.actions.push(Action::ToggleWrap);
+    h.run_steps(2);
 
     // Autocompletado: `#ta` + Tab.
     put_cursor_at_end(&mut h);
@@ -232,20 +238,27 @@ fn recorrido_de_la_ui() {
     assert_eq!(s.recent_symbols[0], "abs(${sel:x})");
 }
 
-/// Cada símbolo, estructura y snippet de serie compila con el typst instalado.
+/// Cada símbolo, estructura y snippet de serie compila con el motor embebido.
 #[test]
-#[ignore = "necesita typst en el PATH"]
+#[ignore = "compila ~100 documentos (lento)"]
 fn plantillas_y_simbolos_compilan() {
     let dir = std::env::temp_dir().join(format!("typst-editor-snip-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     // Recursos a los que apuntan algunos snippets.
-    let (_, err, ok) = compile::typst(&dir, "#set page(width: 1pt, height: 1pt, margin: 0pt)", &["imagen.png"], &["-f", "png"]).unwrap();
-    assert!(ok, "{err}");
+    let out = crate::engine::export_pages(
+        "#set page(width: 1pt, height: 1pt, margin: 0pt)",
+        &dir,
+        "main.typ",
+        &dir.join("imagen.png"),
+        "png",
+        Some(72),
+    );
+    assert!(out.is_ok(), "{out:?}");
     std::fs::write(dir.join("refs.bib"), "@book{clave, title={T}, author={A}, year={2020}}\n").unwrap();
 
     let check = |what: &str, src: String| {
-        let (_, err, ok) = compile::typst(&dir, &src, &[dir.join("out.pdf").to_str().unwrap()], &[]).unwrap();
-        assert!(ok, "{what} no compila:\n{src}\n---\n{err}");
+        let out = crate::engine::compile_pdf(&src, &dir, "main.typ");
+        assert!(out.pdf.map_or(false, |p| p.starts_with(b"%PDF")), "{what} no compila:\n{src}\n---\n{:?}", out.diags);
     };
     // Símbolos y estructuras: todos juntos en una ecuación.
     // Sin selección (relleno) y con selección (envolviendo).

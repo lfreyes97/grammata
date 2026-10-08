@@ -6,6 +6,7 @@ use crate::compile::{self, Compiler, Key};
 use crate::diagnostics;
 use crate::doc::{Doc, DocId, Docs};
 use crate::editor::{self, EditorUi, Goto};
+use crate::formatbar::FormatBar;
 use crate::layout::{self, Panel, Preset, Tab};
 use crate::panels::{self, OutlineCache};
 use crate::preview::{self, Preview};
@@ -97,6 +98,7 @@ pub struct State {
     pub recent_symbols: Vec<String>,
     pub snippet_query: String,
     pub user_snippets: Vec<UserSnippet>,
+    pub fmt: FormatBar,
     force_compile: bool,
 }
 
@@ -180,12 +182,10 @@ impl App {
             recent_symbols: session.recent_symbols,
             snippet_query: String::new(),
             user_snippets: snippets::load_user(),
+            fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
         };
-        let mut app = Self { st, dock, dock_style: None, last_persist: Instant::now(), title: String::new() };
-        if app.st.typst_version.is_none() {
-            app.st.set_status("No se encontró `typst` en el PATH: no se puede compilar", StatusKind::Err);
-        }
+        let app = Self { st, dock, dock_style: None, last_persist: Instant::now(), title: String::new() };
         app
     }
 
@@ -280,7 +280,7 @@ impl App {
         }
         st.preview.poll(ctx);
 
-        if st.compiler.in_flight.is_some() || st.typst_version.is_none() {
+        if st.compiler.in_flight.is_some() {
             return;
         }
         let doc = st.docs.cur();
@@ -301,7 +301,8 @@ impl App {
         };
         if go {
             let (text, root) = (doc.text.clone(), doc.root_dir());
-            st.compiler.request(key, text, root);
+            let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref());
+            st.compiler.request(key, text, root, filename);
         }
     }
 
@@ -378,9 +379,6 @@ impl App {
                 }
             }
             Action::Compile => {
-                if self.st.typst_version.is_none() {
-                    self.st.typst_version = compile::typst_version();
-                }
                 self.st.force_compile = true;
             }
             Action::ExportPdf => self.export("pdf"),
@@ -439,6 +437,7 @@ impl App {
                 self.st.needs_persist = true;
             }
             Action::InsertSnippet(body) => self.insert(&body, false),
+            Action::PrefixLines(prefix) => self.prefix_lines(&prefix),
             Action::NewSnippet => {
                 let body = self.selected_text();
                 self.st.modal = Some(Modal::EditSnippet(snippets::Editing { index: None, name: String::new(), body }));
@@ -465,6 +464,26 @@ impl App {
             Some((a, b)) if a < b => doc.text.chars().skip(a).take(b - a).collect(),
             _ => String::new(),
         }
+    }
+
+    /// Alterna un prefijo de línea en el rango seleccionado (ver
+    /// `formatbar::toggle_prefix`). Mantiene la selección sobre el bloque.
+    fn prefix_lines(&mut self, prefix: &str) {
+        let doc = self.st.docs.cur();
+        let len = doc.text.chars().count();
+        let (a, b) = match (self.st.editor.selection, self.st.editor.cursor) {
+            (Some((a, b)), _) => (a.min(len), b.min(len)),
+            (None, Some(c)) => (c.min(len), c.min(len)),
+            (None, None) => (len, len),
+        };
+        let id = doc.id;
+        let (text, na, nb) = crate::formatbar::toggle_prefix(&doc.text, a, b, prefix);
+        let d = self.st.docs.cur_mut();
+        d.text = text;
+        d.touch();
+        self.st.editor.goto = Some(Goto { doc: id, start: na, end: nb, focus: true });
+        layout::focus_doc(&mut self.dock, id);
+        self.st.needs_persist = true;
     }
 
     /// Inserta una plantilla en el cursor (sustituyendo la selección).
@@ -682,19 +701,11 @@ impl App {
                     }
                     return;
                 }
-        let ppi_s = ppi.map(|p| p.to_string());
-        let mut extra = vec!["-f", fmt];
-        if let Some(p) = &ppi_s {
-            extra.extend(["--ppi", p.as_str()]);
-        }
-        let dest_s = dest.to_string_lossy().into_owned();
-        match compile::typst(&doc.root_dir(), &doc.text, &[dest_s.as_str()], &extra) {
-            Ok((_, _, true)) => self.st.set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
-            Ok((_, err, false)) => {
-                let first = diagnostics::parse(&err).into_iter().next().map(|d| d.message).unwrap_or_default();
-                self.st.set_status(format!("Falló la exportación: {first}"), StatusKind::Err);
-            }
-            Err(e) => self.st.set_status(e, StatusKind::Err),
+        // PNG/SVG: se recompila en proceso (el PDF usa el construido).
+        let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref());
+        match crate::engine::export_pages(&doc.text, &doc.root_dir(), &filename, &dest, fmt, ppi) {
+            Ok(()) => self.st.set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
+            Err(e) => self.st.set_status(format!("Falló la exportación: {e}"), StatusKind::Err),
         }
     }
 
@@ -801,6 +812,9 @@ impl eframe::App for App {
                     self.on_doc_changed();
                 }
         }
+
+        // Barra flotante de formato (tras el dock: usa el ancla del frame).
+        crate::formatbar::show(&mut self.st, &ctx);
 
         if let Some(Modal::EditSnippet(e)) = &mut self.st.modal {
             match snippets::edit_modal(&ctx, e) {

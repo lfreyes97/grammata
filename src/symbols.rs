@@ -237,27 +237,7 @@ fn find(insert: &str) -> Option<&'static Sym> {
     all().find(|s| s.insert == insert)
 }
 
-/// ¿Está el índice de char `cursor` dentro de una ecuación `$ … $`?
-/// Cuenta los `$` no escapados anteriores, saltando comentarios `//` y
-/// bloques de código en línea `` ` ``.
-pub fn in_math(text: &str, cursor: usize) -> bool {
-    let mut inside = false;
-    let mut raw = false;
-    let mut comment = false;
-    let mut prev = '\0';
-    for c in text.chars().take(cursor) {
-        match c {
-            '\n' => comment = false,
-            _ if comment => {}
-            '/' if prev == '/' && !raw && !inside => comment = true,
-            '`' if prev != '\\' && !inside => raw = !raw,
-            '$' if prev != '\\' && !raw => inside = !inside,
-            _ => {}
-        }
-        prev = if prev == '\\' && c == '\\' { '\0' } else { c };
-    }
-    inside
-}
+pub use crate::highlight::in_math;
 
 pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
@@ -338,19 +318,6 @@ fn grid(ui: &mut egui::Ui, pal: &Palette, items: impl Iterator<Item = &'static S
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn detecta_modo_matematico() {
-        let t = "a $x + y$ b $c";
-        let at = |needle: &str| t.find(needle).map(|b| t[..b].chars().count()).unwrap();
-        assert!(!in_math(t, at("a")));
-        assert!(in_math(t, at("x")));
-        assert!(!in_math(t, at(" b")));
-        assert!(in_math(t, t.chars().count()));
-        assert!(!in_math("\\$ x", 3));
-        assert!(!in_math("// $ comentario\nz", 17));
-        assert!(!in_math("`$` z", 4));
-    }
 
     #[test]
     fn sin_duplicados() {

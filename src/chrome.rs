@@ -127,6 +127,11 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             }
         });
     });
+    // Barra de formato fijada: segunda fila (ver `formatbar::docked`).
+    if st.fmt.pinned {
+        ui.separator();
+        crate::formatbar::docked(st, ui);
+    }
 }
 
 pub fn status_bar(st: &mut State, ui: &mut egui::Ui) {
@@ -180,7 +185,7 @@ pub fn status_bar(st: &mut State, ui: &mut egui::Ui) {
             let wrap_txt = if st.prefs.wrap { "Ajuste: sí" } else { "Ajuste: no" };
             if ui
                 .add(Button::new(RichText::new(wrap_txt).small()).frame_when_inactive(false))
-                .on_hover_text("Ajuste de línea (Alt+Z). Con ajuste se ocultan los números de línea.")
+                .on_hover_text("Ajuste de línea (Alt+Z)")
                 .clicked()
             {
                 st.actions.push(Action::ToggleWrap);
