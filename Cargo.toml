@@ -13,6 +13,13 @@ rfd = "0.17.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 typst-syntax = "0.15.1"
+# Compilador embebido: sin dependencia del CLI `typst`.
+typst = "0.15.1"
+typst-pdf = "0.15.1"
+typst-svg = "0.15.1"
+typst-render = "0.15.1"
+typst-kit = { version = "0.15.1", features = ["system-files", "system-packages", "universe-packages", "scan-fonts", "datetime", "system-downloader"] }
+typst-layout = "0.15.1"
 
 # Las dependencias (hayro, vello_cpu…) se optimizan también en debug:
 # sin esto el render de páginas PDF es ~20× más lento en `cargo run`.

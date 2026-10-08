@@ -62,7 +62,7 @@ impl FormatBar {
         f
     }
 
-    /// Lanza `typst fonts` en un hilo (una vez); el resultado llega por canal.
+    /// Calienta las fuentes del motor en segundo plano (una vez).
     pub fn preload(&mut self, ctx: &egui::Context) {
         if self.fonts.is_some() || self.fonts_rx.is_some() {
             return;
@@ -72,7 +72,7 @@ impl FormatBar {
         std::thread::Builder::new()
             .name("typst-fonts".into())
             .spawn(move || {
-                let _ = tx.send(compile::typst_fonts());
+                let _ = tx.send(crate::engine::font_families());
                 ctx.request_repaint();
             })
             .expect("hilo typst-fonts");
@@ -329,7 +329,7 @@ fn bar_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Action> 
                                 }
                                 let fonts = st.fmt.fonts.clone().unwrap_or_default();
                                 if fonts.is_empty() {
-                                    ui.label(RichText::new("Sin fuentes (¿typst en el PATH?)").small());
+                                    ui.label(RichText::new("Sin fuentes del sistema").small());
                                     return;
                                 }
                                 ui.add(

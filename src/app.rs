@@ -185,10 +185,7 @@ impl App {
             fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
         };
-        let mut app = Self { st, dock, dock_style: None, last_persist: Instant::now(), title: String::new() };
-        if app.st.typst_version.is_none() {
-            app.st.set_status("No se encontró `typst` en el PATH: no se puede compilar", StatusKind::Err);
-        }
+        let app = Self { st, dock, dock_style: None, last_persist: Instant::now(), title: String::new() };
         app
     }
 
@@ -283,7 +280,7 @@ impl App {
         }
         st.preview.poll(ctx);
 
-        if st.compiler.in_flight.is_some() || st.typst_version.is_none() {
+        if st.compiler.in_flight.is_some() {
             return;
         }
         let doc = st.docs.cur();
@@ -304,7 +301,8 @@ impl App {
         };
         if go {
             let (text, root) = (doc.text.clone(), doc.root_dir());
-            st.compiler.request(key, text, root);
+            let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref());
+            st.compiler.request(key, text, root, filename);
         }
     }
 
@@ -381,9 +379,6 @@ impl App {
                 }
             }
             Action::Compile => {
-                if self.st.typst_version.is_none() {
-                    self.st.typst_version = compile::typst_version();
-                }
                 self.st.force_compile = true;
             }
             Action::ExportPdf => self.export("pdf"),
@@ -706,19 +701,11 @@ impl App {
                     }
                     return;
                 }
-        let ppi_s = ppi.map(|p| p.to_string());
-        let mut extra = vec!["-f", fmt];
-        if let Some(p) = &ppi_s {
-            extra.extend(["--ppi", p.as_str()]);
-        }
-        let dest_s = dest.to_string_lossy().into_owned();
-        match compile::typst(&doc.root_dir(), &doc.text, &[dest_s.as_str()], &extra) {
-            Ok((_, _, true)) => self.st.set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
-            Ok((_, err, false)) => {
-                let first = diagnostics::parse(&err).into_iter().next().map(|d| d.message).unwrap_or_default();
-                self.st.set_status(format!("Falló la exportación: {first}"), StatusKind::Err);
-            }
-            Err(e) => self.st.set_status(e, StatusKind::Err),
+        // PNG/SVG: se recompila en proceso (el PDF usa el construido).
+        let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref());
+        match crate::engine::export_pages(&doc.text, &doc.root_dir(), &filename, &dest, fmt, ppi) {
+            Ok(()) => self.st.set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
+            Err(e) => self.st.set_status(format!("Falló la exportación: {e}"), StatusKind::Err),
         }
     }
 

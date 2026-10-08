@@ -1,7 +1,13 @@
-//! Diagnósticos de `typst compile --diagnostic-format short`.
+//! Diagnósticos del compilador embebido (antes: `typst compile --diagnostic-format short`).
 //!
-//! Formato: `ruta:L:C: error: mensaje`. Las líneas sin prefijo continúan el
-//! mensaje anterior (pánicos multilínea, `hint:`).
+//! `from_source` mapea `SourceDiagnostic` (con spans) a nuestro `Diagnostic`:
+//! fichero relativo a la raíz (el main como `None`) y línea/columna 1-based.
+
+use crate::engine::EngineWorld;
+use typst::World as _;
+use typst::WorldExt as _;
+use typst::diag::{Severity as TSeverity, SourceDiagnostic};
+use typst::syntax::{FileId, VirtualRoot};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Severity {
@@ -12,7 +18,7 @@ pub enum Severity {
 #[derive(Clone, Debug)]
 pub struct Diagnostic {
     pub severity: Severity,
-    /// `None` = el propio documento (`<stdin>`); `Some` = otro archivo
+    /// `None` = el propio documento; `Some` = otro archivo
     /// (relativo a la raíz de compilación).
     pub file: Option<String>,
     pub line: Option<usize>,
@@ -37,90 +43,58 @@ pub fn count(diags: &[Diagnostic]) -> (usize, usize) {
     (e, diags.len() - e)
 }
 
-pub fn parse(stderr: &str) -> Vec<Diagnostic> {
-    let mut out: Vec<Diagnostic> = Vec::new();
-    for line in stderr.lines() {
-        if let Some(d) = parse_head(line) {
-            out.push(d);
-        } else if let Some(last) = out.last_mut() {
-            let t = line.trim();
-            if let Some(h) = t.strip_prefix("hint:") {
-                last.hints.push(h.trim().to_string());
-            } else if !t.is_empty() {
-                last.message.push('\n');
-                last.message.push_str(line);
-            }
-        } else if !line.trim().is_empty() {
-            out.push(Diagnostic {
-                severity: Severity::Error,
-                file: None,
-                line: None,
-                col: None,
-                message: line.trim().to_string(),
-                hints: Vec::new(),
-            });
-        }
-    }
-    out
+pub fn from_source(world: &EngineWorld, main: FileId, src: &[SourceDiagnostic]) -> Vec<Diagnostic> {
+    map(world, main, src)
 }
 
-fn parse_head(line: &str) -> Option<Diagnostic> {
-    for (marker, severity) in [
-        ("error: ", Severity::Error),
-        ("warning: ", Severity::Warning),
-    ] {
-        // Sin ubicación: `error: mensaje`.
-        if let Some(msg) = line.strip_prefix(marker) {
-            return Some(Diagnostic {
+/// Mapea avisos (warnings) de una compilación con éxito.
+pub fn from_warnings(world: &EngineWorld, main: FileId, src: &[SourceDiagnostic]) -> Vec<Diagnostic> {
+    map(world, main, src)
+}
+
+fn map(world: &EngineWorld, main: FileId, src: &[SourceDiagnostic]) -> Vec<Diagnostic> {
+    src.iter()
+        .map(|d| {
+            let severity = match d.severity {
+                TSeverity::Error => Severity::Error,
+                TSeverity::Warning => Severity::Warning,
+            };
+            let (file, line, col) = match d.span.id() {
+                Some(id) => {
+                    let rel = display_path(main, id);
+                    let lc = world
+                        .range(d.span)
+                        .and_then(|r| world.source(id).ok().map(|s| (s, r.start)))
+                        .and_then(|(s, b)| {
+                            let b = b.min(s.text().len());
+                            s.lines().byte_to_line_column(b)
+                        })
+                        .map(|(l, c)| (l + 1, c + 1));
+                    (rel, lc.map(|p| p.0), lc.map(|p| p.1))
+                }
+                None => (None, None, None),
+            };
+            Diagnostic {
                 severity,
-                file: None,
-                line: None,
-                col: None,
-                message: msg.to_string(),
-                hints: Vec::new(),
-            });
-        }
-        let sep = format!(": {marker}");
-        if let Some(pos) = line.find(&sep) {
-            let loc = &line[..pos];
-            let msg = &line[pos + sep.len()..];
-            // `ruta:L:C` — la ruta puede contener ':' así que se parte por la derecha.
-            let mut parts = loc.rsplitn(3, ':');
-            let col = parts.next().and_then(|s| s.parse().ok());
-            let ln = parts.next().and_then(|s| s.parse().ok());
-            let file = parts.next().unwrap_or(loc);
-            let is_self = file.ends_with("<stdin>");
-            return Some(Diagnostic {
-                severity,
-                file: (!is_self).then(|| file.to_string()),
-                line: ln,
+                file,
+                line,
                 col,
-                message: msg.to_string(),
-                hints: Vec::new(),
-            });
-        }
-    }
-    None
+                message: d.message.to_string(),
+                hints: d.hints.iter().map(|h| h.v.to_string()).collect(),
+            }
+        })
+        .collect()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_short_format() {
-        let s = "<stdin>:2:6: error: unexpected argument\n\
-                 cap/a.typ:1:16: warning: unknown font family: x\n\
-                 <stdin>:1:1: error: panicked with: boom\nline2\n  hint: try this\n\
-                 error: no location";
-        let d = parse(s);
-        assert_eq!(d.len(), 4);
-        assert_eq!((d[0].line, d[0].col, d[0].file.clone()), (Some(2), Some(6), None));
-        assert_eq!(d[1].severity, Severity::Warning);
-        assert_eq!(d[1].file.as_deref(), Some("cap/a.typ"));
-        assert_eq!(d[2].message, "panicked with: boom\nline2");
-        assert_eq!(d[2].hints, vec!["try this"]);
-        assert_eq!(d[3].line, None);
-        assert_eq!(count(&d), (3, 1));
+/// Cómo se muestra el fichero de un diagnóstico: el main como `None`
+/// (documento actual), el resto relativo a la raíz o `paquete:ruta`.
+fn display_path(main: FileId, id: FileId) -> Option<String> {
+    if id == main {
+        return None;
+    }
+    let rel = id.vpath().get_without_slash().to_string();
+    match id.root() {
+        VirtualRoot::Project => Some(rel),
+        VirtualRoot::Package(spec) => Some(format!("{spec}:{rel}")),
     }
 }
