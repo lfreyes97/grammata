@@ -64,8 +64,6 @@ pub struct Preview {
     pub effective_zoom: f32,
     last_content_h: f32,
     last_offset: Vec2,
-    /// Press del ratón para distinguir clic de arrastre (inverso synctex).
-    press: Option<Pos2>,
     /// Tira de miniaturas: texturas por página + escala pedida por página.
     show_thumbs: bool,
     thumbs: HashMap<usize, egui::TextureHandle>,
@@ -99,7 +97,6 @@ impl Preview {
             effective_zoom: 1.0,
             last_content_h: 0.0,
             last_offset: Vec2::ZERO,
-            press: None,
             show_thumbs: false,
             thumbs: HashMap::new(),
             thumb_want: HashMap::new(),
@@ -771,9 +768,11 @@ impl Preview {
         let ppp = ui.ctx().pixels_per_point();
         let out = area.show_viewport(ui, |ui, viewport| {
             let origin = ui.max_rect().min;
-            ui.allocate_rect(
+            // Sense::click: egui distingue clic de arrastre y solo lo
+            // entrega si ningún widget encima (barras, botones) lo tomó.
+            let canvas = ui.allocate_rect(
                 Rect::from_min_size(origin, vec2(content_w, content_h)),
-                Sense::hover(),
+                Sense::click(),
             );
             let painter = ui.painter();
             let prefetch = viewport.expand2(vec2(0.0, viewport.height()));
@@ -892,40 +891,24 @@ impl Preview {
             }
             self.renderer.set_jobs(self.generation, visible);
             self.evict(&keep);
-            // Inverso synctex: clic sin arrastre en una página → salto al código.
-            if ui.input(|i| i.pointer.primary_pressed()) {
-                self.press = hover;
-            } else if ui.input(|i| i.pointer.primary_down()) {
-                if let (Some(down), Some(cur)) = (self.press, hover)
-                    && down.distance(cur) >= 6.0
-                {
-                    self.press = None;
-                }
-            } else {
-                // primary_released (o sin botón): si hubo press cerca, es clic.
-                let click = self.press.take().and_then(|down| {
-                    hover
-                        .filter(|up| down.distance(*up) < 6.0)
-                        .map(|up| (down, up))
+            // Inverso synctex: clic en una página → salto al código.
+            if canvas.clicked()
+                && let Some(up) = canvas.interact_pointer_pos()
+                && let Some((page, _, y)) =
+                    page_pos(origin, &tops, &self.sizes, zoom, content_w, up)
+                && let Some(e) = crate::engine::line_for_pos(&info.sync, page, y)
+            {
+                actions.push(match &e.file {
+                    None => Action::JumpTo {
+                        line: e.line,
+                        col: e.col,
+                    },
+                    Some(f) => Action::OpenAt {
+                        path: info.root.join(f),
+                        line: e.line,
+                        col: e.col,
+                    },
                 });
-                if let Some((_, up)) = click
-                    && let Some((page, _, y)) =
-                        page_pos(origin, &tops, &self.sizes, zoom, content_w, up)
-                    && let Some(e) = crate::engine::line_for_pos(&info.sync, page, y)
-                {
-                    actions.push(match &e.file {
-                        None => Action::JumpTo {
-                            line: e.line,
-                            col: e.col,
-                        },
-                        Some(f) => Action::OpenAt {
-                            path: info.root.join(f),
-                            line: e.line,
-                            col: e.col,
-                        },
-                    });
-                }
-                self.press = None;
             }
         });
         self.last_content_h = content_h;

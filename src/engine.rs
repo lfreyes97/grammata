@@ -201,6 +201,9 @@ pub fn compile_pdf(text: &str, root: &Path, filename: &str) -> Compiled {
             (None, Vec::new())
         }
     };
+    // Como `typst watch`: sin esto la caché de memoización crece con cada
+    // revisión compilada durante toda la sesión.
+    comemo::evict(10);
     Compiled {
         pdf,
         diags,
@@ -296,7 +299,7 @@ fn locate_span(
     crate::diagnostics::locate_span(world, main, span)
 }
 
-/// Compila y escribe PNG/SVG por página, expandiendo `{p}` en el destino.
+/// Compila y escribe el PDF entero, o PNG/SVG por página expandiendo `{p}`.
 /// Bloqueante como antes (la exportación es una acción explícita).
 pub fn export_pages(
     text: &str,
@@ -317,6 +320,16 @@ pub fn export_pages(
     })?;
     if doc.pages().is_empty() {
         return Err("el documento no tiene páginas".to_string());
+    }
+    if fmt == "pdf" {
+        let bytes = typst_pdf::pdf(&doc, &typst_pdf::PdfOptions::default()).map_err(|errors| {
+            errors
+                .first()
+                .map(|e| e.message.to_string())
+                .unwrap_or_else(|| "falló la exportación a PDF".to_string())
+        })?;
+        return std::fs::write(dest_template, bytes)
+            .map_err(|e| format!("no se pudo escribir {}: {e}", dest_template.display()));
     }
     let multi = doc.pages().len() > 1;
     for (i, page) in doc.pages().iter().enumerate() {
@@ -433,5 +446,25 @@ mod tests {
         let out = compile_pdf("= Título\nHola", std::env::temp_dir().as_path(), "main.typ");
         assert!(out.pdf.is_some_and(|p| p.starts_with(b"%PDF")));
         assert!(out.diags.is_empty());
+    }
+
+    #[test]
+    fn exporta_pdf_entero() {
+        // PDF multipágina: un solo archivo PDF real, no PNG por página.
+        let dir = std::env::temp_dir().join(format!("typst-editor-pdf-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dest = dir.join("doc.pdf");
+        let out = export_pages(
+            "Uno\n#pagebreak()\nDos",
+            &dir,
+            "main.typ",
+            &dest,
+            "pdf",
+            None,
+        );
+        assert!(out.is_ok(), "{out:?}");
+        assert!(std::fs::read(&dest).unwrap().starts_with(b"%PDF"));
+        assert!(!dir.join("doc-1.pdf").exists());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

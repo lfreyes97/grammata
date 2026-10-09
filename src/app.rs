@@ -914,7 +914,7 @@ impl App {
             }
             return;
         }
-        // PNG/SVG: se recompila en proceso (el PDF usa el construido).
+        // PDF desactualizado, PNG o SVG: se recompila en proceso.
         let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref());
         match crate::engine::export_pages(&doc.text, &doc.root_dir(), &filename, &dest, fmt, ppi) {
             Ok(()) => self

@@ -20,6 +20,8 @@ typst-svg = "0.15.1"
 typst-render = "0.15.1"
 typst-kit = { version = "0.15.1", features = ["system-files", "system-packages", "universe-packages", "scan-fonts", "datetime", "system-downloader"] }
 typst-layout = "0.15.1"
+# Caché de memoización de typst: se purga tras cada compilación.
+comemo = "0.5.1"
 
 # Las dependencias (hayro, vello_cpu…) se optimizan también en debug:
 # sin esto el render de páginas PDF es ~20× más lento en `cargo run`.
