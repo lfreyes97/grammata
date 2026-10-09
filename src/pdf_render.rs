@@ -4,13 +4,13 @@
 //! la cola se *reemplaza*, así que lo que deja de verse al hacer scroll no se
 //! llega a renderizar. El hilo recuerda qué (página, escala) ya entregó en la
 //! generación actual para no repetir trabajo; `forget` lo invalida cuando la
-//! UI libera una textura.
+//! UI libera una textura (de página, miniatura o lupa).
 
 use hayro::hayro_interpret::InterpreterSettings;
 use hayro::hayro_syntax::Pdf;
 use hayro::vello_cpu::color::palette::css::WHITE;
 use hayro::{RenderCache, RenderSettings};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -165,8 +165,9 @@ fn worker(shared: SharedPair, tx: Sender<Event>, ctx: egui::Context) {
 
         let cache = RenderCache::new();
         let settings = InterpreterSettings::default();
-        // Escala (en bits) entregada por página en esta generación.
-        let mut done: HashMap<usize, u32> = HashMap::new();
+        // (página, escala en bits) entregados en esta generación: una página
+        // puede tener a la vez textura normal, miniatura y lupa.
+        let mut done: HashSet<(usize, u32)> = HashSet::new();
         loop {
             let job = {
                 let mut s = m.lock().unwrap();
@@ -178,13 +179,13 @@ fn worker(shared: SharedPair, tx: Sender<Event>, ctx: egui::Context) {
                         break None; // llegó otro PDF: reinicia
                     }
                     for p in s.forget.drain(..) {
-                        done.remove(&p);
+                        done.retain(|&(q, _)| q != p);
                     }
                     if s.jobs_generation == generation {
                         let next = s
                             .jobs
                             .iter()
-                            .position(|j| done.get(&j.page) != Some(&j.scale.to_bits()));
+                            .position(|j| !done.contains(&(j.page, j.scale.to_bits())));
                         if let Some(i) = next {
                             break Some(s.jobs.remove(i));
                         }
@@ -196,7 +197,7 @@ fn worker(shared: SharedPair, tx: Sender<Event>, ctx: egui::Context) {
             let Some(page) = pages.get(job.page) else {
                 continue;
             };
-            done.insert(job.page, job.scale.to_bits());
+            done.insert((job.page, job.scale.to_bits()));
             let pix = hayro::render(
                 page,
                 &cache,

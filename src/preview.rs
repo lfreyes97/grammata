@@ -70,7 +70,8 @@ pub struct Preview {
     thumb_want: HashMap<usize, f32>,
     /// Lupa: amplía la zona bajo el cursor.
     lens: bool,
-    lens_tex: Option<(usize, f32, egui::TextureHandle)>,
+    /// (página, escala, generación, textura) de la última lupa recibida.
+    lens_tex: Option<(usize, f32, u64, egui::TextureHandle)>,
     lens_want: Option<(usize, f32)>,
     /// (ratón, página, x_pt, y_pt) bajo el cursor para la lente.
     lens_hit: Option<(Pos2, usize, f32, f32)>,
@@ -141,6 +142,7 @@ impl Preview {
     fn reset_view(&mut self) {
         self.sizes.clear();
         self.textures.clear();
+        self.lens_tex = None;
         self.current_page = 0;
         self.scroll_to = Some((0, 0.0));
     }
@@ -203,7 +205,12 @@ impl Preview {
                         .is_some_and(|(p, s)| p == job.page && (s - job.scale).abs() < 1e-6)
                     {
                         let tex = ctx.load_texture("pdf-lens", image, egui::TextureOptions::LINEAR);
-                        self.lens_tex = Some((job.page, job.scale, tex));
+                        // La lupa anterior deja de estar en pantalla: que el
+                        // worker la vuelva a renderizar si se pide otra vez.
+                        if let Some((old, ..)) = self.lens_tex.take() {
+                            self.renderer.forget(old);
+                        }
+                        self.lens_tex = Some((job.page, job.scale, generation, tex));
                         continue;
                     }
                     match self.textures.get_mut(&job.page) {
@@ -373,8 +380,7 @@ impl Preview {
             .show(ctx, |ui| {
                 ui.set_min_size(vec2(LENS_SIZE, LENS_SIZE));
                 ui.set_max_size(vec2(LENS_SIZE, LENS_SIZE));
-                if let Some((lp, ls, tex)) = &self.lens_tex {
-                    let _ = lp;
+                if let Some((_, ls, _, tex)) = &self.lens_tex {
                     let [tw, th] = tex.size();
                     let (tw, th) = (tw as f32, th as f32);
                     // Subrect de LENS_SIZE*ppp texeles centrado en el cursor:
@@ -595,7 +601,9 @@ impl Preview {
                     {
                         self.show_thumbs = !self.show_thumbs;
                         if !self.show_thumbs {
-                            self.thumbs.clear();
+                            for (p, _) in self.thumbs.drain() {
+                                self.renderer.forget(p);
+                            }
                             self.thumb_want.clear();
                         }
                     }
@@ -612,7 +620,9 @@ impl Preview {
                     {
                         self.lens = !self.lens;
                         if !self.lens {
-                            self.lens_tex = None;
+                            if let Some((old, ..)) = self.lens_tex.take() {
+                                self.renderer.forget(old);
+                            }
                             self.lens_want = None;
                             self.lens_hit = None;
                         }
@@ -869,10 +879,9 @@ impl Preview {
                     {
                         self.lens_hit = Some((m, i, x, y));
                         let want_lens = desired_scale(self.sizes[i], zoom, ppp) * LENS_MAG;
-                        let fresh = self
-                            .lens_tex
-                            .as_ref()
-                            .is_some_and(|(p, s, _)| *p == i && (*s - want_lens).abs() < 1e-6);
+                        let fresh = self.lens_tex.as_ref().is_some_and(|(p, s, g, _)| {
+                            *p == i && (*s - want_lens).abs() < 1e-6 && *g == self.generation
+                        });
                         self.lens_want = Some((i, want_lens));
                         if !fresh {
                             visible.push(Job {
