@@ -357,80 +357,79 @@ impl Preview {
             });
     }
 
-    /// Lente de aumento sobre la zona del cursor (usa la textura dedicada).
+    /// Lente de aumento centrada en el puntero (usa la textura dedicada).
+    /// Se pinta en una capa propia, sin widget: no roba clic ni hover a la
+    /// página de debajo (el inverso synctex sigue funcionando con la lupa).
     fn draw_lens(&mut self, ui: &mut egui::Ui, pal: &Palette) {
         if !self.lens {
             return;
         }
-        let Some((mouse, _page, x_pt, y_pt)) = self.lens_hit else {
+        let Some((mouse, page, x_pt, y_pt)) = self.lens_hit else {
             return;
         };
-        let ctx = ui.ctx();
-        let ppp = ctx.pixels_per_point();
-        // Posición: junto al cursor, dentro del panel.
-        let screen = ui.max_rect();
-        let mut pos = mouse + vec2(18.0, 18.0);
-        pos.x = pos.x.min(screen.max.x - LENS_SIZE - 8.0);
-        pos.y = pos.y.min(screen.max.y - LENS_SIZE - 8.0);
-        pos.x = pos.x.max(screen.min.x + 8.0);
-        pos.y = pos.y.max(screen.min.y + 8.0);
-        egui::Area::new(ui.id().with("lens"))
-            .fixed_pos(pos)
-            .order(egui::Order::Foreground)
-            .show(ctx, |ui| {
-                ui.set_min_size(vec2(LENS_SIZE, LENS_SIZE));
-                ui.set_max_size(vec2(LENS_SIZE, LENS_SIZE));
-                if let Some((_, ls, _, tex)) = &self.lens_tex {
-                    let [tw, th] = tex.size();
-                    let (tw, th) = (tw as f32, th as f32);
-                    // Subrect de LENS_SIZE*ppp texeles centrado en el cursor:
-                    // a esa densidad equivale a 1:1 en pantalla.
-                    let half = LENS_SIZE * ppp * 0.5;
-                    let cx = x_pt * ls;
-                    let cy = y_pt * ls;
-                    let x0 = (cx - half).clamp(0.0, (tw - 2.0 * half).max(0.0));
-                    let y0 = (cy - half).clamp(0.0, (th - 2.0 * half).max(0.0));
-                    let uv = Rect::from_min_max(
-                        pos2(x0 / tw.max(1.0), y0 / th.max(1.0)),
-                        pos2(
-                            (x0 + 2.0 * half) / tw.max(1.0),
-                            (y0 + 2.0 * half) / th.max(1.0),
-                        ),
+        let ppp = ui.ctx().pixels_per_point();
+        let snap = |v: f32| (v * ppp).round() / ppp;
+        let half = LENS_SIZE * 0.5;
+        let rect = Rect::from_min_size(
+            pos2(snap(mouse.x - half), snap(mouse.y - half)),
+            vec2(LENS_SIZE, LENS_SIZE),
+        );
+        let painter = ui
+            .ctx()
+            .layer_painter(egui::LayerId::new(
+                egui::Order::Foreground,
+                ui.id().with("lens"),
+            ))
+            .with_clip_rect(ui.max_rect());
+        let radius = CornerRadius::same(6);
+        painter.rect_filled(rect, radius, pal.canvas);
+        match &self.lens_tex {
+            Some((p, ls, _, tex)) if *p == page => {
+                // Ventana de LENS_SIZE*ppp texeles centrada en el punto bajo
+                // el puntero (1:1 en pantalla). Sin clamp: cerca del borde de
+                // la página se ve el lienzo, y el centro sigue al puntero.
+                let [tw, th] = tex.size().map(|v| v as f32);
+                let k = ppp; // texeles por punto de pantalla
+                let x0 = x_pt * ls - half * k;
+                let y0 = y_pt * ls - half * k;
+                let vis = Rect::from_min_max(
+                    pos2(x0.max(0.0), y0.max(0.0)),
+                    pos2((x0 + LENS_SIZE * k).min(tw), (y0 + LENS_SIZE * k).min(th)),
+                );
+                if vis.is_positive() {
+                    let on_screen = Rect::from_min_max(
+                        rect.min + (vis.min - pos2(x0, y0)) / k,
+                        rect.min + (vis.max - pos2(x0, y0)) / k,
                     );
-                    egui::Frame::new()
-                        .fill(Color32::WHITE)
-                        .stroke(egui::Stroke::new(1.5, pal.accent))
-                        .corner_radius(CornerRadius::same(10))
-                        .inner_margin(0.0)
-                        .show(ui, |ui| {
-                            let (rect, _) =
-                                ui.allocate_exact_size(vec2(LENS_SIZE, LENS_SIZE), Sense::hover());
-                            let painter = ui.painter_at(rect);
-                            painter.image(tex.id(), rect, uv, Color32::WHITE);
-                            // Cruz central.
-                            let c = rect.center();
-                            painter.line_segment(
-                                [c - vec2(7.0, 0.0), c + vec2(7.0, 0.0)],
-                                egui::Stroke::new(1.0, pal.accent),
-                            );
-                            painter.line_segment(
-                                [c - vec2(0.0, 7.0), c + vec2(0.0, 7.0)],
-                                egui::Stroke::new(1.0, pal.accent),
-                            );
-                        });
-                } else {
-                    egui::Frame::new()
-                        .fill(pal.surface)
-                        .stroke(egui::Stroke::new(1.0, pal.border_strong))
-                        .corner_radius(CornerRadius::same(10))
-                        .inner_margin(0.0)
-                        .show(ui, |ui| {
-                            ui.centered_and_justified(|ui| {
-                                ui.spinner();
-                            });
-                        });
+                    let uv = Rect::from_min_max(
+                        pos2(vis.min.x / tw, vis.min.y / th),
+                        pos2(vis.max.x / tw, vis.max.y / th),
+                    );
+                    painter.image(tex.id(), on_screen, uv, Color32::WHITE);
                 }
-            });
+            }
+            // Aún no llega la textura de esta página.
+            _ => {
+                painter.text(
+                    rect.center(),
+                    Align2::CENTER_CENTER,
+                    icon::HOURGLASS_MEDIUM,
+                    FontId::proportional(22.0),
+                    pal.text_faint,
+                );
+            }
+        }
+        painter.rect_stroke(
+            rect,
+            radius,
+            egui::Stroke::new(1.5, pal.accent),
+            egui::StrokeKind::Outside,
+        );
+        // Cruz central: marca el punto exacto bajo el puntero.
+        let c = rect.center();
+        let cross = egui::Stroke::new(1.0, pal.accent);
+        painter.line_segment([c - vec2(7.0, 0.0), c + vec2(7.0, 0.0)], cross);
+        painter.line_segment([c - vec2(0.0, 7.0), c + vec2(0.0, 7.0)], cross);
     }
 
     /// Tira lateral de miniaturas: clic salta a la página.
