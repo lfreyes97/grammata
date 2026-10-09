@@ -43,6 +43,8 @@ pub struct Prefs {
     pub fit: FitMode,
     /// Fila de formato (tipografía, párrafo) bajo la barra superior.
     pub format_bar: bool,
+    /// Formato en línea fijado en esa fila (sin barra flotante).
+    pub inline_pinned: bool,
 }
 
 impl Default for Prefs {
@@ -55,6 +57,7 @@ impl Default for Prefs {
             zoom: 1.0,
             fit: FitMode::Width,
             format_bar: true,
+            inline_pinned: false,
         }
     }
 }

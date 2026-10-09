@@ -337,6 +337,9 @@ impl App {
             if k(M::CTRL, K::Space) {
                 self.st.editor.ac.forced = true
             }
+            if k(M::CTRL, K::Slash) {
+                a.push(Action::PrefixLines("// ".into()))
+            }
             let nums = [
                 K::Num1,
                 K::Num2,
@@ -522,6 +525,30 @@ impl App {
             }
             Action::JumpTo { line, col } => self.jump_to(line, col),
             Action::GotoPreviewPage { page, y } => self.st.preview.goto_position(page, y),
+            Action::SyncToPdf => {
+                let doc = self.st.docs.cur();
+                let at = match self.st.editor.selection {
+                    Some((a, _)) => a,
+                    None => self.st.editor.cursor.unwrap_or(0),
+                };
+                let (line, _) = text::char_to_line_col(&doc.text, at);
+                let pos = self
+                    .st
+                    .compiler
+                    .built
+                    .get(&doc.id)
+                    .and_then(|b| crate::engine::page_for_line(&b.sync, None, line));
+                match pos {
+                    Some((page, y)) => {
+                        layout::show_panel(&mut self.dock, Panel::Preview, cur);
+                        self.st.preview.goto_position(page, y);
+                    }
+                    None => self.st.set_status(
+                        "Sin posición en el PDF: compila un documento con encabezados",
+                        StatusKind::Info,
+                    ),
+                }
+            }
             Action::Select { start, end } => {
                 self.st.editor.goto = Some(Goto {
                     doc: cur,

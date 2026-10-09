@@ -1,6 +1,7 @@
 //! Barras de formato, en dos niveles:
 //! - Flotante sobre la selección: formato en línea rápido (negrita, cursiva,
-//!   subrayado, tachado, enlace, código).
+//!   subrayado, tachado, enlace, código) más comentar e ir al PDF. La
+//!   chincheta la manda a la fila fija (`Prefs::inline_pinned`).
 //! - Fila fija bajo la topbar (se muestra/oculta y se recuerda en `Prefs`):
 //!   estilo de párrafo, familia, tamaño, color, alineación, listas e imagen.
 //!
@@ -268,6 +269,9 @@ fn fmt_pt(s: f32) -> String {
 /// ancla vigente.
 /// Se llama tras el dock en `App::ui` (el ancla la guardó `doc_tab`).
 pub fn show(st: &mut State, ctx: &egui::Context) {
+    if st.prefs.inline_pinned {
+        return;
+    }
     let Some((a, b)) = st.editor.selection else {
         return;
     };
@@ -302,7 +306,7 @@ pub fn show(st: &mut State, ctx: &egui::Context) {
                 .corner_radius(egui::CornerRadius::same(14))
                 .inner_margin(Margin::symmetric(8, 6))
                 .show(ui, |ui| {
-                    if let Some(a) = inline_row(st, ui) {
+                    if let Some(a) = inline_row(st, ui, true) {
                         st.actions.push(a);
                     }
                 });
@@ -313,18 +317,35 @@ pub fn show(st: &mut State, ctx: &egui::Context) {
 /// o, sin ella, sobre el cursor.
 pub fn docked(st: &mut State, ui: &mut egui::Ui) {
     st.fmt.poll_fonts();
-    if let Some(a) = block_row(st, ui) {
-        st.actions.push(a);
-    }
+    let pal = theme::palette(ui.ctx());
+    ui.horizontal_wrapped(|ui| {
+        if st.prefs.inline_pinned {
+            if let Some(a) = inline_row(st, ui, false) {
+                st.actions.push(a);
+            }
+            widgets::vsep(ui, &pal);
+        }
+        if let Some(a) = block_row(st, ui) {
+            st.actions.push(a);
+        }
+    });
 }
 
-/// Formato en línea (flotante): negrita, cursiva, subrayado, tachado, enlace
-/// y código. La URL del enlace abre una segunda fila.
-fn inline_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
+/// Formato en línea: negrita, cursiva, subrayado, tachado, enlace, código,
+/// comentar e ir al PDF. Flotante termina con la chincheta (fijar en la fila
+/// de formato); fijada empieza con desfijar. La URL abre una segunda fila.
+fn inline_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Action> {
     let pal = theme::palette(ui.ctx());
     let mut act: Option<Action> = None;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
+        if !floating {
+            if widgets::icon_button(ui, icon::PUSH_PIN_SLASH, "Desfijar (flotante)").clicked() {
+                st.prefs.inline_pinned = false;
+                st.needs_persist = true;
+            }
+            widgets::vsep(ui, &pal);
+        }
         if widgets::icon_button(ui, icon::TEXT_BOLDER, "Negrita").clicked() {
             act = Some(Action::InsertSnippet("*${sel}*".into()));
         }
@@ -345,6 +366,22 @@ fn inline_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
         // Código en línea.
         if widgets::icon_button(ui, icon::CODE_SIMPLE, "Código").clicked() {
             act = Some(Action::InsertSnippet("`${sel:código}`".into()));
+        }
+        widgets::vsep(ui, &pal);
+        if widgets::icon_button(ui, "//", "Comentar línea/selección  (Ctrl+/)").clicked() {
+            act = Some(Action::PrefixLines("// ".into()));
+        }
+        if widgets::icon_button(ui, icon::FILE_PDF, "Ir al PDF").clicked() {
+            act = Some(Action::SyncToPdf);
+        }
+        if floating {
+            widgets::vsep(ui, &pal);
+            if widgets::icon_button(ui, icon::PUSH_PIN, "Fijar en la barra de formato").clicked() {
+                st.prefs.inline_pinned = true;
+                // Fijar en una fila oculta la haría desaparecer.
+                st.prefs.format_bar = true;
+                st.needs_persist = true;
+            }
         }
     });
     // Segunda fila: URL del enlace.
@@ -668,6 +705,17 @@ mod tests {
             Some("a\\\"b.png")
         );
         assert_eq!(image_path(root, Path::new("/otra/foto.png")), None);
+    }
+
+    #[test]
+    fn comentar_y_descomentar() {
+        let (t, _, _) = toggle_prefix("a\n  b\nc\n", 0, 5, "// ");
+        assert_eq!(t, "// a\n  // b\nc\n");
+        let (t, _, _) = toggle_prefix(&t, 0, 11, "// ");
+        assert_eq!(t, "a\n  b\nc\n");
+        // Un encabezado comentado sigue siendo encabezado al descomentar.
+        let (t, _, _) = toggle_prefix("= T\n", 1, 1, "// ");
+        assert_eq!(t, "// = T\n");
     }
 
     #[test]
