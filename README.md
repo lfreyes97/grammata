@@ -44,7 +44,7 @@ Sesión (pestañas, preferencias y diseño del dock) en
   se separan con espacios de los identificadores vecinos. Con texto seleccionado, las
   estructuras lo envuelven (`abs(sel)`).
 - **Snippets**: biblioteca de serie (documento, texto, listas, figuras y tablas,
-  matemáticas, código, diseño, referencias) y snippets propios guardados en
+  matemáticas, cálculo con `calc`, código, diseño, referencias) y snippets propios guardados en
   `~/.config/typst-editor/snippets.json` (botón + crea uno desde la selección).
   Marcadores: `${sel}` selección · `${sel:x}` selección o `x` · `${x}` relleno que queda
   seleccionado para escribir encima · `${}` cursor.
