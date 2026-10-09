@@ -801,20 +801,17 @@ impl Preview {
                 }
                 keep.push(i);
                 let rect = local.translate(origin.to_vec2());
-                // Snap a píxeles físicos: con filtro LINEAR un rect fraccional
-                // (p. ej. por centrar la página) re-muestrea toda la textura
-                // y el texto se ve borroso aunque la escala sea 1:1.
-                let rect = Rect::from_min_max(
+                let want = desired_scale(*s, zoom, ppp);
+                // Nitidez: esquina en un píxel físico y tamaño exacto de la
+                // textura (px enteros) → se dibuja 1:1, sin re-muestreo LINEAR
+                // que emborrone el texto.
+                let rect = Rect::from_min_size(
                     pos2(
                         (rect.min.x * ppp).round() / ppp,
                         (rect.min.y * ppp).round() / ppp,
                     ),
-                    pos2(
-                        (rect.max.x * ppp).round() / ppp,
-                        (rect.max.y * ppp).round() / ppp,
-                    ),
+                    page_px(*s, want) / ppp,
                 );
-                let want = desired_scale(*s, zoom, ppp);
                 let tex = self.textures.get(&i);
                 let fresh = tex.is_some_and(|t| t.generation == self.generation && t.scale == want);
                 if !fresh {
@@ -991,13 +988,23 @@ fn page_pos(
     None
 }
 
-/// Escala de render (px de pantalla por punto PDF), cuantizada a pasos de
-/// 2^(1/8) para no re-renderizar en cada frame de un zoom continuo.
+/// Escala de render (px físicos por punto PDF) exacta para el zoom actual:
+/// cuantizarla dejaba la textura un ~4 % fuera de 1:1 y el texto borroso.
 fn desired_scale(page_pt: Vec2, zoom: f32, ppp: f32) -> f32 {
-    let raw = zoom * PT_TO_PX * ppp;
-    let q = 2f32.powf((raw.log2() * 8.0).round() / 8.0);
-    let cap = pdf_render::MAX_SIDE / page_pt.x.max(page_pt.y).max(1.0);
-    q.min(cap)
+    // Ancho entero en píxeles físicos; el margen evita que el `floor` de
+    // hayro pierda un píxel por redondeo y la textura deje de ser 1:1.
+    let w = page_pt.x.max(1.0);
+    let px = (w * zoom * PT_TO_PX * ppp).round().max(1.0);
+    let cap = pdf_render::MAX_SIDE / w.max(page_pt.y);
+    ((px + 0.25) / w).min(cap)
+}
+
+/// Tamaño en píxeles de la página rasterizada a `scale` (como hayro: floor).
+fn page_px(page_pt: Vec2, scale: f32) -> Vec2 {
+    vec2(
+        (page_pt.x * scale).floor().max(1.0),
+        (page_pt.y * scale).floor().max(1.0),
+    )
 }
 
 fn step_zoom(z: f32, dir: i32) -> f32 {
@@ -1059,4 +1066,24 @@ fn error_banner(ui: &mut egui::Ui, pal: &Palette, errors: usize, actions: &mut V
                 actions.push(Action::ShowPanel(Panel::Problems));
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escala_da_textura_1_a_1() {
+        // A4 y carta, a varios zooms y densidades: el ancho rasterizado es
+        // exactamente el ancho en píxeles físicos del rect dibujado.
+        for page in [vec2(595.0, 842.0), vec2(612.0, 792.0), vec2(419.5, 595.3)] {
+            for zoom in [0.37, 0.5, 0.83, 1.0, 1.17, 1.5, 2.3] {
+                for ppp in [1.0, 1.25, 1.5, 2.0] {
+                    let want = desired_scale(page, zoom, ppp);
+                    let px = (page.x * zoom * PT_TO_PX * ppp).round();
+                    assert_eq!(page_px(page, want).x, px, "{page:?} z={zoom} ppp={ppp}");
+                }
+            }
+        }
+    }
 }
