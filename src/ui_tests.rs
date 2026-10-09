@@ -394,6 +394,9 @@ fn archivos_pliegan_y_abren() {
         .actions
         .push(Action::ShowPanel(Panel::Files));
     h.run_steps(5);
+    // El árbol se escanea en otro hilo.
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    h.run_steps(5);
     // "capitulos" plegada esconde a "uno.typ": se despliega y se abre.
     assert!(
         h.query_by_label_contains("uno.typ").is_none(),

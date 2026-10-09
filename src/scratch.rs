@@ -9,6 +9,8 @@ use crate::widgets;
 use egui::RichText;
 use egui::text::{CCursor, CCursorRange};
 use egui_phosphor::regular as icon;
+use std::path::PathBuf;
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
 /// Espera tras editar antes de re-renderizar.
@@ -36,6 +38,9 @@ pub struct Scratch {
     current: String,
     last_edit: Instant,
     pub error: Option<String>,
+    /// Hilo de render (se crea al primer uso) y clave pedida pendiente.
+    worker: Option<Worker>,
+    pending: Option<String>,
 }
 
 impl Default for Scratch {
@@ -48,7 +53,58 @@ impl Default for Scratch {
             current: String::new(),
             last_edit: Instant::now(),
             error: None,
+            worker: None,
+            pending: None,
         }
+    }
+}
+
+// ---------- Render en segundo plano ----------
+
+struct Job {
+    key: String,
+    src: String,
+    root: PathBuf,
+}
+
+struct Done {
+    key: String,
+    result: Result<egui::ColorImage, String>,
+}
+
+/// Compila y renderiza fuera del hilo de la interfaz: un `@preview` que se
+/// descarga o un fragmento pesado no congelan la app.
+struct Worker {
+    tx: Sender<Job>,
+    rx: Receiver<Done>,
+}
+
+impl Worker {
+    fn new(ctx: egui::Context) -> Self {
+        let (tx, rx_job) = channel::<Job>();
+        let (tx_out, rx) = channel::<Done>();
+        std::thread::Builder::new()
+            .name("typst-scratch".into())
+            // Como `compile.rs`: el compilador evalúa recursivamente.
+            .stack_size(64 << 20)
+            .spawn(move || {
+                while let Ok(mut job) = rx_job.recv() {
+                    // Si se encolaron varias, solo cuenta la última.
+                    while let Ok(newer) = rx_job.try_recv() {
+                        job = newer;
+                    }
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        crate::engine::render_preview(&job.src, &job.root, SCALE)
+                    }))
+                    .unwrap_or_else(|_| Err("error interno del compilador (panic)".into()));
+                    if tx_out.send(Done { key: job.key, result }).is_err() {
+                        break;
+                    }
+                    ctx.request_repaint();
+                }
+            })
+            .expect("hilo typst-scratch");
+        Self { tx, rx }
     }
 }
 
@@ -224,9 +280,11 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                                 .color(pal.text_faint),
                         );
                     } else {
-                        if key != s.rendered {
-                            if s.last_edit.elapsed() >= DEBOUNCE {
-                                match crate::engine::render_preview(&src, &root, SCALE) {
+                        // Resultados del hilo (puede llegar uno ya viejo:
+                        // se muestra igual y abajo se pide el actual).
+                        if let Some(w) = &s.worker {
+                            while let Ok(done) = w.rx.try_recv() {
+                                match done.result {
                                     Ok(img) => {
                                         s.tex = Some(ui.ctx().load_texture(
                                             "scratch-preview",
@@ -237,7 +295,25 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                                     }
                                     Err(e) => s.error = Some(e),
                                 }
-                                s.rendered = key;
+                                if s.pending.as_ref() == Some(&done.key) {
+                                    s.pending = None;
+                                }
+                                s.rendered = done.key;
+                            }
+                        }
+                        if key != s.rendered && s.pending.as_ref() != Some(&key) {
+                            if s.last_edit.elapsed() >= DEBOUNCE {
+                                let w = s
+                                    .worker
+                                    .get_or_insert_with(|| Worker::new(ui.ctx().clone()));
+                                let job = Job {
+                                    key: key.clone(),
+                                    src,
+                                    root,
+                                };
+                                if w.tx.send(job).is_ok() {
+                                    s.pending = Some(key);
+                                }
                             } else {
                                 ui.ctx()
                                     .request_repaint_after(DEBOUNCE - s.last_edit.elapsed());

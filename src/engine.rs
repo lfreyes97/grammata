@@ -246,7 +246,9 @@ pub fn render_preview(src: &str, root: &Path, scale: f32) -> Result<egui::ColorI
                 .to_string())
         }
     };
-    comemo::evict(10);
+    // Sin `comemo::evict`: cada llamada envejece toda la caché, y diez
+    // renders del borrador seguidos tirarían la del documento principal.
+    // Lo que deje esto lo limpia el `evict` de `compile_pdf`.
     out
 }
 
@@ -256,17 +258,15 @@ fn pixmap_to_image(pix: &tiny_skia::Pixmap) -> egui::ColorImage {
     let (w, h) = (pix.width() as usize, pix.height() as usize);
     let mut out = Vec::with_capacity(w * h * 4);
     for px in pix.data().chunks_exact(4) {
-        let (r, g, b, a) = (px[0] as f32, px[1] as f32, px[2] as f32, px[3] as f32);
-        if a <= 0.0 {
-            out.extend_from_slice(&[255, 255, 255, 255]);
-        } else {
-            // Despremultiplica mezclando sobre blanco.
-            let t = 255.0 / a;
-            out.push((r * t + 255.0 - a).clamp(0.0, 255.0) as u8);
-            out.push((g * t + 255.0 - a).clamp(0.0, 255.0) as u8);
-            out.push((b * t + 255.0 - a).clamp(0.0, 255.0) as u8);
-            out.push(255);
-        }
+        // Ya premultiplicado: sobre blanco es `c + 255·(1 − α)`, sin dividir
+        // por α (eso lo despremultiplicaba y aclaraba los bordes).
+        let white = 255 - px[3];
+        out.extend_from_slice(&[
+            px[0].saturating_add(white),
+            px[1].saturating_add(white),
+            px[2].saturating_add(white),
+            255,
+        ]);
     }
     egui::ColorImage::from_rgba_unmultiplied([w, h], &out)
 }
@@ -548,6 +548,17 @@ mod tests {
         let y = izq.y - 4.0;
         assert_eq!(line_for_pos(&s, 0, der.x + 5.0, y).unwrap().line, 3);
         assert_eq!(line_for_pos(&s, 0, izq.x + 5.0, y).unwrap().line, 2);
+    }
+
+    #[test]
+    fn mezcla_sobre_blanco() {
+        let mut pix = tiny_skia::Pixmap::new(3, 1).unwrap();
+        // Transparente, negro al 50 % y rojo al 50 % (premultiplicados).
+        pix.data_mut()
+            .copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 128, 128, 0, 0, 128]);
+        let img = pixmap_to_image(&pix);
+        let px: Vec<[u8; 4]> = img.pixels.iter().map(|c| c.to_array()).collect();
+        assert_eq!(px, [[255; 4], [127, 127, 127, 255], [255, 127, 127, 255]]);
     }
 
     #[test]

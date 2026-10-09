@@ -13,6 +13,7 @@ use egui::RichText;
 use egui_phosphor::regular as icon;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
 /// Profundidad máxima del árbol y tope de entradas (carpetas enormes no
@@ -44,6 +45,8 @@ pub struct FileMgr {
     scanned_root: Option<PathBuf>,
     scan_error: Option<String>,
     last_scan: Option<Instant>,
+    /// Escaneo en curso en otro hilo (raíz y resultado).
+    scanning: Option<Receiver<(PathBuf, std::io::Result<Vec<Entry>>)>>,
     expanded: HashSet<PathBuf>,
     selected: Option<PathBuf>,
     creating_dir: Option<bool>,
@@ -89,7 +92,12 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<Entry>) -> std::io::Result<()> {
     }
     let mut dirs: Vec<(PathBuf, String)> = Vec::new();
     let mut files: Vec<(PathBuf, String)> = Vec::new();
+    // Una sola carpeta enorme tampoco pasa del tope (se muestra una parte).
+    let room = MAX_ENTRIES - out.len();
     for e in std::fs::read_dir(dir)? {
+        if dirs.len() + files.len() >= room {
+            break;
+        }
         let e = e?;
         let name = e.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') {
@@ -108,6 +116,9 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<Entry>) -> std::io::Result<()> {
     dirs.sort_by_key(|a| a.1.to_lowercase());
     files.sort_by_key(|a| a.1.to_lowercase());
     for (path, name) in dirs {
+        if out.len() >= MAX_ENTRIES {
+            return Ok(());
+        }
         out.push(Entry {
             path: path.clone(),
             name,
@@ -117,14 +128,13 @@ fn walk(dir: &Path, depth: usize, out: &mut Vec<Entry>) -> std::io::Result<()> {
         // Un subdirectorio ilegible no tumba todo el árbol.
         let _ = walk(&path, depth + 1, out);
     }
-    for (path, name) in files {
-        out.push(Entry {
-            path,
-            name,
-            is_dir: false,
-            depth,
-        });
-    }
+    let room = MAX_ENTRIES.saturating_sub(out.len());
+    out.extend(files.into_iter().take(room).map(|(path, name)| Entry {
+        path,
+        name,
+        is_dir: false,
+        depth,
+    }));
     Ok(())
 }
 
@@ -260,20 +270,44 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
             a = p.parent();
         }
     }
-    let stale = new_root || st.files.last_scan.is_none_or(|t| t.elapsed() > RESCAN_EVERY);
-    if stale {
-        match scan(&root) {
-            Ok(entries) => {
-                st.files.entries = entries;
-                st.files.scan_error = None;
-            }
-            Err(e) => {
-                st.files.entries.clear();
-                st.files.scan_error = Some(e.to_string());
+    if new_root {
+        // Lo de la raíz anterior no vale: el árbol queda vacío hasta el
+        // primer escaneo de la nueva.
+        st.files.entries.clear();
+        st.files.scanning = None;
+        st.files.scanned_root = Some(root.clone());
+        st.files.last_scan = None;
+    }
+    // El escaneo va en otro hilo: una carpeta grande no congela la UI.
+    if let Some(rx) = &st.files.scanning
+        && let Ok((scanned, res)) = rx.try_recv()
+    {
+        st.files.scanning = None;
+        st.files.last_scan = Some(Instant::now());
+        if scanned == root {
+            match res {
+                Ok(entries) => {
+                    st.files.entries = entries;
+                    st.files.scan_error = None;
+                }
+                Err(e) => {
+                    st.files.entries.clear();
+                    st.files.scan_error = Some(e.to_string());
+                }
             }
         }
-        st.files.scanned_root = Some(root.clone());
-        st.files.last_scan = Some(Instant::now());
+    }
+    let stale = st.files.last_scan.is_none_or(|t| t.elapsed() > RESCAN_EVERY);
+    if stale && st.files.scanning.is_none() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let (dir, ctx) = (root.clone(), ui.ctx().clone());
+        std::thread::spawn(move || {
+            let res = scan(&dir);
+            if tx.send((dir, res)).is_ok() {
+                ctx.request_repaint();
+            }
+        });
+        st.files.scanning = Some(rx);
     }
 
     // Barra: actualizar, cambiar de carpeta, crear.
@@ -794,6 +828,19 @@ mod tests {
             .collect();
         assert_eq!(names, ["d:a", "d:b", "f:hondo.typ", "f:m.md", "f:z.typ"]);
         assert_eq!(out[1].depth, 1);
+    }
+
+    #[test]
+    fn tope_dentro_de_una_carpeta() {
+        let d = sandbox("tope");
+        let big = d.join("a").join("grande");
+        std::fs::create_dir_all(&big).unwrap();
+        for i in 0..MAX_ENTRIES + 50 {
+            std::fs::write(big.join(format!("f{i}.txt")), "").unwrap();
+        }
+        let out = scan(&d).unwrap();
+        assert_eq!(out.len(), MAX_ENTRIES);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
