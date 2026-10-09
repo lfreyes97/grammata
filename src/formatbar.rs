@@ -138,7 +138,9 @@ pub fn toggle_prefix(text: &str, a: usize, b: usize, prefix: &str) -> (String, u
         let hit = if a < b {
             *start < b && end > a
         } else {
-            *start <= a && a <= end
+            // El cursor pertenece a una sola línea: en columna 0 es la suya,
+            // no el final (tras el \n) de la anterior.
+            *start <= a && (a < end || i + 1 == lines.len())
         };
         if hit {
             touched.push(i);
@@ -607,6 +609,13 @@ mod tests {
         // Colapsada: línea del cursor.
         let (t, a, b) = toggle_prefix("uno\ndos\n", 5, 5, "+ ");
         assert_eq!((t.as_str(), a, b), ("uno\n+ dos\n", 4, 10));
+        // Colapsada en columna 0: solo esa línea, no también la anterior.
+        let (t, _, _) = toggle_prefix("uno\ndos\n", 4, 4, "- ");
+        assert_eq!(t, "uno\n- dos\n");
+        let (t, _, _) = toggle_prefix("uno\n\ntres", 4, 4, "- ");
+        assert_eq!(t, "uno\n- \ntres");
+        let (t, _, _) = toggle_prefix("uno\ndos", 7, 7, "- ");
+        assert_eq!(t, "uno\n- dos");
     }
 
     #[test]
