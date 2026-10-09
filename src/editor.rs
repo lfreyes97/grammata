@@ -2,7 +2,7 @@
 
 use crate::app::State;
 use crate::doc::DocId;
-use crate::syntax::{self, Completion};
+use crate::syntax;
 use crate::text;
 use crate::theme::{self, Palette};
 use crate::widgets;
@@ -86,33 +86,93 @@ fn hash_prefix(text: &str, cursor: usize) -> Option<(usize, String)> {
     Some((h, between.to_string()))
 }
 
-fn insert_completion(st: &mut State, di: usize, hash_byte: usize, c: &Completion) {
+fn insert_completion(st: &mut State, di: usize, hash_byte: usize, c: &AcItem) {
     let cursor = st.editor.cursor.unwrap_or(0);
     let doc = &mut st.docs.list[di];
     let cb = text::char_to_byte(&doc.text, cursor);
     if hash_byte > cb || !doc.text.is_char_boundary(hash_byte) {
         return;
     }
-    // Las formas de marcado (`= Título`, `- item`, `$ … $`, `<lbl>`) van sin `#`.
-    let markup = c.snippet.starts_with(['=', '-', '+', '$', '<']);
-    let replacement = if markup { c.snippet.to_string() } else { format!("#{}", c.snippet) };
+    let raw = completion_replacement(&c.snippet);
+    // Los snippets con marcadores `${…}` se expanden (selección actual como
+    // `${sel}`); si no, el hueco `..` marca dónde queda el cursor.
+    let (replacement, sel) = if raw.contains("${") {
+        let sel_text = match st.editor.selection {
+            Some((a, b)) if a < b => doc.text.chars().skip(a).take(b - a).collect(),
+            _ => String::new(),
+        };
+        let (text, sa, sb) = crate::snippets::expand(&raw, &sel_text);
+        (text, Some((sa, sb)))
+    } else {
+        (raw, None)
+    };
     doc.text.replace_range(hash_byte..cb, &replacement);
     doc.touch();
     let start = doc.text[..hash_byte].chars().count();
-    // Cursor dentro del primer `..` del snippet si lo hay (hueco a rellenar).
-    let (sel_start, sel_end) = match replacement.find("..") {
-        Some(b) => {
-            let s = start + replacement[..b].chars().count();
-            (s, s + 2)
-        }
-        None => {
-            let e = start + replacement.chars().count();
-            (e, e)
-        }
+    let (sel_start, sel_end) = match sel {
+        Some((sa, sb)) => (start + sa, start + sb),
+        None => match replacement.find("..") {
+            Some(b) => {
+                let s = start + replacement[..b].chars().count();
+                (s, s + 2)
+            }
+            None => {
+                let e = start + replacement.chars().count();
+                (e, e)
+            }
+        },
     };
     st.editor.goto = Some(Goto { doc: doc.id, start: sel_start, end: sel_end, focus: true });
     st.editor.ac.forced = false;
     st.needs_persist = true;
+}
+
+/// Cuerpo listo para sustituir el `#prefijo`: `#` delante solo si empieza
+/// por nombre (función/variable). El resto (`*negrita*`, `#link`,
+/// `/ término`, `= Tít`, …) va tal cual.
+fn completion_replacement(snippet: &str) -> String {
+    if snippet.starts_with(|ch: char| ch.is_alphanumeric() || ch == '_') {
+        format!("#{snippet}")
+    } else {
+        snippet.to_string()
+    }
+}
+
+/// Ítem del popup: de serie (`detail` fija) o propio (`detail` marcada).
+struct AcItem {
+    name: String,
+    snippet: String,
+    detail: String,
+}
+
+/// De serie por prefijo/subcadena (como `syntax::matching`) + propios por
+/// subcadena en nombre o cuerpo. Los propios van tras los de serie.
+fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
+    let p = prefix.to_lowercase();
+    let mut out: Vec<AcItem> = syntax::matching(prefix)
+        .iter()
+        .map(|c| AcItem { name: c.name.to_string(), snippet: c.snippet.to_string(), detail: c.detail.to_string() })
+        .collect();
+    if !p.is_empty() {
+        out.extend(
+            st.user_snippets
+                .iter()
+                .filter(|s| s.name.to_lowercase().contains(&p) || s.body.to_lowercase().contains(&p))
+                .map(|s| AcItem {
+                    name: s.name.clone(),
+                    snippet: s.body.clone(),
+                    detail: "snippet propio".to_string(),
+                }),
+        );
+    } else {
+        // Popup forzado (Ctrl+Espacio): todos los propios al final.
+        out.extend(st.user_snippets.iter().map(|s| AcItem {
+            name: s.name.clone(),
+            snippet: s.body.clone(),
+            detail: "snippet propio".to_string(),
+        }));
+    }
+    out
 }
 
 pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
@@ -138,9 +198,9 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
         st.editor.ac.dismissed = None;
     }
     let dismissed = st.editor.ac.dismissed.is_some();
-    let items: Vec<&'static Completion> = match &prefix {
-        Some((_, p)) if !dismissed => syntax::matching(p),
-        _ if st.editor.ac.forced && had_focus => syntax::matching(""),
+    let items: Vec<AcItem> = match &prefix {
+        Some((_, p)) if !dismissed => ac_items(st, p),
+        _ if st.editor.ac.forced && had_focus => ac_items(st, ""),
         _ => Vec::new(),
     };
     let popup = !items.is_empty();
@@ -168,7 +228,7 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
                 st.editor.ac.dismissed = Some((id, h));
             }
         } else if accept {
-            let c = items[*sel];
+            let c = &items[*sel];
             let h = match prefix {
                 Some((h, _)) => h,
                 None => text::char_to_byte(&st.docs.list[di].text, st.editor.cursor.unwrap_or(0)),
@@ -243,7 +303,7 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
                 let h = prefix
                     .map(|(h, _)| h)
                     .unwrap_or_else(|| text::char_to_byte(&st.docs.list[di].text, c));
-                insert_completion(st, di, h, items[i]);
+                insert_completion(st, di, h, &items[i]);
             }
         }
 }
@@ -291,7 +351,7 @@ fn completion_popup(
     ui: &egui::Ui,
     pal: &Palette,
     at: egui::Pos2,
-    items: &[&Completion],
+    items: &[AcItem],
     selected: &mut usize,
     pick: &mut Option<usize>,
 ) {
@@ -309,7 +369,7 @@ fn completion_popup(
                             .horizontal(|ui| {
                                 let name = RichText::new(format!("#{}", c.name)).monospace().color(if sel { pal.accent } else { pal.text });
                                 let resp = ui.add(egui::Button::new(name).selected(sel).frame_when_inactive(false).min_size(egui::vec2(140.0, 22.0)));
-                                ui.label(RichText::new(c.detail).small().color(pal.text_faint));
+                                ui.label(RichText::new(&c.detail).small().color(pal.text_faint));
                                 resp
                             })
                             .inner;
@@ -325,8 +385,13 @@ fn completion_popup(
                     }
                 });
                 ui.separator();
-                let snip = items.get(*selected).map(|c| c.snippet).unwrap_or("");
-                ui.label(RichText::new(snip).monospace().small().color(pal.text_dim));
+                // Vista previa con marcadores resueltos (como en el panel).
+                let preview: String = items
+                    .get(*selected)
+                    .map(|c| crate::snippets::expand(&c.snippet, "…").0)
+                    .unwrap_or_default();
+                let preview: String = preview.lines().next().unwrap_or("").chars().take(60).collect();
+                ui.label(RichText::new(preview).monospace().small().color(pal.text_dim));
                 ui.label(RichText::new("Tab/Enter inserta · Esc cierra").small().color(pal.text_faint));
             });
         });
@@ -438,4 +503,20 @@ pub fn find_step(st: &mut State, dir: i32) {
     f.current = Some(i);
     let (a, b) = f.matches[i];
     st.editor.goto = Some(Goto { doc: id, start: a, end: b, focus: false });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn almohadilla_solo_ante_nombre() {
+        assert_eq!(completion_replacement("table(x)"), "#table(x)");
+        assert_eq!(completion_replacement("let x = 1"), "#let x = 1");
+        assert_eq!(completion_replacement("*${sel}*"), "*${sel}*");
+        assert_eq!(completion_replacement("#link(..)[..]"), "#link(..)[..]");
+        assert_eq!(completion_replacement("/ término"), "/ término");
+        assert_eq!(completion_replacement("= Tít"), "= Tít");
+        assert_eq!(completion_replacement("`${sel}`"), "`${sel}`");
+    }
 }
