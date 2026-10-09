@@ -99,7 +99,12 @@ fn insert_completion(st: &mut State, di: usize, hash_byte: usize, c: &AcItem) {
     if hash_byte > cb || !doc.text.is_char_boundary(hash_byte) {
         return;
     }
-    let raw = completion_replacement(&c.snippet);
+    // Los propios son markup arbitrario: van tal cual, sin `#` automático.
+    let raw = if c.user {
+        c.snippet.clone()
+    } else {
+        completion_replacement(&c.snippet)
+    };
     // Los snippets con marcadores `${…}` se expanden (selección actual como
     // `${sel}`); si no, el hueco `..` marca dónde queda el cursor.
     let (replacement, sel) = if raw.contains("${") {
@@ -154,6 +159,8 @@ struct AcItem {
     name: String,
     snippet: String,
     detail: String,
+    /// Snippet propio: su cuerpo se inserta literal.
+    user: bool,
 }
 
 /// De serie por prefijo/subcadena (como `syntax::matching`) + propios por
@@ -166,6 +173,7 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
             name: c.name.to_string(),
             snippet: c.snippet.to_string(),
             detail: c.detail.to_string(),
+            user: false,
         })
         .collect();
     if !p.is_empty() {
@@ -179,6 +187,7 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
                     name: s.name.clone(),
                     snippet: s.body.clone(),
                     detail: "snippet propio".to_string(),
+                    user: true,
                 }),
         );
     } else {
@@ -187,6 +196,7 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
             name: s.name.clone(),
             snippet: s.body.clone(),
             detail: "snippet propio".to_string(),
+            user: true,
         }));
     }
     out
