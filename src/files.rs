@@ -162,6 +162,8 @@ pub fn docs_detach(docs: &mut Docs, gone: &Path) -> usize {
                 .is_some_and(|p| p.strip_prefix(gone).is_ok());
         if inside {
             d.path = None;
+            // Ya no hay copia en disco: cerrar debe pedir confirmación.
+            d.saved.clear();
             n += 1;
         }
     }
@@ -516,8 +518,10 @@ fn row(
                 r.request_focus();
                 st.files.rename_focus = false;
             }
-            let enter = r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            let esc = r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape));
+            // `lost_focus`: egui suelta el foco del singleline al pulsar Enter/Esc.
+            let live = r.has_focus() || r.lost_focus();
+            let enter = live && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            let esc = live && ui.input(|i| i.key_pressed(egui::Key::Escape));
             if enter {
                 commit_rename(st);
             } else if esc {
@@ -624,7 +628,9 @@ fn row(
         });
     });
     // Atajos sobre la selección: F2 renombra, Supr pide confirmación.
+    // Solo si ningún widget tiene el teclado (editor, campos de texto…).
     if selected
+        && ui.ctx().memory(|m| m.focused().is_none())
         && ui.input(|i| {
             i.key_pressed(egui::Key::F2) || i.key_pressed(egui::Key::Delete)
         })
@@ -669,13 +675,14 @@ fn create_row(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, root: &Pa
                 r.request_focus();
                 st.files.create_focus = false;
             }
+            let live = r.has_focus() || r.lost_focus();
             let go = ui.small_button("Crear").clicked()
-                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+                || (live && ui.input(|i| i.key_pressed(egui::Key::Enter)));
             if go {
                 commit_create(st, &parent);
             }
             if ui.small_button("✕").clicked()
-                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)))
+                || (live && ui.input(|i| i.key_pressed(egui::Key::Escape)))
             {
                 st.files.creating_dir = None;
             }
