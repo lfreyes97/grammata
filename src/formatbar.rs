@@ -3,7 +3,7 @@
 //!   subrayado, tachado, enlace, código) más comentar e ir al PDF. La
 //!   chincheta la manda a la fila fija (`Prefs::inline_pinned`).
 //! - Fila fija bajo la topbar (se muestra/oculta y se recuerda en `Prefs`):
-//!   estilo de párrafo, familia, tamaño, color, alineación, listas, imagen,
+//!   estilo de texto, familia, tamaño, color, alineación, listas, imagen,
 //!   tabla, ecuación, nota/referencia y página.
 //!
 //! Las acciones reutilizan
@@ -22,13 +22,10 @@ const SWATCHES: &[&str] = &[
     "#ffffff", "#1e1e1e", "#808000", "#ffa500", "#008080", "#0066cc", "#800080", "#e03131",
     "#f06595",
 ];
-/// Estilos de párrafo: etiqueta y prefijo de línea (`""` = texto normal).
-const STYLES: &[(&str, &str)] = &[
-    ("Texto normal", ""),
-    ("Título", "= "),
-    ("Subtítulo", "== "),
-    ("Sección", "=== "),
-];
+/// Encabezados por nivel: icono Phosphor y prefijo de línea.
+/// Quitar el encabezado se hace pulsando de nuevo el nivel activo (toggle).
+/// (Los iconos son `const`, así que la tabla se construye donde se usa.)
+const HEADING_MARKS: [&str; 4] = ["= ", "== ", "=== ", "==== "];
 const SIZES_PT: &[f32] = &[8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 18.0, 24.0, 32.0];
 
 /// Estado persistente de la barra (últimos valores usados + cachés).
@@ -422,7 +419,7 @@ fn inline_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Actio
     act
 }
 
-/// Tipografía, párrafo e inserción (fija): estilo de párrafo, familia,
+/// Tipografía, texto e inserción (fija): encabezado, familia,
 /// tamaño, color, alineación, listas, imagen, tabla, ecuación, nota y
 /// referencia, y página.
 fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
@@ -430,30 +427,42 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
     let mut act: Option<Action> = None;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        // Estilo de párrafo: muestra el de la línea del cursor.
+        // Encabezados H1–H4 en desplegable, cada fila con su icono.
         let level = {
             let doc = st.docs.cur();
             heading_level(&doc.text, st.editor.cursor.unwrap_or(0))
         };
-        let current = STYLES
-            .iter()
-            .find(|(_, mark)| mark.trim_end().len() == level)
-            .map_or("Encabezado", |(label, _)| *label);
+        let cur_icon = match level {
+            1 => icon::TEXT_H_ONE,
+            2 => icon::TEXT_H_TWO,
+            3 => icon::TEXT_H_THREE,
+            4 => icon::TEXT_H_FOUR,
+            _ => icon::TEXT_H,
+        };
+        let cur_label = match level {
+            0 => "Encabezado".to_string(),
+            1..=4 => format!("Encabezado {level}"),
+            // Nivel 5+: typst lo acepta, se muestra sin entrada propia.
+            _ => format!("Encabezado {level}"),
+        };
         widgets::combo(
             ui,
             &pal,
-            RichText::new(format!("{}  {current}", icon::PARAGRAPH)).small(),
+            RichText::new(format!("{cur_icon}  {cur_label}")).small(),
             128.0,
-            "Estilo de párrafo",
+            "Encabezado",
             |ui| {
                 ui.set_min_width(180.0);
-                for (label, mark) in STYLES {
-                    let text = if mark.is_empty() {
-                        label.to_string()
-                    } else {
-                        format!("{label}  ({})", mark.trim_end())
+                for (i, mark) in HEADING_MARKS.iter().enumerate() {
+                    let n = i + 1;
+                    let ic = match n {
+                        1 => icon::TEXT_H_ONE,
+                        2 => icon::TEXT_H_TWO,
+                        3 => icon::TEXT_H_THREE,
+                        _ => icon::TEXT_H_FOUR,
                     };
-                    if ui.selectable_label(*label == current, text).clicked() {
+                    let text = format!("{ic}  Encabezado {n}  ({})", mark.trim_end());
+                    if ui.selectable_label(level == n, text).clicked() {
                         act = Some(Action::PrefixLines(mark.to_string()));
                         ui.close();
                     }
