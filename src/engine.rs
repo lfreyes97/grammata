@@ -17,7 +17,7 @@ use typst::foundations::{Bytes, Datetime, Duration};
 use typst::layout::{Frame, FrameItem, Point, Transform};
 use typst::syntax::{FileId, LinkedNode, RootedPath, Source, Span, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook, TextItem};
-use typst::utils::LazyHash;
+use typst::utils::{LazyHash, Scalar};
 use typst::{Library, LibraryExt as _, World, compile};
 use typst_kit::datetime::Time;
 use typst_kit::downloader::SystemDownloader;
@@ -213,6 +213,62 @@ pub fn compile_pdf(text: &str, root: &Path, filename: &str) -> Compiled {
         ms: t0.elapsed().as_millis(),
         sync,
     }
+}
+
+/// Renderiza `src` (documento completo) a imagen para vistas previas
+/// pequeñas (p. ej. el borrador): primera página a `scale` px/pt.
+/// `Err` = primer mensaje de error.
+pub fn render_preview(src: &str, root: &Path, scale: f32) -> Result<egui::ColorImage, String> {
+    let world = EngineWorld::new(root.to_path_buf(), "borrador.typ", src.to_string());
+    let warned = compile::<PagedDocument>(&world);
+    let mut diags = diagnostics::from_warnings(&world, world.main_id, &warned.warnings);
+    let out = match warned.output {
+        Ok(doc) => {
+            let pix = doc.pages().first().map(|page| {
+                typst_render::render(
+                    page,
+                    &typst_render::RenderOptions {
+                        pixel_per_pt: Scalar::new(scale.clamp(0.5, 4.0) as f64),
+                        render_bleed: false,
+                    },
+                )
+            });
+            pix.map(|p| pixmap_to_image(&p))
+                .ok_or_else(|| "página vacía".to_string())
+        }
+        Err(errors) => {
+            let mut d = diagnostics::from_source(&world, world.main_id, &errors);
+            diags.append(&mut d);
+            Err(diags
+                .first()
+                .and_then(|d| d.message.lines().next())
+                .unwrap_or("no compila")
+                .to_string())
+        }
+    };
+    comemo::evict(10);
+    out
+}
+
+/// Pixmap premultiplicado de tiny-skia → `ColorImage` sobre fondo blanco
+/// (como la vista previa del PDF).
+fn pixmap_to_image(pix: &tiny_skia::Pixmap) -> egui::ColorImage {
+    let (w, h) = (pix.width() as usize, pix.height() as usize);
+    let mut out = Vec::with_capacity(w * h * 4);
+    for px in pix.data().chunks_exact(4) {
+        let (r, g, b, a) = (px[0] as f32, px[1] as f32, px[2] as f32, px[3] as f32);
+        if a <= 0.0 {
+            out.extend_from_slice(&[255, 255, 255, 255]);
+        } else {
+            // Despremultiplica mezclando sobre blanco.
+            let t = 255.0 / a;
+            out.push((r * t + 255.0 - a).clamp(0.0, 255.0) as u8);
+            out.push((g * t + 255.0 - a).clamp(0.0, 255.0) as u8);
+            out.push((b * t + 255.0 - a).clamp(0.0, 255.0) as u8);
+            out.push(255);
+        }
+    }
+    egui::ColorImage::from_rgba_unmultiplied([w, h], &out)
 }
 
 /// Cada tramo de texto de cada página con su línea fuente, recorriendo los

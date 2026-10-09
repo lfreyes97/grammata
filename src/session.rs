@@ -47,6 +47,9 @@ pub struct Prefs {
     pub inline_pinned: bool,
     /// Carpeta raíz del gestor de archivos (`None` = sin elegir).
     pub files_root: Option<PathBuf>,
+    /// Borrador persistido (texto + modo ecuación).
+    pub scratch_text: String,
+    pub scratch_equation: bool,
 }
 
 impl Default for Prefs {
@@ -61,6 +64,8 @@ impl Default for Prefs {
             format_bar: true,
             inline_pinned: false,
             files_root: None,
+            scratch_text: String::new(),
+            scratch_equation: true,
         }
     }
 }

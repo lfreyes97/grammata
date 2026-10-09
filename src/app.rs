@@ -12,6 +12,7 @@ use crate::layout::{self, Panel, Preset, Tab};
 use crate::panels::{self, OutlineCache};
 use crate::preview::{self, Preview};
 use crate::session::{self, Prefs, Session, SessionTab};
+use crate::scratch;
 use crate::snippets::{self, UserSnippet};
 use crate::symbols;
 use crate::templates;
@@ -103,6 +104,7 @@ pub struct State {
     pub snippet_query: String,
     pub template: templates::Article,
     pub files: files::FileMgr,
+    pub scratch: scratch::Scratch,
     pub user_snippets: Vec<UserSnippet>,
     pub fmt: FormatBar,
     force_compile: bool,
@@ -179,6 +181,10 @@ impl App {
         }
         layout::focus_doc(&mut dock, docs.cur_id());
 
+        let (scratch_text, scratch_equation) = (
+            session.prefs.scratch_text.clone(),
+            session.prefs.scratch_equation,
+        );
         let prefs = session.prefs;
         theme::apply(&ctx, prefs.dark);
         let st = State {
@@ -204,6 +210,7 @@ impl App {
             user_snippets: snippets::load_user(),
             template: templates::Article::default(),
             files: files::FileMgr::default(),
+            scratch: scratch::Scratch::from_session(scratch_text, scratch_equation),
             fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
         };
@@ -237,6 +244,8 @@ impl App {
             .collect();
         let layout = session::save_layout(&self.dock, &order);
         let recent = self.st.recent_symbols.clone();
+        self.st.prefs.scratch_text = self.st.scratch.text.clone();
+        self.st.prefs.scratch_equation = self.st.scratch.equation;
         let s = Session::new(
             tabs,
             self.st.docs.current,
@@ -291,6 +300,9 @@ impl App {
             }
             if k(cs, K::F) {
                 a.push(Action::TogglePanel(Panel::Files))
+            }
+            if k(cs, K::B) {
+                a.push(Action::TogglePanel(Panel::Scratch))
             }
             if k(M::SHIFT, K::F3) {
                 self.st.editor.pending_step = Some(-1)
@@ -1192,6 +1204,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Panel(Panel::Snippets) => snippets::panel(st, ui),
             Tab::Panel(Panel::Templates) => templates::panel(st, ui),
             Tab::Panel(Panel::Files) => files::panel(st, ui),
+            Tab::Panel(Panel::Scratch) => scratch::panel(st, ui),
         }
     }
 

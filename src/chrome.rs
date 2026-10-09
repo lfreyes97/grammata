@@ -200,6 +200,7 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                 Panel::Snippets,
                 Panel::Templates,
                 Panel::Files,
+                Panel::Scratch,
                 Panel::Symbols,
                 Panel::Outline,
             ] {
@@ -418,8 +419,7 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
                 });
             });
         }
-        Modal::GotoLine(input) => {
-            egui::Modal::new(egui::Id::new("goto-line")).show(ctx, |ui| {
+        Modal::GotoLine(input) => {            egui::Modal::new(egui::Id::new("goto-line")).show(ctx, |ui| {
                 ui.set_width(280.0);
                 ui.label(RichText::new("Ir a línea").size(15.0).color(pal.text));
                 ui.add_space(6.0);
@@ -509,7 +509,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Ctrl+G", "ir a línea"),
     ("Ctrl+Espacio", "autocompletar"),
     ("Ctrl+Mayús+O / V / M", "esquema · vista previa · problemas"),
-    ("Ctrl+Mayús+Y / I", "símbolos · snippets"),
+    ("Ctrl+Mayús+Y / I / T / F / B", "símbolos · snippets · plantillas · archivos · borrador"),
     ("Ctrl+= / - / 0", "tamaño de fuente"),
     ("Ctrl+rueda", "zoom de la vista previa"),
 ];

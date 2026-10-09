@@ -18,6 +18,7 @@ typst = "0.15.1"
 typst-pdf = "0.15.1"
 typst-svg = "0.15.1"
 typst-render = "0.15.1"
+tiny-skia = "0.12"
 typst-kit = { version = "0.15.1", features = ["embedded-fonts", "system-files", "system-packages", "universe-packages", "scan-fonts", "datetime", "system-downloader"] }
 typst-layout = "0.15.1"
 # Caché de memoización de typst: se purga tras cada compilación.

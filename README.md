@@ -18,8 +18,8 @@ guardar, `Ctrl+W` cerrar, `Ctrl+Tab` / `Ctrl+RePág/AvPág` / `Ctrl+1..9` cambia
 pestaña, `F5` compilar, `Ctrl+E` exportar PDF, `Ctrl+F` buscar (`Enter`/`F3` siguiente,
 `Mayús+Enter`/`Mayús+F3` anterior), `Ctrl+G` ir a línea, `Ctrl+Espacio` completar
 (`Tab`/`Enter` acepta), `Ctrl+= / - / 0` fuente, `Alt+Z` ajuste de línea,
-`Ctrl+Mayús+O / V / M` esquema · vista previa · problemas, `Ctrl+Mayús+Y / I / T / F` símbolos ·
-snippets · plantillas · archivos, `Ctrl+rueda` zoom del PDF.
+`Ctrl+Mayús+O / V / M` esquema · vista previa · problemas, `Ctrl+Mayús+Y / I / T / F / B` símbolos ·
+snippets · plantillas · archivos · borrador, `Ctrl+rueda` zoom del PDF.
 
 Sesión (pestañas, preferencias y diseño del dock) en
 `~/.config/typst-editor/session.json`. Las sesiones del formato anterior se migran solas.
@@ -54,6 +54,10 @@ Sesión (pestañas, preferencias y diseño del dock) en
 - **Archivos**: gestor de una carpeta elegible (persistida) con árbol (guías de
   jerarquía, migas de pan, menú contextual), abrir, crear, renombrar y eliminar
   con confirmación; las pestañas abiertas siguen al renombrado (`Ctrl+Mayús+F`).
+- **Borrador**: buffer temporal con vista previa en vivo para construir
+  ecuaciones (toda la biblioteca de snippets + inserción rápida, modo `$…$`)
+  o probar fragmentos y gráficos; se inserta en el cursor y persiste en la
+  sesión (`Ctrl+Mayús+B`).
 - **Problemas**: diagnósticos del compilador embebido con ubicación exacta
   (errores, advertencias, pistas); clic salta a la línea, también en archivos incluidos. Con errores se conserva
   la última vista previa válida y se avisa con un banner.
@@ -86,6 +90,7 @@ Sesión (pestañas, preferencias y diseño del dock) en
 | `snippets.rs` | panel de snippets, marcadores `${…}`, snippets del usuario |
 | `templates.rs` | builders de plantillas (Artículo): opciones → `.typ` que compila |
 | `files.rs` | gestor de archivos: árbol, abrir, crear, renombrar, eliminar |
+| `scratch.rs` | borrador con vista previa en vivo e inserción en el documento |
 | `layout.rs` | pestañas del dock, paneles, diseños predefinidos |
 | `session.rs` | sesión persistente |
 | `theme.rs` | paleta, estilos de egui/dock/editor, fuentes |

@@ -411,6 +411,75 @@ fn archivos_pliegan_y_abren() {
     assert_eq!(cur_text(&h), "= Uno\n");
 }
 
+/// Borrador: un snippet de la biblioteca se inserta en su buffer.
+#[test]
+#[ignore = "necesita GPU"]
+fn borrador_inserta_snippet() {
+    use egui_kittest::kittest::Queryable;
+    let tmp = std::env::temp_dir().join(format!("typst-editor-test-ss-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("cfg")).unwrap();
+    // SAFETY: único test que toca el entorno; se fija antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Scratch));
+    h.run_steps(5);
+    h.get_by_label_contains("Añadir snippet").click();
+    h.run_steps(5);
+    h.get_by_label_contains("Matemáticas").click();
+    h.run_steps(5);
+    h.get_by_label_contains("Fracción").click();
+    h.run_steps(5);
+    let t = h.state().st.scratch.text.clone();
+    assert!(t.contains("frac"), "el snippet no llegó al borrador: {t:?}");
+    // Un snippet con sus propios `$…$` no se duplica en modo ecuación.
+    h.get_by_label_contains("Añadir snippet").click();
+    h.run_steps(5);
+    h.get_by_label_contains("Matemáticas").click();
+    h.run_steps(5);
+    h.get_by_label_contains("Sumatorio").click();
+    h.run_steps(5);
+    let t = h.state().st.scratch.text.clone();
+    assert!(
+        t.contains("sum_") && !t.contains('$'),
+        "doble $$ en el borrador: {t:?}"
+    );
+}
+
+/// Borrador: un snippet de cálculo se previsualiza sin error en modo ecuación.
+#[test]
+#[ignore = "necesita GPU"]
+fn borrador_snippet_calc() {
+    use egui_kittest::kittest::Queryable;
+    let tmp = std::env::temp_dir().join(format!("typst-editor-test-cc-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("cfg")).unwrap();
+    // SAFETY: único test que toca el entorno; se fija antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Scratch));
+    h.run_steps(5);
+    h.get_by_label_contains("Añadir snippet").click();
+    h.run_steps(5);
+    h.get_by_label_contains("Cálculo").click();
+    h.run_steps(5);
+    h.get_by_label_contains("Discriminante").click();
+    h.run_steps(4);
+    std::thread::sleep(std::time::Duration::from_millis(600));
+    h.run_steps(6);
+    let st = &h.state().st.scratch;
+    assert!(st.text.contains("calc.pow"), "no llegó: {:?}", st.text);
+    assert!(st.error.is_none(), "error en preview: {:?}", st.error);
+}
+
 /// Cada símbolo, estructura y snippet de serie compila con el motor embebido.
 #[test]
 #[ignore = "compila ~100 documentos (lento)"]

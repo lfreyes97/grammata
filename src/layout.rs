@@ -19,15 +19,17 @@ pub enum Panel {
     Snippets,
     Templates,
     Files,
+    Scratch,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 7] = [
+    pub const ALL: [Panel; 8] = [
         Panel::Outline,
         Panel::Symbols,
         Panel::Snippets,
         Panel::Templates,
         Panel::Files,
+        Panel::Scratch,
         Panel::Preview,
         Panel::Problems,
     ];
@@ -41,6 +43,7 @@ impl Panel {
             Panel::Snippets => "Snippets",
             Panel::Templates => "Plantillas",
             Panel::Files => "Archivos",
+            Panel::Scratch => "Borrador",
         }
     }
 
@@ -53,6 +56,7 @@ impl Panel {
             Panel::Snippets => "Ctrl+Mayús+I",
             Panel::Templates => "Ctrl+Mayús+T",
             Panel::Files => "Ctrl+Mayús+F",
+            Panel::Scratch => "Ctrl+Mayús+B",
         }
     }
 
@@ -66,12 +70,21 @@ impl Panel {
             Panel::Snippets => i::BRACKETS_CURLY,
             Panel::Templates => i::ARTICLE,
             Panel::Files => i::FOLDER,
+            Panel::Scratch => i::PENCIL_LINE,
         }
     }
 
     /// Paneles de la columna lateral: se apilan como pestañas en un mismo nodo.
     fn is_side(self) -> bool {
-        matches!(self, Panel::Outline | Panel::Symbols | Panel::Snippets | Panel::Templates | Panel::Files)
+        matches!(
+            self,
+            Panel::Outline
+                | Panel::Symbols
+                | Panel::Snippets
+                | Panel::Templates
+                | Panel::Files
+                | Panel::Scratch
+        )
     }
 }
 
@@ -208,7 +221,9 @@ pub fn show_panel(dock: &mut DockState<Tab>, p: Panel, cur_doc: DocId) {
     // es el panel nuevo, aunque la doc de egui_dock diga lo contrario).
     let (split, frac) = match p {
         Panel::Preview => (Split::Right, 0.55),
-        Panel::Outline | Panel::Symbols | Panel::Snippets | Panel::Templates | Panel::Files => (Split::Left, 0.3),
+        Panel::Outline | Panel::Symbols | Panel::Snippets | Panel::Templates | Panel::Files | Panel::Scratch => {
+            (Split::Left, 0.3)
+        }
         Panel::Problems => (Split::Below, 0.74),
     };
     dock.split(at, split, frac, Node::leaf(tab));
