@@ -283,7 +283,8 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
         wrap,
         rows,
     };
-    let out = crate::code_view::show(ui, &format!("editor-{id}"), &mut doc.text, &opt, &pal);
+    let (out, scroll_id) =
+        crate::code_view::show(ui, &format!("editor-{id}"), &mut doc.text, &opt, &pal);
     if out.response.changed() {
         doc.touch();
         st.needs_persist = true;
@@ -338,7 +339,7 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
             .galley
             .pos_from_cursor(CCursor::new(b))
             .translate(out.galley_pos.to_vec2());
-        scroll_into_view(ui, id, view, r, row_h);
+        scroll_into_view(ui.ctx(), scroll_id, view, r, row_h);
     }
 
     // ---- Coincidencias de búsqueda resaltadas ----
@@ -374,20 +375,24 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
 }
 
 /// Lleva `target` (px de pantalla) al centro del editor si no está a la vista.
-/// Se toca el estado del ScrollArea de `code_view` directamente: un
-/// `scroll_to_rect` pedido desde fuera de su closure no le llega.
-fn scroll_into_view(ui: &egui::Ui, id: DocId, view: egui::Rect, target: egui::Rect, row_h: f32) {
+/// Opera sobre el estado del ScrollArea cuyo id devuelve `code_view::show`.
+fn scroll_into_view(
+    ctx: &egui::Context,
+    sid: egui::Id,
+    view: egui::Rect,
+    target: egui::Rect,
+    row_h: f32,
+) {
     if view
         .shrink2(egui::vec2(0.0, row_h * 2.0))
         .contains(target.center())
     {
         return;
     }
-    let sid = ui.make_persistent_id(format!("editor-{id}_outer_scroll"));
-    if let Some(mut s) = egui::scroll_area::State::load(ui.ctx(), sid) {
+    if let Some(mut s) = egui::scroll_area::State::load(ctx, sid) {
         s.offset.y = (s.offset.y + target.center().y - view.center().y).max(0.0);
-        s.store(ui.ctx(), sid);
-        ui.ctx().request_repaint();
+        s.store(ctx, sid);
+        ctx.request_repaint();
     }
 }
 

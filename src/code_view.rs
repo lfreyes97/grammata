@@ -34,15 +34,16 @@ fn cache_key(text: &str, size: f32, dark: bool) -> u64 {
     h.finish()
 }
 
-/// Dibuja el editor. `salt` identifica su estado (cursor, scroll); el
-/// ScrollArea usa `"{salt}_outer_scroll"` (ver `editor::scroll_into_view`).
+/// Dibuja el editor. `salt` identifica su estado (cursor, scroll).
+/// Devuelve la salida del `TextEdit` y el id del ScrollArea exterior (para
+/// llevar el scroll hasta el cursor desde fuera, sin replicar hashes).
 pub fn show(
     ui: &mut egui::Ui,
     salt: &str,
     text: &mut String,
     opt: &Options,
     pal: &Palette,
-) -> TextEditOutput {
+) -> (TextEditOutput, egui::Id) {
     let font = FontId::monospace(opt.font_size);
     let cache_id = ui.make_persistent_id(format!("{salt}_hl"));
     let digits = text.lines().count().max(1).to_string().len().max(2);
@@ -75,7 +76,7 @@ pub fn show(
     };
 
     let mut output = None;
-    egui::ScrollArea::both()
+    let area = egui::ScrollArea::both()
         .id_salt(format!("{salt}_outer_scroll"))
         .auto_shrink([false, false])
         .show(ui, |ui| {
@@ -103,7 +104,7 @@ pub fn show(
                 output = Some(out);
             });
         });
-    output.expect("TextEdit dibujado")
+    (output.expect("TextEdit dibujado"), area.id)
 }
 
 /// Números de línea (solo filas visibles) y resalte de la línea del cursor.
@@ -162,5 +163,32 @@ fn paint_gutter(
             line_bg,
             egui::epaint::RectShape::filled(full, 0.0, pal.surface_hover.gamma_multiply(0.55)),
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `show` devuelve el id del ScrollArea que localiza su estado: con él
+    /// `editor::scroll_into_view` desplaza sin replicar hashes (una
+    /// divergencia movía el cursor sin desplazar el editor, en silencio).
+    #[test]
+    fn show_devuelve_id_del_scroll() {
+        let mut h = egui_kittest::Harness::new_ui(|ui| {
+            let mut text = String::from("hola\n");
+            let opt = Options {
+                font_size: 14.0,
+                wrap: false,
+                rows: 4,
+            };
+            let pal = crate::theme::palette_for(false);
+            let (_out, sid) = show(ui, "editor-test", &mut text, &opt, &pal);
+            assert!(
+                egui::scroll_area::State::load(ui.ctx(), sid).is_some(),
+                "el id devuelto no localiza el estado del ScrollArea"
+            );
+        });
+        h.run_steps(2);
     }
 }

@@ -327,6 +327,51 @@ fn recorrido_de_la_ui() {
     assert_eq!(s.recent_symbols[0], "abs(${sel:x})");
 }
 
+/// El esquema navega al búfer: clic en una entrada → cursor en su línea
+/// (sin mover la vista previa).
+#[test]
+#[ignore = "necesita GPU"]
+fn esquema_navega_al_buffer() {
+    use egui_kittest::kittest::Queryable;
+    let tmp = std::env::temp_dir().join(format!("typst-editor-test-outline-{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    // SAFETY: único test que toca el entorno; se fija antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+
+    let mut h = harness();
+    h.run_steps(5);
+    assert!(layout::has_panel(&h.state().dock, Panel::Outline));
+    // El documento de ejemplo trae "= Hola Typst" y "== Formato".
+    h.get_by_label_contains("Formato").click();
+    h.run_steps(5);
+    let pages_before = h.state().st.preview.page_count();
+    let (l, _) = {
+        let a = h.state();
+        let c = a
+            .st
+            .editor
+            .cursor
+            .expect("el clic en el esquema no movió el cursor");
+        text::char_to_line_col(&a.st.docs.cur().text, c)
+    };
+    let esperado = {
+        let a = h.state();
+        a.st.docs
+            .cur()
+            .text
+            .lines()
+            .position(|l| l.starts_with("== Formato"))
+            .unwrap()
+            + 1
+    };
+    assert_eq!(l, esperado, "el clic en el esquema no llevó al cursor a su línea");
+    assert_eq!(
+        h.state().st.preview.page_count(),
+        pages_before,
+        "el esquema no debería cambiar la vista previa"
+    );
+}
+
 /// Cada símbolo, estructura y snippet de serie compila con el motor embebido.
 #[test]
 #[ignore = "compila ~100 documentos (lento)"]

@@ -9,24 +9,26 @@ use crate::widgets;
 use egui::{RichText, Sense};
 use egui_phosphor::regular as icon;
 
-/// Esquema cacheado por (doc, rev).
+/// Esquema cacheado por (doc, rev), más la última sección mostrada
+/// (para llevar el scroll hasta ella solo cuando cambia).
 #[derive(Default)]
 pub struct OutlineCache {
     key: Option<(u64, u64)>,
     items: Vec<outline::Item>,
+    last_active: Option<usize>,
 }
 
-/// Forward synctex: (página, y) del fichero/línea en el built actual.
-fn preview_pos(st: &State, file: Option<&str>, line: usize) -> Option<(usize, f32)> {
-    let doc = st.docs.cur();
-    let sync = &st.compiler.built.get(&doc.id)?.sync;
-    crate::engine::page_for_line(sync, file, line)
-}
-
+/// Esquema: clic mueve el cursor en el búfer (sin tocar la vista previa:
+/// la sincronización con el PDF va con el texto, no con el esquema).
 pub fn outline(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
     let doc = st.docs.cur();
     let key = (doc.id, doc.rev);
+    if st.outline.key.map(|(id, _)| id) != Some(key.0) {
+        // Otro documento: se vuelve a centrar su sección (no en cada
+        // pulsación: al escribir dentro de una sección no se toca el scroll).
+        st.outline.last_active = None;
+    }
     if st.outline.key != Some(key) {
         st.outline.items = outline::parse(&doc.text);
         st.outline.key = Some(key);
@@ -37,6 +39,9 @@ pub fn outline(st: &mut State, ui: &mut egui::Ui) {
     let active = items
         .iter()
         .rposition(|i| matches!(i.kind, Kind::Heading(_)) && i.char_idx <= cursor);
+    // Solo se lleva el scroll hasta la sección activa cuando esta cambia
+    // (moverse por el editor la sigue; hojear el esquema a mano no se pelea).
+    let want_scroll = st.outline.last_active != active;
 
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -47,7 +52,7 @@ pub fn outline(st: &mut State, ui: &mut egui::Ui) {
         egui::Frame::new().inner_margin(14).show(ui, |ui| {
             ui.label(RichText::new("Sin encabezados todavía.").color(pal.text_dim));
             ui.label(
-                RichText::new("Escribe `= Título` o `== Sección`.")
+                RichText::new("Escribe `= Encabezado 1` o `== Encabezado 2`.")
                     .small()
                     .color(pal.text_faint),
             );
@@ -65,12 +70,13 @@ pub fn outline(st: &mut State, ui: &mut egui::Ui) {
                     for (i, it) in items.iter().enumerate() {
                         let (ic, indent, color) = match it.kind {
                             Kind::Heading(l) => (
-                                if l == 1 {
-                                    icon::TEXT_H_ONE
-                                } else if l == 2 {
-                                    icon::TEXT_H_TWO
-                                } else {
-                                    icon::TEXT_H_THREE
+                                match l {
+                                    1 => icon::TEXT_H_ONE,
+                                    2 => icon::TEXT_H_TWO,
+                                    3 => icon::TEXT_H_THREE,
+                                    4 => icon::TEXT_H_FOUR,
+                                    5 => icon::TEXT_H_FIVE,
+                                    _ => icon::TEXT_H_SIX,
                                 },
                                 (l - 1) as f32 * 14.0,
                                 pal.text,
@@ -91,19 +97,22 @@ pub fn outline(st: &mut State, ui: &mut egui::Ui) {
                                         .min_size(egui::vec2(ui.available_width(), 24.0)),
                                 )
                                 .on_hover_text(format!("Línea {}", it.line));
+                            if selected && want_scroll {
+                                r.scroll_to_me(Some(egui::Align::Center));
+                            }
                             if r.clicked() {
-                                jump = Some((it.char_idx, it.line));
+                                jump = Some(it.char_idx);
                             }
                         });
                     }
                 });
         });
-    if let Some((c, line)) = jump {
+    if want_scroll {
+        st.outline.last_active = active;
+    }
+    if let Some(c) = jump {
+        // Solo el búfer: cursor, foco y scroll del editor. El PDF no se mueve.
         st.actions.push(Action::Select { start: c, end: c });
-        // Forward synctex: la preview acompaña al salto.
-        if let Some((page, y)) = preview_pos(st, None, line) {
-            st.actions.push(Action::GotoPreviewPage { page, y });
-        }
     }
 }
 

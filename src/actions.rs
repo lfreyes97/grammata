@@ -40,7 +40,8 @@ pub enum Action {
         col: usize,
     },
     /// Desplaza la vista previa a la página (0-based) y altura en puntos.
-    /// Es el "forward" del synctex: outline y problemas la empujan al saltar.
+    /// Es el "forward" del synctex: problemas la empuja al saltar
+    /// (el esquema solo mueve el cursor del búfer).
     GotoPreviewPage {
         page: usize,
         y: f32,
