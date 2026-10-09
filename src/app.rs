@@ -104,7 +104,7 @@ pub struct State {
 }
 
 impl State {
-    fn set_status(&mut self, msg: impl Into<String>, kind: StatusKind) {
+    pub(crate) fn set_status(&mut self, msg: impl Into<String>, kind: StatusKind) {
         self.status = Status {
             msg: msg.into(),
             kind,

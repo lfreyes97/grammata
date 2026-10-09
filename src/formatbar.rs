@@ -7,7 +7,7 @@
 //! `Action::PrefixLines` (prefijos de línea con toggle).
 
 use crate::actions::Action;
-use crate::app::State;
+use crate::app::{State, StatusKind};
 use crate::compile;
 use crate::theme;
 use crate::widgets;
@@ -547,22 +547,32 @@ fn bar_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Action> 
 
 /// Diálogo de imagen → cuerpo `image(…)` con ruta relativa al documento.
 fn pick_image(st: &mut State) -> Option<String> {
-    let mut dlg =
-        rfd::FileDialog::new().add_filter("Imagen", &["png", "jpg", "jpeg", "svg", "webp", "gif"]);
-    if let Some(dir) = st.docs.cur().path.as_deref().and_then(|p| p.parent()) {
-        dlg = dlg.set_directory(dir);
-    }
-    let p = dlg.pick_file()?;
-    let s = st
-        .docs
-        .cur()
-        .path
-        .as_deref()
-        .and_then(|d| d.parent())
-        .and_then(|dir| p.strip_prefix(dir).ok())
-        .map(|r| r.to_string_lossy().into_owned())
-        .unwrap_or_else(|| p.to_string_lossy().into_owned());
-    Some(format!("image(\"{s}\", width: 80%)"))
+    let root = st.docs.cur().root_dir();
+    let p = rfd::FileDialog::new()
+        .add_filter("Imagen", &["png", "jpg", "jpeg", "svg", "webp", "gif"])
+        .set_directory(&root)
+        .pick_file()?;
+    // Typst solo lee dentro de la raíz (la carpeta del documento).
+    let Some(path) = image_path(&root, &p) else {
+        st.set_status(
+            "La imagen debe estar dentro de la carpeta del documento",
+            StatusKind::Err,
+        );
+        return None;
+    };
+    Some(format!("#image(\"{path}\", width: 80%)"))
+}
+
+/// Ruta de `img` relativa a `root`, con `/` y escapada para un string typst.
+/// `None` si queda fuera de la raíz (typst no podría leerla).
+fn image_path(root: &std::path::Path, img: &std::path::Path) -> Option<String> {
+    let rel = img.strip_prefix(root).ok()?;
+    let joined = rel
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy())
+        .collect::<Vec<_>>()
+        .join("/");
+    Some(joined.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 #[cfg(test)]
@@ -616,6 +626,21 @@ mod tests {
         assert_eq!(t, "uno\n- \ntres");
         let (t, _, _) = toggle_prefix("uno\ndos", 7, 7, "- ");
         assert_eq!(t, "uno\n- dos");
+    }
+
+    #[test]
+    fn ruta_de_imagen() {
+        use std::path::Path;
+        let root = Path::new("/doc");
+        assert_eq!(
+            image_path(root, Path::new("/doc/img/foto.png")).as_deref(),
+            Some("img/foto.png")
+        );
+        assert_eq!(
+            image_path(root, Path::new("/doc/a\"b.png")).as_deref(),
+            Some("a\\\"b.png")
+        );
+        assert_eq!(image_path(root, Path::new("/otra/foto.png")), None);
     }
 
     #[test]
