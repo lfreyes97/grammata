@@ -141,12 +141,20 @@ pub fn palette(ctx: &egui::Context) -> Palette {
 
 pub fn apply(ctx: &egui::Context, dark: bool) {
     let p = palette_for(dark);
-    ctx.set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });
+    ctx.set_theme(if dark {
+        egui::Theme::Dark
+    } else {
+        egui::Theme::Light
+    });
     ctx.global_style_mut(|style| {
         let r6 = CornerRadius::same(6);
         let r4 = CornerRadius::same(4);
         let v = &mut style.visuals;
-        *v = if dark { egui::Visuals::dark() } else { egui::Visuals::light() };
+        *v = if dark {
+            egui::Visuals::dark()
+        } else {
+            egui::Visuals::light()
+        };
         v.panel_fill = p.chrome;
         v.window_fill = p.surface;
         v.window_stroke = Stroke::new(1.0, p.border_strong);
@@ -222,11 +230,23 @@ pub fn apply(ctx: &egui::Context, dark: bool) {
         s.scroll = egui::style::ScrollStyle::thin();
 
         style.text_styles = [
-            (TextStyle::Heading, FontId::new(17.0, FontFamily::Proportional)),
+            (
+                TextStyle::Heading,
+                FontId::new(17.0, FontFamily::Proportional),
+            ),
             (TextStyle::Body, FontId::new(13.5, FontFamily::Proportional)),
-            (TextStyle::Button, FontId::new(13.5, FontFamily::Proportional)),
-            (TextStyle::Small, FontId::new(11.5, FontFamily::Proportional)),
-            (TextStyle::Monospace, FontId::new(13.0, FontFamily::Monospace)),
+            (
+                TextStyle::Button,
+                FontId::new(13.5, FontFamily::Proportional),
+            ),
+            (
+                TextStyle::Small,
+                FontId::new(11.5, FontFamily::Proportional),
+            ),
+            (
+                TextStyle::Monospace,
+                FontId::new(13.0, FontFamily::Monospace),
+            ),
         ]
         .into();
     });
@@ -236,7 +256,12 @@ pub fn apply(ctx: &egui::Context, dark: bool) {
 pub fn dock_style(style: &egui::Style, p: &Palette) -> egui_dock::Style {
     use egui_dock::TabInteractionStyle;
     let mut s = egui_dock::Style::from_egui(style);
-    let r = CornerRadius { nw: 6, ne: 6, sw: 0, se: 0 };
+    let r = CornerRadius {
+        nw: 6,
+        ne: 6,
+        sw: 0,
+        se: 0,
+    };
     let tab = |bg: Color32, text: Color32, outline: Color32| TabInteractionStyle {
         bg_fill: bg,
         text_color: text,
@@ -297,9 +322,14 @@ pub fn install_fonts(ctx: &egui::Context) {
         .or_else(|| system_font("sans-serif:style=Regular", None));
     let mono_font = system_font("monospace:style=Regular", None);
     // Fuente matemática para el panel de símbolos (se ven como en el PDF).
-    let math_font = ["STIX Two Math", "Latin Modern Math", "New Computer Modern Math", "Noto Sans Math"]
-        .iter()
-        .find_map(|f| system_font(&format!("{f}:style=Regular"), Some("Math")));
+    let math_font = [
+        "STIX Two Math",
+        "Latin Modern Math",
+        "New Computer Modern Math",
+        "Noto Sans Math",
+    ]
+    .iter()
+    .find_map(|f| system_font(&format!("{f}:style=Regular"), Some("Math")));
 
     for (name, data, family) in [
         ("ui", ui_font, FontFamily::Proportional),
@@ -307,27 +337,43 @@ pub fn install_fonts(ctx: &egui::Context) {
     ] {
         if let Some(fd) = data {
             fonts.font_data.insert(name.into(), fd.into());
-            fonts.families.entry(family).or_default().insert(0, name.into());
+            fonts
+                .families
+                .entry(family)
+                .or_default()
+                .insert(0, name.into());
         }
     }
     // Familia "math": fuente matemática si la hay, y detrás la de la UI.
-    let mut math = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    let mut math = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
     if let Some(fd) = math_font {
         fonts.font_data.insert("math".into(), fd.into());
         math.insert(0, "math".into());
     }
     // "ui-math": la de la UI primero y la matemática para lo que le falte.
-    let mut ui_math = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    let mut ui_math = fonts
+        .families
+        .get(&FontFamily::Proportional)
+        .cloned()
+        .unwrap_or_default();
     if math.first().is_some_and(|f| f == "math") {
         ui_math.push("math".into());
     }
     fonts.families.insert(FontFamily::Name("math".into()), math);
-    fonts.families.insert(FontFamily::Name("ui-math".into()), ui_math);
+    fonts
+        .families
+        .insert(FontFamily::Name("ui-math".into()), ui_math);
     // Inter (y Adwaita Sans) tienen glifos en el área de uso privado, la misma
     // que usa Phosphor: si va detrás, Inter tapa los iconos. Va delante, pero
     // sin sus letras (ver `icons_only`).
     let icons = icons_only(egui_phosphor::Variant::Regular.font_bytes().to_vec());
-    fonts.font_data.insert("phosphor".into(), egui::FontData::from_owned(icons).into());
+    fonts
+        .font_data
+        .insert("phosphor".into(), egui::FontData::from_owned(icons).into());
     if let Some(prop) = fonts.families.get_mut(&FontFamily::Proportional) {
         prop.retain(|n| n != "phosphor");
         prop.insert(0, "phosphor".into());
@@ -342,10 +388,15 @@ pub fn install_fonts(ctx: &egui::Context) {
 /// fuente siguiente. Los segmentos se convierten en 0..k para seguir ordenados.
 fn icons_only(mut font: Vec<u8>) -> Vec<u8> {
     fn patch(f: &mut [u8]) -> Option<()> {
-        let u16_at = |f: &[u8], o: usize| Some(u16::from_be_bytes([*f.get(o)?, *f.get(o + 1)?]) as usize);
-        let u32_at = |f: &[u8], o: usize| Some(u32::from_be_bytes(f.get(o..o + 4)?.try_into().ok()?) as usize);
+        let u16_at =
+            |f: &[u8], o: usize| Some(u16::from_be_bytes([*f.get(o)?, *f.get(o + 1)?]) as usize);
+        let u32_at = |f: &[u8], o: usize| {
+            Some(u32::from_be_bytes(f.get(o..o + 4)?.try_into().ok()?) as usize)
+        };
         let tables = u16_at(f, 4)?;
-        let rec = (0..tables).map(|i| 12 + 16 * i).find(|&r| f.get(r..r + 4) == Some(b"cmap"))?;
+        let rec = (0..tables)
+            .map(|i| 12 + 16 * i)
+            .find(|&r| f.get(r..r + 4) == Some(b"cmap"))?;
         let cmap = u32_at(f, rec + 8)?;
         for i in 0..u16_at(f, cmap + 2)? {
             let st = cmap + u32_at(f, cmap + 4 + 8 * i + 4)?;
@@ -354,14 +405,21 @@ fn icons_only(mut font: Vec<u8>) -> Vec<u8> {
             }
             let seg = u16_at(f, st + 6)? / 2;
             let ends = st + 14;
-            let (starts, deltas, ranges) = (ends + 2 * seg + 2, ends + 4 * seg + 2, ends + 6 * seg + 2);
+            let (starts, deltas, ranges) =
+                (ends + 2 * seg + 2, ends + 4 * seg + 2, ends + 6 * seg + 2);
             for s in 0..seg {
                 if u16_at(f, ends + 2 * s)? >= 0xE000 {
                     break;
                 }
                 let v = s as u16;
-                for (base, val) in [(ends, v), (starts, v), (deltas, v.wrapping_neg()), (ranges, 0)] {
-                    f.get_mut(base + 2 * s..base + 2 * s + 2)?.copy_from_slice(&val.to_be_bytes());
+                for (base, val) in [
+                    (ends, v),
+                    (starts, v),
+                    (deltas, v.wrapping_neg()),
+                    (ranges, 0),
+                ] {
+                    f.get_mut(base + 2 * s..base + 2 * s + 2)?
+                        .copy_from_slice(&val.to_be_bytes());
                 }
             }
         }

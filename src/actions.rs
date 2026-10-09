@@ -12,7 +12,11 @@ pub enum Action {
     Open,
     OpenPath(PathBuf),
     /// Abre (o enfoca) un archivo y salta a L:C — errores en `#include`.
-    OpenAt { path: PathBuf, line: usize, col: usize },
+    OpenAt {
+        path: PathBuf,
+        line: usize,
+        col: usize,
+    },
     Save,
     SaveAs,
     /// Cierra pidiendo confirmación si hay cambios sin guardar.
@@ -31,12 +35,21 @@ pub enum Action {
     Find,
     GotoLinePrompt,
     /// Salta a L:C (desde 1) del documento actual.
-    JumpTo { line: usize, col: usize },
+    JumpTo {
+        line: usize,
+        col: usize,
+    },
     /// Desplaza la vista previa a la página (0-based) y altura en puntos.
     /// Es el "forward" del synctex: outline y problemas la empujan al saltar.
-    GotoPreviewPage { page: usize, y: f32 },
+    GotoPreviewPage {
+        page: usize,
+        y: f32,
+    },
     /// Selecciona el rango de chars `[start, end)` del documento actual.
-    Select { start: usize, end: usize },
+    Select {
+        start: usize,
+        end: usize,
+    },
     TogglePanel(Panel),
     ShowPanel(Panel),
     ApplyPreset(Preset),

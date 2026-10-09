@@ -32,7 +32,12 @@ pub fn parse(text: &str) -> Vec<Item> {
             continue;
         }
         let push = |out: &mut Vec<Item>, kind, title: String| {
-            out.push(Item { kind, title, line: ln + 1, char_idx: line_char_idx })
+            out.push(Item {
+                kind,
+                title,
+                line: ln + 1,
+                char_idx: line_char_idx,
+            })
         };
         if t.starts_with('=') {
             let lvl = t.chars().take_while(|&c| c == '=').count();

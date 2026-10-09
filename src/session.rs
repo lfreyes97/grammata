@@ -45,7 +45,14 @@ pub struct Prefs {
 
 impl Default for Prefs {
     fn default() -> Self {
-        Self { dark: true, font_size: 14.0, wrap: false, auto_compile: true, zoom: 1.0, fit: FitMode::Width }
+        Self {
+            dark: true,
+            font_size: 14.0,
+            wrap: false,
+            auto_compile: true,
+            zoom: 1.0,
+            fit: FitMode::Width,
+        }
     }
 }
 
@@ -75,7 +82,14 @@ impl Session {
         layout: DockState<SavedTab>,
         recent_symbols: Vec<String>,
     ) -> Self {
-        Self { tabs, current, prefs, layout: Some(layout), recent_symbols, ..Default::default() }
+        Self {
+            tabs,
+            current,
+            prefs,
+            layout: Some(layout),
+            recent_symbols,
+            ..Default::default()
+        }
     }
 }
 

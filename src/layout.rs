@@ -20,7 +20,13 @@ pub enum Panel {
 }
 
 impl Panel {
-    pub const ALL: [Panel; 5] = [Panel::Outline, Panel::Symbols, Panel::Snippets, Panel::Preview, Panel::Problems];
+    pub const ALL: [Panel; 5] = [
+        Panel::Outline,
+        Panel::Symbols,
+        Panel::Snippets,
+        Panel::Preview,
+        Panel::Problems,
+    ];
 
     pub fn title(self) -> &'static str {
         match self {
@@ -72,8 +78,12 @@ pub enum Preset {
 }
 
 impl Preset {
-    pub const ALL: [Preset; 4] =
-        [Preset::Classic, Preset::SideBySide, Preset::PreviewFocus, Preset::Writing];
+    pub const ALL: [Preset; 4] = [
+        Preset::Classic,
+        Preset::SideBySide,
+        Preset::PreviewFocus,
+        Preset::Writing,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -99,8 +109,13 @@ impl Preset {
         let s = d.main_surface_mut();
         match self {
             Preset::Classic => {
-                let [ed, _] = s.split_right(NodeIndex::root(), 0.55, vec![Tab::Panel(Panel::Preview)]);
-                let side = vec![Tab::Panel(Panel::Outline), Tab::Panel(Panel::Symbols), Tab::Panel(Panel::Snippets)];
+                let [ed, _] =
+                    s.split_right(NodeIndex::root(), 0.55, vec![Tab::Panel(Panel::Preview)]);
+                let side = vec![
+                    Tab::Panel(Panel::Outline),
+                    Tab::Panel(Panel::Symbols),
+                    Tab::Panel(Panel::Snippets),
+                ];
                 s.split_left(ed, 0.46, side);
             }
             Preset::SideBySide => {
@@ -123,14 +138,23 @@ pub fn has_panel(dock: &DockState<Tab>, p: Panel) -> bool {
 /// alguno). Cae en la raíz de la superficie principal.
 fn docs_node(dock: &DockState<Tab>, id: DocId) -> NodePath {
     if let Some(p) = dock.find_tab(&Tab::Doc(id)) {
-        return NodePath { surface: p.surface, node: p.node };
+        return NodePath {
+            surface: p.surface,
+            node: p.node,
+        };
     }
     for (path, tab) in dock.iter_all_tabs() {
         if matches!(tab, Tab::Doc(_)) {
-            return NodePath { surface: path.surface, node: path.node };
+            return NodePath {
+                surface: path.surface,
+                node: path.node,
+            };
         }
     }
-    NodePath { surface: SurfaceIndex::main(), node: NodeIndex::root() }
+    NodePath {
+        surface: SurfaceIndex::main(),
+        node: NodeIndex::root(),
+    }
 }
 
 /// Muestra u oculta un panel. Al mostrarlo lo coloca en su sitio natural
@@ -157,11 +181,12 @@ pub fn show_panel(dock: &mut DockState<Tab>, p: Panel, cur_doc: DocId) {
             .filter(|q| q.is_side())
             .find_map(|q| dock.find_tab(&Tab::Panel(q)));
         if let Some(path) = sibling
-            && let Node::Leaf(leaf) = &mut dock[path.surface][path.node] {
-                leaf.append_tab(tab);
-                let _ = leaf.set_active_tab(leaf.len() - 1);
-                return;
-            }
+            && let Node::Leaf(leaf) = &mut dock[path.surface][path.node]
+        {
+            leaf.append_tab(tab);
+            let _ = leaf.set_active_tab(leaf.len() - 1);
+            return;
+        }
     }
     let at = docs_node(dock, cur_doc);
     let empty = dock.iter_all_tabs().next().is_none();
@@ -201,6 +226,9 @@ pub fn add_doc(dock: &mut DockState<Tab>, id: DocId, near: DocId) {
 pub fn focus_doc(dock: &mut DockState<Tab>, id: DocId) {
     if let Some(path) = dock.find_tab(&Tab::Doc(id)) {
         let _ = dock.set_active_tab(path);
-        dock.set_focused_node_and_surface(NodePath { surface: path.surface, node: path.node });
+        dock.set_focused_node_and_surface(NodePath {
+            surface: path.surface,
+            node: path.node,
+        });
     }
 }

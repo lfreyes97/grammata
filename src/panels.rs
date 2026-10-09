@@ -46,43 +46,58 @@ pub fn outline(st: &mut State, ui: &mut egui::Ui) {
     if items.is_empty() {
         egui::Frame::new().inner_margin(14).show(ui, |ui| {
             ui.label(RichText::new("Sin encabezados todavía.").color(pal.text_dim));
-            ui.label(RichText::new("Escribe `= Título` o `== Sección`.").small().color(pal.text_faint));
+            ui.label(
+                RichText::new("Escribe `= Título` o `== Sección`.")
+                    .small()
+                    .color(pal.text_faint),
+            );
         });
         return;
     }
     let mut jump = None;
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 6)).show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 1.0;
-            for (i, it) in items.iter().enumerate() {
-                let (ic, indent, color) = match it.kind {
-                    Kind::Heading(l) => (
-                        if l == 1 { icon::TEXT_H_ONE } else if l == 2 { icon::TEXT_H_TWO } else { icon::TEXT_H_THREE },
-                        (l - 1) as f32 * 14.0,
-                        pal.text,
-                    ),
-                    Kind::Let => (icon::FUNCTION, 0.0, pal.text_dim),
-                    Kind::Label => (icon::TAG, 0.0, pal.text_dim),
-                };
-                let selected = active == Some(i);
-                let text = RichText::new(format!("{ic}  {}", it.title)).color(if selected { pal.accent } else { color });
-                ui.horizontal(|ui| {
-                    ui.add_space(indent);
-                    let r = ui
-                        .add(
-                            egui::Button::new((text, egui::Atom::grow()))
-                                .selected(selected)
-                                .frame_when_inactive(false)
-                                .min_size(egui::vec2(ui.available_width(), 24.0)),
-                        )
-                        .on_hover_text(format!("Línea {}", it.line));
-                    if r.clicked() {
-                        jump = Some((it.char_idx, it.line));
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(6, 6))
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    for (i, it) in items.iter().enumerate() {
+                        let (ic, indent, color) = match it.kind {
+                            Kind::Heading(l) => (
+                                if l == 1 {
+                                    icon::TEXT_H_ONE
+                                } else if l == 2 {
+                                    icon::TEXT_H_TWO
+                                } else {
+                                    icon::TEXT_H_THREE
+                                },
+                                (l - 1) as f32 * 14.0,
+                                pal.text,
+                            ),
+                            Kind::Let => (icon::FUNCTION, 0.0, pal.text_dim),
+                            Kind::Label => (icon::TAG, 0.0, pal.text_dim),
+                        };
+                        let selected = active == Some(i);
+                        let text = RichText::new(format!("{ic}  {}", it.title))
+                            .color(if selected { pal.accent } else { color });
+                        ui.horizontal(|ui| {
+                            ui.add_space(indent);
+                            let r = ui
+                                .add(
+                                    egui::Button::new((text, egui::Atom::grow()))
+                                        .selected(selected)
+                                        .frame_when_inactive(false)
+                                        .min_size(egui::vec2(ui.available_width(), 24.0)),
+                                )
+                                .on_hover_text(format!("Línea {}", it.line));
+                            if r.clicked() {
+                                jump = Some((it.char_idx, it.line));
+                            }
+                        });
                     }
                 });
-            }
         });
-    });
     if let Some((c, line)) = jump {
         st.actions.push(Action::Select { start: c, end: c });
         // Forward synctex: la preview acompaña al salto.
@@ -126,7 +141,11 @@ pub fn problems(st: &mut State, ui: &mut egui::Ui) {
 
     if diags.is_empty() {
         egui::Frame::new().inner_margin(14).show(ui, |ui| {
-            let msg = if built.is_some() { "Sin problemas." } else { "Aún no se ha compilado." };
+            let msg = if built.is_some() {
+                "Sin problemas."
+            } else {
+                "Aún no se ha compilado."
+            };
             ui.label(RichText::new(format!("{}  {msg}", icon::CHECK_CIRCLE)).color(pal.text_dim));
         });
         return;
@@ -137,52 +156,78 @@ pub fn problems(st: &mut State, ui: &mut egui::Ui) {
     // Owned para no prestar `st` dentro de los closures (abajo se usa &mut).
     let root = doc.root_dir();
     let sync = built.map(|b| b.sync.clone()).unwrap_or_default();
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        egui::Frame::new().inner_margin(egui::Margin::symmetric(6, 6)).show(ui, |ui| {
-            for d in diags {
-                let (ic, color) = match d.severity {
-                    Severity::Error => (icon::X_CIRCLE, pal.err),
-                    Severity::Warning => (icon::WARNING, pal.warn),
-                };
-                let bg = ui.painter().add(egui::Shape::Noop);
-                let r = egui::Frame::new()
-                    .inner_margin(egui::Margin::symmetric(8, 5))
-                    .corner_radius(6)
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        ui.horizontal_top(|ui| {
-                            ui.label(RichText::new(ic).color(color));
-                            ui.vertical(|ui| {
-                                ui.add(egui::Label::new(RichText::new(&d.message).color(pal.text)).wrap());
-                                for h in &d.hints {
-                                    ui.label(RichText::new(format!("{}  {h}", icon::LIGHTBULB)).small().color(pal.text_dim));
-                                }
-                                let loc = d.location();
-                                if !loc.is_empty() {
-                                    ui.label(RichText::new(loc).small().monospace().color(pal.text_faint));
-                                }
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(6, 6))
+                .show(ui, |ui| {
+                    for d in diags {
+                        let (ic, color) = match d.severity {
+                            Severity::Error => (icon::X_CIRCLE, pal.err),
+                            Severity::Warning => (icon::WARNING, pal.warn),
+                        };
+                        let bg = ui.painter().add(egui::Shape::Noop);
+                        let r = egui::Frame::new()
+                            .inner_margin(egui::Margin::symmetric(8, 5))
+                            .corner_radius(6)
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.horizontal_top(|ui| {
+                                    ui.label(RichText::new(ic).color(color));
+                                    ui.vertical(|ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(&d.message).color(pal.text),
+                                            )
+                                            .wrap(),
+                                        );
+                                        for h in &d.hints {
+                                            ui.label(
+                                                RichText::new(format!("{}  {h}", icon::LIGHTBULB))
+                                                    .small()
+                                                    .color(pal.text_dim),
+                                            );
+                                        }
+                                        let loc = d.location();
+                                        if !loc.is_empty() {
+                                            ui.label(
+                                                RichText::new(loc)
+                                                    .small()
+                                                    .monospace()
+                                                    .color(pal.text_faint),
+                                            );
+                                        }
+                                    });
+                                });
+                            })
+                            .response
+                            .interact(Sense::click());
+                        if r.hovered() {
+                            ui.painter().set(
+                                bg,
+                                egui::epaint::RectShape::filled(r.rect, 6.0, pal.surface_hover),
+                            );
+                        }
+                        let r = r.on_hover_cursor(egui::CursorIcon::PointingHand);
+                        if r.clicked()
+                            && let (Some(line), Some(col)) = (d.line, d.col)
+                        {
+                            act = Some(match &d.file {
+                                None => Action::JumpTo { line, col },
+                                Some(f) => Action::OpenAt {
+                                    path: root.join(f),
+                                    line,
+                                    col,
+                                },
                             });
-                        });
-                    })
-                    .response
-                    .interact(Sense::click());
-                if r.hovered() {
-                    ui.painter().set(bg, egui::epaint::RectShape::filled(r.rect, 6.0, pal.surface_hover));
-                }
-                let r = r.on_hover_cursor(egui::CursorIcon::PointingHand);
-                if r.clicked()
-                    && let (Some(line), Some(col)) = (d.line, d.col) {
-                        act = Some(match &d.file {
-                            None => Action::JumpTo { line, col },
-                            Some(f) => Action::OpenAt { path: root.join(f), line, col },
-                        });
-                        // Forward synctex: la preview acompaña al salto.
-                        go = crate::engine::page_for_line(&sync, d.file.as_deref(), line)
-                            .map(|(page, y)| Action::GotoPreviewPage { page, y });
+                            // Forward synctex: la preview acompaña al salto.
+                            go = crate::engine::page_for_line(&sync, d.file.as_deref(), line)
+                                .map(|(page, y)| Action::GotoPreviewPage { page, y });
+                        }
                     }
-            }
+                });
         });
-    });
     if let Some(a) = act {
         st.actions.push(a);
     }

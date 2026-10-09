@@ -26,9 +26,19 @@ pub struct Job {
 
 pub enum Event {
     /// PDF cargado: tamaño de cada página en puntos.
-    Loaded { generation: u64, sizes: Vec<egui::Vec2> },
-    Failed { generation: u64, error: String },
-    Page { generation: u64, job: Job, image: egui::ColorImage },
+    Loaded {
+        generation: u64,
+        sizes: Vec<egui::Vec2>,
+    },
+    Failed {
+        generation: u64,
+        error: String,
+    },
+    Page {
+        generation: u64,
+        job: Job,
+        image: egui::ColorImage,
+    },
 }
 
 #[derive(Default)]
@@ -58,7 +68,12 @@ impl PdfRenderer {
             .name("pdf-render".into())
             .spawn(move || worker(s, tx, ctx))
             .expect("hilo pdf-render");
-        Self { shared, rx, next_generation: 0, last_jobs: Vec::new() }
+        Self {
+            shared,
+            rx,
+            next_generation: 0,
+            last_jobs: Vec::new(),
+        }
     }
 
     /// Carga un PDF nuevo; devuelve su generación.
@@ -127,7 +142,10 @@ fn worker(shared: SharedPair, tx: Sender<Event>, ctx: egui::Context) {
         let pdf = match Pdf::new(data) {
             Ok(p) => p,
             Err(e) => {
-                let _ = tx.send(Event::Failed { generation, error: format!("PDF ilegible: {e:?}") });
+                let _ = tx.send(Event::Failed {
+                    generation,
+                    error: format!("PDF ilegible: {e:?}"),
+                });
                 ctx.request_repaint();
                 continue;
             }
@@ -175,7 +193,9 @@ fn worker(shared: SharedPair, tx: Sender<Event>, ctx: egui::Context) {
                 }
             };
             let Some(job) = job else { break };
-            let Some(page) = pages.get(job.page) else { continue };
+            let Some(page) = pages.get(job.page) else {
+                continue;
+            };
             done.insert(job.page, job.scale.to_bits());
             let pix = hayro::render(
                 page,
@@ -190,7 +210,14 @@ fn worker(shared: SharedPair, tx: Sender<Event>, ctx: egui::Context) {
             );
             let size = [pix.width() as usize, pix.height() as usize];
             let image = egui::ColorImage::from_rgba_premultiplied(size, pix.data_as_u8_slice());
-            if tx.send(Event::Page { generation, job, image }).is_err() {
+            if tx
+                .send(Event::Page {
+                    generation,
+                    job,
+                    image,
+                })
+                .is_err()
+            {
                 return;
             }
             ctx.request_repaint();

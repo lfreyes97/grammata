@@ -75,7 +75,12 @@ impl Compiler {
                 }
             })
             .expect("hilo typst-compile");
-        Self { tx, rx, in_flight: None, built: HashMap::new() }
+        Self {
+            tx,
+            rx,
+            in_flight: None,
+            built: HashMap::new(),
+        }
     }
 
     pub fn is_built(&self, key: Key) -> bool {
@@ -86,7 +91,16 @@ impl Compiler {
         if self.in_flight == Some(key) {
             return;
         }
-        if self.tx.send(Job { key, text, root, filename }).is_ok() {
+        if self
+            .tx
+            .send(Job {
+                key,
+                text,
+                root,
+                filename,
+            })
+            .is_ok()
+        {
             self.in_flight = Some(key);
         }
     }
@@ -109,7 +123,13 @@ impl Compiler {
             let sync = if has_pdf { out.sync } else { prev_sync };
             self.built.insert(
                 out.key.doc,
-                Built { key: out.key, pdf, diagnostics: out.diagnostics, ms: out.ms, sync },
+                Built {
+                    key: out.key,
+                    pdf,
+                    diagnostics: out.diagnostics,
+                    ms: out.ms,
+                    sync,
+                },
             );
             got.push(out.key);
         }
@@ -130,7 +150,13 @@ fn run(job: &Job) -> Output {
     match out {
         Ok(c) => {
             let pdf = c.pdf.map(Arc::new);
-            Output { key: job.key, pdf, diagnostics: c.diags, ms: c.ms, sync: c.sync }
+            Output {
+                key: job.key,
+                pdf,
+                diagnostics: c.diags,
+                ms: c.ms,
+                sync: c.sync,
+            }
         }
         Err(_) => {
             let diagnostics = vec![crate::diagnostics::Diagnostic {
@@ -141,7 +167,13 @@ fn run(job: &Job) -> Output {
                 message: "error interno del compilador (panic)".to_string(),
                 hints: Vec::new(),
             }];
-            Output { key: job.key, pdf: None, diagnostics, ms: 0, sync: Vec::new() }
+            Output {
+                key: job.key,
+                pdf: None,
+                diagnostics,
+                ms: 0,
+                sync: Vec::new(),
+            }
         }
     }
 }
@@ -155,4 +187,3 @@ pub fn typst_version() -> Option<String> {
 pub fn typst_fonts() -> Vec<String> {
     crate::engine::font_families()
 }
-

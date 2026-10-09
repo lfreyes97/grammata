@@ -19,12 +19,12 @@ use typst::syntax::{FileId, RootedPath, Source, Span, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt as _, World, compile};
-use typst_layout::PagedDocument;
 use typst_kit::datetime::Time;
 use typst_kit::downloader::SystemDownloader;
 use typst_kit::files::{FileStore, FsRoot, SystemFiles};
 use typst_kit::fonts::FontSource as _;
 use typst_kit::packages::SystemPackages;
+use typst_layout::PagedDocument;
 
 use crate::diagnostics::{self, Diagnostic};
 
@@ -40,7 +40,9 @@ static SHARED_FONTS: OnceLock<Arc<SharedFonts>> = OnceLock::new();
 fn shared_fonts() -> Arc<SharedFonts> {
     SHARED_FONTS
         .get_or_init(|| {
-            let fonts: Vec<Font> = typst_kit::fonts::system().filter_map(|(p, _)| p.load()).collect();
+            let fonts: Vec<Font> = typst_kit::fonts::system()
+                .filter_map(|(p, _)| p.load())
+                .collect();
             let book = FontBook::from_infos(fonts.iter().map(|f| f.info().clone()));
             Arc::new(SharedFonts { book, fonts })
         })
@@ -50,7 +52,11 @@ fn shared_fonts() -> Arc<SharedFonts> {
 /// Familias disponibles para el font pick (antes: shell a `typst fonts`).
 pub fn font_families() -> Vec<String> {
     let shared = shared_fonts();
-    let mut v: Vec<String> = shared.book.families().map(|(name, _)| name.to_string()).collect();
+    let mut v: Vec<String> = shared
+        .book
+        .families()
+        .map(|(name, _)| name.to_string())
+        .collect();
     v.sort();
     v.dedup();
     v
@@ -86,11 +92,15 @@ pub(crate) struct EngineWorld {
 
 impl EngineWorld {
     fn new(root: PathBuf, filename: &str, text: String) -> Self {
-        let vpath = VirtualPath::new(filename).unwrap_or_else(|_| VirtualPath::new("main.typ").expect("vpath"));
+        let vpath = VirtualPath::new(filename)
+            .unwrap_or_else(|_| VirtualPath::new("main.typ").expect("vpath"));
         let main_id = RootedPath::new(VirtualRoot::Project, vpath).intern();
         let shared = shared_fonts();
         let downloader = SystemDownloader::new(concat!("typst-editor/", env!("CARGO_PKG_VERSION")));
-        let files = FileStore::new(SystemFiles::new(FsRoot::new(root), SystemPackages::new(downloader)));
+        let files = FileStore::new(SystemFiles::new(
+            FsRoot::new(root),
+            SystemPackages::new(downloader),
+        ));
         Self {
             main_id,
             main_text: text,
@@ -191,7 +201,12 @@ pub fn compile_pdf(text: &str, root: &Path, filename: &str) -> Compiled {
             (None, Vec::new())
         }
     };
-    Compiled { pdf, diags, ms: t0.elapsed().as_millis(), sync }
+    Compiled {
+        pdf,
+        diags,
+        ms: t0.elapsed().as_millis(),
+        sync,
+    }
 }
 
 /// Encabezados del documento con página y posición, vía el introspector del
@@ -202,7 +217,9 @@ fn extract_sync(world: &EngineWorld, main: FileId, doc: &PagedDocument) -> Vec<S
     let mut last: Option<(Option<String>, usize, usize)> = None;
     for content in intro.query(&Selector::Elem(HeadingElem::ELEM, None)) {
         let (file, line, col) = locate_span(world, main, content.span());
-        let (Some(line), Some(col)) = (line, col) else { continue };
+        let (Some(line), Some(col)) = (line, col) else {
+            continue;
+        };
         let key = (file.clone(), line, col);
         // Un encabezado puede etiquetarse varias veces (cabeceras repetidas):
         // conserva la primera aparición.
@@ -215,7 +232,13 @@ fn extract_sync(world: &EngineWorld, main: FileId, doc: &PagedDocument) -> Vec<S
             .and_then(|loc| intro.position(loc))
             .map(|p: PagedPosition| (p.page.get() - 1, p.point.y.to_pt() as f32));
         let Some((page, y)) = page_y else { continue };
-        out.push(SyncEntry { file, line, col, page, y });
+        out.push(SyncEntry {
+            file,
+            line,
+            col,
+            page,
+            y,
+        });
     }
     out
 }
@@ -265,7 +288,11 @@ pub fn line_for_pos(sync: &[SyncEntry], page: usize, y: f32) -> Option<&SyncEntr
     best.or(first_in_page)
 }
 /// Atajo local al `locate_span` de diagnósticos.
-fn locate_span(world: &EngineWorld, main: FileId, span: Span) -> (Option<String>, Option<usize>, Option<usize>) {
+fn locate_span(
+    world: &EngineWorld,
+    main: FileId,
+    span: Span,
+) -> (Option<String>, Option<usize>, Option<usize>) {
     crate::diagnostics::locate_span(world, main, span)
 }
 
@@ -304,14 +331,16 @@ pub fn export_pages(
                         ..Default::default()
                     },
                 );
-                pix.encode_png().map_err(|e| format!("no se pudo codificar PNG: {e}"))?
+                pix.encode_png()
+                    .map_err(|e| format!("no se pudo codificar PNG: {e}"))?
             }
         };
         let dest = expand_dest(dest_template, fmt, multi, i + 1);
         if let Some(dir) = dest.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("no se pudo crear {dir:?}: {e}"))?;
         }
-        std::fs::write(&dest, bytes).map_err(|e| format!("no se pudo escribir {}: {e}", dest.display()))?;
+        std::fs::write(&dest, bytes)
+            .map_err(|e| format!("no se pudo escribir {}: {e}", dest.display()))?;
     }
     Ok(())
 }
@@ -322,7 +351,10 @@ fn expand_dest(template: &Path, fmt: &str, multi: bool, page: usize) -> PathBuf 
         return PathBuf::from(s.replace("{p}", &page.to_string()));
     }
     if multi {
-        let stem = template.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let stem = template
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
         return template.with_file_name(format!("{stem}-{page}.{fmt}"));
     }
     template.to_path_buf()
@@ -385,7 +417,9 @@ mod tests {
         assert!(warned.output.is_ok());
         let (w2, main2) = world_of("Hola #funcion_que_no_existe(1)");
         let warned = compile::<PagedDocument>(&w2);
-        let Err(errors) = warned.output else { panic!("debía fallar") };
+        let Err(errors) = warned.output else {
+            panic!("debía fallar")
+        };
         let d = diagnostics::from_source(&w2, main2, &errors);
         assert!(!d.is_empty());
         assert!(d.iter().all(|x| x.severity == diagnostics::Severity::Error));
@@ -397,7 +431,7 @@ mod tests {
     fn compila_sin_cli() {
         // El engine no depende del PATH: compila aunque no haya CLI.
         let out = compile_pdf("= Título\nHola", std::env::temp_dir().as_path(), "main.typ");
-        assert!(out.pdf.map_or(false, |p| p.starts_with(b"%PDF")));
+        assert!(out.pdf.is_some_and(|p| p.starts_with(b"%PDF")));
         assert!(out.diags.is_empty());
     }
 }

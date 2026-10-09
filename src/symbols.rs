@@ -25,11 +25,19 @@ pub struct Category {
 }
 
 const fn s(name: &'static str, glyph: &'static str) -> Sym {
-    Sym { label: glyph, insert: name, name }
+    Sym {
+        label: glyph,
+        insert: name,
+        name,
+    }
 }
 
 const fn t(label: &'static str, insert: &'static str, name: &'static str) -> Sym {
-    Sym { label, insert, name }
+    Sym {
+        label,
+        insert,
+        name,
+    }
 }
 
 pub const STRUCTURES: Category = Category {
@@ -51,11 +59,19 @@ pub const STRUCTURES: Category = Category {
         t("x̄", "overline(${sel:x})", "barra  overline(x)"),
         t("x→", "arrow(${sel:x})", "vector  arrow(x)"),
         t("ẋ", "dot(${sel:x})", "punto (derivada)  dot(x)"),
-        t("(ⁿₖ)", "binom(${n}, k)", "coeficiente binomial  binom(n, k)"),
+        t(
+            "(ⁿₖ)",
+            "binom(${n}, k)",
+            "coeficiente binomial  binom(n, k)",
+        ),
         t("(…)", "lr(( ${sel:x} ))", "paréntesis ajustables  lr(( ))"),
         t("[⋱]", "mat(${a}, b; c, d)", "matriz  mat(a, b; c, d)"),
         t("(⋮)", "vec(${x}, y, z)", "vector columna  vec(x, y, z)"),
-        t("{⋮", "cases(${x} &\"si\" x > 0, 0 &\"si no\")", "casos  cases(..)"),
+        t(
+            "{⋮",
+            "cases(${x} &\"si\" x > 0, 0 &\"si no\")",
+            "casos  cases(..)",
+        ),
         t("“t”", "\"${sel:texto}\"", "texto dentro de la ecuación"),
     ],
 };
@@ -230,7 +246,10 @@ pub const CATEGORIES: &[Category] = &[
 ];
 
 pub fn all() -> impl Iterator<Item = &'static Sym> {
-    STRUCTURES.items.iter().chain(CATEGORIES.iter().flat_map(|c| c.items.iter()))
+    STRUCTURES
+        .items
+        .iter()
+        .chain(CATEGORIES.iter().flat_map(|c| c.items.iter()))
 }
 
 fn find(insert: &str) -> Option<&'static Sym> {
@@ -246,7 +265,10 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
             ui.add(
                 egui::TextEdit::singleline(&mut st.symbol_query)
                     .id_salt("symbol-query")
-                    .hint_text(format!("{}  Buscar símbolo (alpha, flecha…)", egui_phosphor::regular::MAGNIFYING_GLASS))
+                    .hint_text(format!(
+                        "{}  Buscar símbolo (alpha, flecha…)",
+                        egui_phosphor::regular::MAGNIFYING_GLASS
+                    ))
                     .desired_width(f32::INFINITY),
             );
         });
@@ -256,56 +278,87 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
         in_math(&doc.text, st.editor.cursor.unwrap_or(0))
     };
     let mut pick: Option<&'static str> = None;
-    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-        egui::Frame::new().inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
-            let q = st.symbol_query.trim().to_lowercase();
-            if !q.is_empty() {
-                let hits: Vec<&Sym> = all().filter(|s| s.name.to_lowercase().contains(&q) || s.label == q).collect();
-                if hits.is_empty() {
-                    ui.label(RichText::new("Sin resultados.").color(pal.text_dim));
-                }
-                grid(ui, &pal, hits.into_iter(), &mut pick);
-            } else {
-                let recent: Vec<&Sym> = st.recent_symbols.iter().filter_map(|r| find(r)).collect();
-                if !recent.is_empty() {
-                    widgets::section_label(ui, &pal, "Recientes");
-                    grid(ui, &pal, recent.into_iter(), &mut pick);
-                    ui.add_space(6.0);
-                }
-                for cat in std::iter::once(&STRUCTURES).chain(CATEGORIES.iter()) {
-                    egui::CollapsingHeader::new(RichText::new(cat.name).color(pal.text))
-                        .default_open(true)
-                        .show(ui, |ui| grid(ui, &pal, cat.items.iter(), &mut pick));
-                }
-            }
-            ui.add_space(8.0);
-            let hint = if in_math {
-                "El cursor está en una ecuación: se inserta el nombre."
-            } else {
-                "Fuera de una ecuación se inserta como $…$."
-            };
-            ui.label(RichText::new(hint).small().color(pal.text_faint));
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(8, 6))
+                .show(ui, |ui| {
+                    let q = st.symbol_query.trim().to_lowercase();
+                    if !q.is_empty() {
+                        let hits: Vec<&Sym> = all()
+                            .filter(|s| s.name.to_lowercase().contains(&q) || s.label == q)
+                            .collect();
+                        if hits.is_empty() {
+                            ui.label(RichText::new("Sin resultados.").color(pal.text_dim));
+                        }
+                        grid(ui, &pal, hits.into_iter(), &mut pick);
+                    } else {
+                        let recent: Vec<&Sym> =
+                            st.recent_symbols.iter().filter_map(|r| find(r)).collect();
+                        if !recent.is_empty() {
+                            widgets::section_label(ui, &pal, "Recientes");
+                            grid(ui, &pal, recent.into_iter(), &mut pick);
+                            ui.add_space(6.0);
+                        }
+                        for cat in std::iter::once(&STRUCTURES).chain(CATEGORIES.iter()) {
+                            egui::CollapsingHeader::new(RichText::new(cat.name).color(pal.text))
+                                .default_open(true)
+                                .show(ui, |ui| grid(ui, &pal, cat.items.iter(), &mut pick));
+                        }
+                    }
+                    ui.add_space(8.0);
+                    let hint = if in_math {
+                        "El cursor está en una ecuación: se inserta el nombre."
+                    } else {
+                        "Fuera de una ecuación se inserta como $…$."
+                    };
+                    ui.label(RichText::new(hint).small().color(pal.text_faint));
+                });
         });
-    });
     if let Some(insert) = pick {
         st.actions.push(Action::InsertMath(insert.to_string()));
     }
 }
 
-fn grid(ui: &mut egui::Ui, pal: &Palette, items: impl Iterator<Item = &'static Sym>, pick: &mut Option<&'static str>) {
+fn grid(
+    ui: &mut egui::Ui,
+    pal: &Palette,
+    items: impl Iterator<Item = &'static Sym>,
+    pick: &mut Option<&'static str>,
+) {
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(3.0, 3.0);
         for s in items {
             // Símbolos sueltos con la fuente matemática (como en el PDF); las
             // estructuras combinan caracteres que esa fuente coloca raros.
-            let family = FontFamily::Name(if s.insert == s.name { "math" } else { "ui-math" }.into());
-            let label = RichText::new(s.label).family(family).size(if s.insert == s.name { 17.0 } else { 14.0 }).color(pal.text);
+            let family = FontFamily::Name(
+                if s.insert == s.name {
+                    "math"
+                } else {
+                    "ui-math"
+                }
+                .into(),
+            );
+            let label = RichText::new(s.label)
+                .family(family)
+                .size(if s.insert == s.name { 17.0 } else { 14.0 })
+                .color(pal.text);
             let r = ui
-                .add(egui::Button::new(label).fill(pal.surface_hover).min_size(egui::vec2(36.0, 32.0)))
+                .add(
+                    egui::Button::new(label)
+                        .fill(pal.surface_hover)
+                        .min_size(egui::vec2(36.0, 32.0)),
+                )
                 .on_hover_ui(|ui| {
                     ui.label(RichText::new(s.name).monospace().color(pal.text));
                     if s.insert != s.name {
-                        ui.label(RichText::new(crate::snippets::expand(s.insert, "").0).monospace().small().color(pal.text_dim));
+                        ui.label(
+                            RichText::new(crate::snippets::expand(s.insert, "").0)
+                                .monospace()
+                                .small()
+                                .color(pal.text_dim),
+                        );
                     }
                 });
             if r.clicked() {

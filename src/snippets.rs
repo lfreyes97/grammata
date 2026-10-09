@@ -35,11 +35,23 @@ pub const BUILTIN: &[Group] = &[
         name: "Documento",
         icon: icon::FILE_TEXT,
         items: &[
-            sn("Configuración básica", "#set page(paper: \"a4\", margin: 2.5cm)\n#set text(size: 11pt, lang: \"es\")\n#set par(justify: true)\n#set heading(numbering: \"1.1\")\n${}"),
-            sn("Título y autor", "#align(center)[\n  #text(size: 20pt, weight: \"bold\")[${Título}]\n\n  Autor · #datetime.today().display()\n]\n"),
+            sn(
+                "Configuración básica",
+                "#set page(paper: \"a4\", margin: 2.5cm)\n#set text(size: 11pt, lang: \"es\")\n#set par(justify: true)\n#set heading(numbering: \"1.1\")\n${}",
+            ),
+            sn(
+                "Título y autor",
+                "#align(center)[\n  #text(size: 20pt, weight: \"bold\")[${Título}]\n\n  Autor · #datetime.today().display()\n]\n",
+            ),
             sn("Índice", "#outline(title: [${Índice}])\n"),
-            sn("Encabezado y pie de página", "#set page(\n  header: align(right)[${Encabezado}],\n  numbering: \"1 / 1\",\n)\n"),
-            sn("Resumen", "#block(inset: (x: 2em))[\n  *Resumen.* ${sel:Texto del resumen.}\n]\n"),
+            sn(
+                "Encabezado y pie de página",
+                "#set page(\n  header: align(right)[${Encabezado}],\n  numbering: \"1 / 1\",\n)\n",
+            ),
+            sn(
+                "Resumen",
+                "#block(inset: (x: 2em))[\n  *Resumen.* ${sel:Texto del resumen.}\n]\n",
+            ),
         ],
     },
     Group {
@@ -51,7 +63,10 @@ pub const BUILTIN: &[Group] = &[
             sn("Código en línea", "`${sel:código}`"),
             sn("Enlace", "#link(\"${https://typst.app}\")[${sel:enlace}]"),
             sn("Nota al pie", "#footnote[${sel:nota}]"),
-            sn("Cita en bloque", "#quote(block: true, attribution: [${Autor}])[\n  ${sel:Cita.}\n]\n"),
+            sn(
+                "Cita en bloque",
+                "#quote(block: true, attribution: [${Autor}])[\n  ${sel:Cita.}\n]\n",
+            ),
             sn("Resaltado", "#highlight[${sel:texto}]"),
             sn("Texto en color", "#text(fill: ${blue})[${sel:texto}]"),
             sn("Versalitas", "#smallcaps[${sel:texto}]"),
@@ -71,9 +86,18 @@ pub const BUILTIN: &[Group] = &[
         name: "Figuras y tablas",
         icon: icon::TABLE,
         items: &[
-            sn("Imagen con pie", "#figure(\n  image(\"${imagen.png}\", width: 80%),\n  caption: [Descripción],\n) <fig:nombre>\n"),
-            sn("Tabla", "#table(\n  columns: 3,\n  table.header[*A*][*B*][*C*],\n  [${1}], [2], [3],\n  [4], [5], [6],\n)\n"),
-            sn("Tabla con pie", "#figure(\n  table(\n    columns: 2,\n    table.header[*Nombre*][*Valor*],\n    [${a}], [1],\n  ),\n  caption: [Descripción],\n) <tab:nombre>\n"),
+            sn(
+                "Imagen con pie",
+                "#figure(\n  image(\"${imagen.png}\", width: 80%),\n  caption: [Descripción],\n) <fig:nombre>\n",
+            ),
+            sn(
+                "Tabla",
+                "#table(\n  columns: 3,\n  table.header[*A*][*B*][*C*],\n  [${1}], [2], [3],\n  [4], [5], [6],\n)\n",
+            ),
+            sn(
+                "Tabla con pie",
+                "#figure(\n  table(\n    columns: 2,\n    table.header[*Nombre*][*Valor*],\n    [${a}], [1],\n  ),\n  caption: [Descripción],\n) <tab:nombre>\n",
+            ),
         ],
     },
     Group {
@@ -82,11 +106,23 @@ pub const BUILTIN: &[Group] = &[
         items: &[
             sn("Ecuación en línea", "$${sel:x}$"),
             sn("Ecuación en bloque", "$ ${sel:x} $"),
-            sn("Numerar ecuaciones", "#set math.equation(numbering: \"(1)\")\n${}"),
-            sn("Ecuaciones alineadas", "$ ${f(x)} &= (x + 1)^2 \\\n  &= x^2 + 2x + 1 $"),
-            sn("Sistema de casos", "$ f(x) = cases(\n  ${1} &\"si\" x > 0,\n  0 &\"si no\",\n) $"),
+            sn(
+                "Numerar ecuaciones",
+                "#set math.equation(numbering: \"(1)\")\n${}",
+            ),
+            sn(
+                "Ecuaciones alineadas",
+                "$ ${f(x)} &= (x + 1)^2 \\\n  &= x^2 + 2x + 1 $",
+            ),
+            sn(
+                "Sistema de casos",
+                "$ f(x) = cases(\n  ${1} &\"si\" x > 0,\n  0 &\"si no\",\n) $",
+            ),
             sn("Matriz", "$ A = mat(\n  ${1}, 2;\n  3, 4;\n) $"),
-            sn("Teorema", "#block(stroke: (left: 2pt + gray), inset: (left: 1em, y: 4pt))[\n  *Teorema.* ${sel:Enunciado.}\n]\n"),
+            sn(
+                "Teorema",
+                "#block(stroke: (left: 2pt + gray), inset: (left: 1em, y: 4pt))[\n  *Teorema.* ${sel:Enunciado.}\n]\n",
+            ),
         ],
     },
     Group {
@@ -104,10 +140,19 @@ pub const BUILTIN: &[Group] = &[
         name: "Diseño",
         icon: icon::LAYOUT,
         items: &[
-            sn("Dos columnas", "#columns(2)[\n  ${sel:Columna izquierda.}\n  #colbreak()\n  Columna derecha.\n]\n"),
-            sn("Rejilla", "#grid(\n  columns: (1fr, 1fr),\n  gutter: 1em,\n  [${A}], [B],\n)\n"),
+            sn(
+                "Dos columnas",
+                "#columns(2)[\n  ${sel:Columna izquierda.}\n  #colbreak()\n  Columna derecha.\n]\n",
+            ),
+            sn(
+                "Rejilla",
+                "#grid(\n  columns: (1fr, 1fr),\n  gutter: 1em,\n  [${A}], [B],\n)\n",
+            ),
             sn("Centrado", "#align(center)[${sel:texto}]"),
-            sn("Recuadro", "#rect(width: 100%, inset: 1em, radius: 4pt)[\n  ${sel:texto}\n]\n"),
+            sn(
+                "Recuadro",
+                "#rect(width: 100%, inset: 1em, radius: 4pt)[\n  ${sel:texto}\n]\n",
+            ),
             sn("Salto de página", "#pagebreak()\n${}"),
             sn("Espacio vertical", "#v(${1em})\n"),
         ],
@@ -118,7 +163,10 @@ pub const BUILTIN: &[Group] = &[
         items: &[
             sn("Etiqueta", "<${etiqueta}>"),
             sn("Referencia", "@${etiqueta}"),
-            sn("Bibliografía", "#bibliography(\"${refs.bib}\", style: \"apa\")\n"),
+            sn(
+                "Bibliografía",
+                "#bibliography(\"${refs.bib}\", style: \"apa\")\n",
+            ),
             sn("Cita", "#cite(<${clave}>)"),
         ],
     },
@@ -131,7 +179,9 @@ pub fn expand(body: &str, selection: &str) -> (String, usize, usize) {
     let mut target: Option<(usize, usize)> = None;
     let mut rest = body;
     while let Some(i) = rest.find("${") {
-        let Some(j) = rest[i + 2..].find('}') else { break };
+        let Some(j) = rest[i + 2..].find('}') else {
+            break;
+        };
         out.push_str(&rest[..i]);
         let inner = &rest[i + 2..i + 2 + j];
         rest = &rest[i + 3 + j..];
@@ -199,7 +249,9 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
-            if widgets::icon_button(ui, icon::PLUS, "Nuevo snippet (con la selección actual)").clicked() {
+            if widgets::icon_button(ui, icon::PLUS, "Nuevo snippet (con la selección actual)")
+                .clicked()
+            {
                 st.actions.push(Action::NewSnippet);
             }
             ui.add(
@@ -211,7 +263,9 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
         });
     });
     let q = st.snippet_query.trim().to_lowercase();
-    let matches = |name: &str, body: &str| q.is_empty() || name.to_lowercase().contains(&q) || body.to_lowercase().contains(&q);
+    let matches = |name: &str, body: &str| {
+        q.is_empty() || name.to_lowercase().contains(&q) || body.to_lowercase().contains(&q)
+    };
     let mut act: Option<Action> = None;
 
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
@@ -279,20 +333,40 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
 }
 
 /// Fila de snippet: nombre a la izquierda, primera línea del cuerpo atenuada.
-fn row(ui: &mut egui::Ui, pal: &theme::Palette, name: &str, body: &str, width: f32) -> egui::Response {
-    let preview: String = expand(body, "…").0.lines().next().unwrap_or("").chars().take(28).collect();
+fn row(
+    ui: &mut egui::Ui,
+    pal: &theme::Palette,
+    name: &str,
+    body: &str,
+    width: f32,
+) -> egui::Response {
+    let preview: String = expand(body, "…")
+        .0
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(28)
+        .collect();
     ui.add_sized(
         [width, 24.0],
         egui::Button::new((
             RichText::new(name).color(pal.text),
             egui::Atom::grow(),
-            RichText::new(preview).monospace().small().color(pal.text_faint),
+            RichText::new(preview)
+                .monospace()
+                .small()
+                .color(pal.text_faint),
         ))
         .frame_when_inactive(false)
         .truncate(),
     )
     .on_hover_ui(|ui| {
-        ui.label(RichText::new(expand(body, "⟨selección⟩").0).monospace().color(pal.text));
+        ui.label(
+            RichText::new(expand(body, "⟨selección⟩").0)
+                .monospace()
+                .color(pal.text),
+        );
     })
 }
 
@@ -302,21 +376,31 @@ pub fn edit_modal(ctx: &egui::Context, e: &mut Editing) -> Option<bool> {
     let mut done = None;
     egui::Modal::new(egui::Id::new("edit-snippet")).show(ctx, |ui| {
         ui.set_width(460.0);
-        let title = if e.index.is_some() { "Editar snippet" } else { "Nuevo snippet" };
+        let title = if e.index.is_some() {
+            "Editar snippet"
+        } else {
+            "Nuevo snippet"
+        };
         ui.label(RichText::new(title).size(15.0).color(pal.text));
         ui.add_space(8.0);
         widgets::section_label(ui, &pal, "Nombre");
-        ui.add(egui::TextEdit::singleline(&mut e.name).hint_text("Mi snippet").desired_width(f32::INFINITY));
+        ui.add(
+            egui::TextEdit::singleline(&mut e.name)
+                .hint_text("Mi snippet")
+                .desired_width(f32::INFINITY),
+        );
         ui.add_space(6.0);
         widgets::section_label(ui, &pal, "Contenido");
-        egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut e.body)
-                    .code_editor()
-                    .desired_rows(8)
-                    .desired_width(f32::INFINITY),
-            );
-        });
+        egui::ScrollArea::vertical()
+            .max_height(260.0)
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut e.body)
+                        .code_editor()
+                        .desired_rows(8)
+                        .desired_width(f32::INFINITY),
+                );
+            });
         ui.label(
             RichText::new("${sel} selección · ${sel:x} selección o x · ${x} relleno · ${} cursor")
                 .small()
@@ -326,7 +410,14 @@ pub fn edit_modal(ctx: &egui::Context, e: &mut Editing) -> Option<bool> {
         ui.add_space(10.0);
         ui.horizontal(|ui| {
             let ok = !e.name.trim().is_empty() && !e.body.is_empty();
-            if ui.add_enabled(ok, egui::Button::new(RichText::new("Guardar").color(pal.on_accent)).fill(pal.accent)).clicked() {
+            if ui
+                .add_enabled(
+                    ok,
+                    egui::Button::new(RichText::new("Guardar").color(pal.on_accent))
+                        .fill(pal.accent),
+                )
+                .clicked()
+            {
                 done = Some(true);
             }
             if ui.button("Cancelar").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -345,8 +436,14 @@ mod tests {
     fn expande_marcadores() {
         assert_eq!(expand("*${sel:texto}*", "hola"), ("*hola*".into(), 6, 6));
         assert_eq!(expand("*${sel:texto}*", ""), ("*texto*".into(), 1, 6));
-        assert_eq!(expand("frac(${sel:a}, ${b})", ""), ("frac(a, b)".into(), 5, 6));
-        assert_eq!(expand("frac(${sel:a}, ${b})", "x+1"), ("frac(x+1, b)".into(), 10, 11));
+        assert_eq!(
+            expand("frac(${sel:a}, ${b})", ""),
+            ("frac(a, b)".into(), 5, 6)
+        );
+        assert_eq!(
+            expand("frac(${sel:a}, ${b})", "x+1"),
+            ("frac(x+1, b)".into(), 10, 11)
+        );
         assert_eq!(expand("#v(${}1em)", ""), ("#v(1em)".into(), 3, 3));
         assert_eq!(expand("sin marcas", ""), ("sin marcas".into(), 10, 10));
         assert_eq!(expand("$${sel:x}$", ""), ("$x$".into(), 1, 2));

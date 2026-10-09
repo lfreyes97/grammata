@@ -45,7 +45,10 @@ pub fn line_col_to_char(text: &str, line: usize, col: usize) -> usize {
 
 /// Índice de char → byte. Si se pasa del final, devuelve `text.len()`.
 pub fn char_to_byte(text: &str, char_idx: usize) -> usize {
-    text.char_indices().nth(char_idx).map(|(b, _)| b).unwrap_or(text.len())
+    text.char_indices()
+        .nth(char_idx)
+        .map(|(b, _)| b)
+        .unwrap_or(text.len())
 }
 
 /// Todas las coincidencias de `query` como rangos de char `[start, end)`.
@@ -56,7 +59,13 @@ pub fn find_all(text: &str, query: &str, match_case: bool) -> Vec<(usize, usize)
     if query.is_empty() {
         return Vec::new();
     }
-    let fold = |c: char| if match_case { c } else { c.to_lowercase().next().unwrap_or(c) };
+    let fold = |c: char| {
+        if match_case {
+            c
+        } else {
+            c.to_lowercase().next().unwrap_or(c)
+        }
+    };
     let q: Vec<char> = query.chars().map(fold).collect();
     let t: Vec<char> = text.chars().map(fold).collect();
     let mut out = Vec::new();

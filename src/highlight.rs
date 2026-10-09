@@ -21,22 +21,35 @@ struct Style {
 pub fn layout_job(text: &str, font: FontId, pal: &Palette) -> LayoutJob {
     let root = typst_syntax::parse(text);
     let mut job = LayoutJob::default();
-    let base = Style { color: pal.text, italics: false, underline: None };
+    let base = Style {
+        color: pal.text,
+        italics: false,
+        underline: None,
+    };
     // Tramos contiguos con el mismo estilo se fusionan en una sección.
     let mut run: Option<(usize, usize, Style)> = None;
-    walk(&LinkedNode::new(&root), base, pal, &mut |start, end, st| match &mut run {
-        Some((_, e, s)) if *e == start && *s == st => *e = end,
-        _ => {
-            if let Some((a, b, s)) = run.replace((start, end, st)) {
-                push(&mut job, text, a, b, s, &font);
+    walk(
+        &LinkedNode::new(&root),
+        base,
+        pal,
+        &mut |start, end, st| match &mut run {
+            Some((_, e, s)) if *e == start && *s == st => *e = end,
+            _ => {
+                if let Some((a, b, s)) = run.replace((start, end, st)) {
+                    push(&mut job, text, a, b, s, &font);
+                }
             }
-        }
-    });
+        },
+    );
     if let Some((a, b, s)) = run {
         push(&mut job, text, a, b, s, &font);
     }
     // Lo que el árbol no cubra (no debería pasar) se añade sin estilo.
-    let covered: usize = job.sections.last().map(|s| usize::from(s.byte_range.end)).unwrap_or(0);
+    let covered: usize = job
+        .sections
+        .last()
+        .map(|s| usize::from(s.byte_range.end))
+        .unwrap_or(0);
     if covered < text.len() {
         push(&mut job, text, covered, text.len(), base, &font);
     }
@@ -52,7 +65,12 @@ fn push(job: &mut LayoutJob, text: &str, a: usize, b: usize, s: Style, font: &Fo
     job.append(&text[a..b], 0.0, f);
 }
 
-fn walk(node: &LinkedNode, inherited: Style, pal: &Palette, out: &mut impl FnMut(usize, usize, Style)) {
+fn walk(
+    node: &LinkedNode,
+    inherited: Style,
+    pal: &Palette,
+    out: &mut impl FnMut(usize, usize, Style),
+) {
     let mut st = inherited;
     if let Some(tag) = typst_syntax::highlight(node) {
         apply(&mut st, tag, pal);
@@ -101,10 +119,14 @@ pub fn in_math(text: &str, cursor: usize) -> bool {
     let byte = crate::text::char_to_byte(text, cursor);
     let root = typst_syntax::parse(text);
     let root = LinkedNode::new(&root);
-    let Some(leaf) = root.leaf_at(byte, Side::Before) else { return false };
+    let Some(leaf) = root.leaf_at(byte, Side::Before) else {
+        return false;
+    };
     // Justo tras un `$`: dentro si es el de apertura, fuera si es el de cierre.
     if leaf.kind() == SyntaxKind::Dollar {
-        return leaf.parent().is_some_and(|p| p.offset() == leaf.offset() && p.range().end > leaf.range().end);
+        return leaf
+            .parent()
+            .is_some_and(|p| p.offset() == leaf.offset() && p.range().end > leaf.range().end);
     }
     let mut node = leaf.parent().cloned();
     while let Some(n) = node {
@@ -140,7 +162,12 @@ mod tests {
     #[test]
     fn cubre_todo_el_texto() {
         let pal = crate::theme::DARK;
-        for t in ["", "= Título\n*negrita* y _cursiva_ $x^2$ #let a = 1 // c", "#f(\"sin cerrar", "ñ é 🎉 $α$"] {
+        for t in [
+            "",
+            "= Título\n*negrita* y _cursiva_ $x^2$ #let a = 1 // c",
+            "#f(\"sin cerrar",
+            "ñ é 🎉 $α$",
+        ] {
             let job = layout_job(t, FontId::monospace(13.0), &pal);
             assert_eq!(job.text, t);
             let mut end = 0;
@@ -159,7 +186,14 @@ mod tests {
         let job = layout_job(t, FontId::monospace(13.0), &pal);
         let color_at = |needle: &str| {
             let b = t.find(needle).unwrap();
-            job.sections.iter().find(|s| (usize::from(s.byte_range.start)..usize::from(s.byte_range.end)).contains(&b)).unwrap().format.color
+            job.sections
+                .iter()
+                .find(|s| {
+                    (usize::from(s.byte_range.start)..usize::from(s.byte_range.end)).contains(&b)
+                })
+                .unwrap()
+                .format
+                .color
         };
         assert_eq!(color_at("Título"), pal.syntax.heading);
         assert_eq!(color_at("let"), pal.syntax.keyword);

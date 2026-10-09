@@ -31,5 +31,9 @@ fn main() -> eframe::Result<()> {
             .with_app_id("typst-editor"),
         ..Default::default()
     };
-    eframe::run_native("typst-editor", options, Box::new(|cc| Ok(Box::new(app::App::new(cc)))))
+    eframe::run_native(
+        "typst-editor",
+        options,
+        Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
+    )
 }

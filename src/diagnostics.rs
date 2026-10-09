@@ -39,7 +39,10 @@ impl Diagnostic {
 }
 
 pub fn count(diags: &[Diagnostic]) -> (usize, usize) {
-    let e = diags.iter().filter(|d| d.severity == Severity::Error).count();
+    let e = diags
+        .iter()
+        .filter(|d| d.severity == Severity::Error)
+        .count();
     (e, diags.len() - e)
 }
 
@@ -48,7 +51,11 @@ pub fn from_source(world: &EngineWorld, main: FileId, src: &[SourceDiagnostic]) 
 }
 
 /// Mapea avisos (warnings) de una compilación con éxito.
-pub fn from_warnings(world: &EngineWorld, main: FileId, src: &[SourceDiagnostic]) -> Vec<Diagnostic> {
+pub fn from_warnings(
+    world: &EngineWorld,
+    main: FileId,
+    src: &[SourceDiagnostic],
+) -> Vec<Diagnostic> {
     map(world, main, src)
 }
 
@@ -88,8 +95,14 @@ fn map(world: &EngineWorld, main: FileId, src: &[SourceDiagnostic]) -> Vec<Diagn
 
 /// Ubica un `Span` del compilador: (fichero, línea, columna 1-based).
 /// Comparte lógica con `map` (que parte de `DiagSpan`).
-pub fn locate_span(world: &EngineWorld, main: FileId, span: Span) -> (Option<String>, Option<usize>, Option<usize>) {
-    let Some(id) = span.id() else { return (None, None, None) };
+pub fn locate_span(
+    world: &EngineWorld,
+    main: FileId,
+    span: Span,
+) -> (Option<String>, Option<usize>, Option<usize>) {
+    let Some(id) = span.id() else {
+        return (None, None, None);
+    };
     let rel = display_path(main, id);
     let lc = world
         .range(span)

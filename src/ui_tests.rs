@@ -30,10 +30,13 @@ fn wait(h: &mut Harness<'_, App>, what: &str, mut cond: impl FnMut(&App) -> bool
 }
 
 fn shot(h: &mut Harness<'_, App>, name: &str) {
-    let Ok(dir) = std::env::var("SHOT_DIR") else { return };
+    let Ok(dir) = std::env::var("SHOT_DIR") else {
+        return;
+    };
     h.run_steps(2);
     let img = h.render().expect("render wgpu");
-    img.save(Path::new(&dir).join(format!("{name}.png"))).expect("guardar captura");
+    img.save(Path::new(&dir).join(format!("{name}.png")))
+        .expect("guardar captura");
 }
 
 fn cur_text(h: &Harness<'_, App>) -> String {
@@ -44,7 +47,12 @@ fn put_cursor_at_end(h: &mut Harness<'_, App>) {
     let st = &mut h.state_mut().st;
     let doc = st.docs.cur();
     let n = doc.text.chars().count();
-    st.editor.goto = Some(Goto { doc: doc.id, start: n, end: n, focus: true });
+    st.editor.goto = Some(Goto {
+        doc: doc.id,
+        start: n,
+        end: n,
+        focus: true,
+    });
     h.run_steps(3);
 }
 
@@ -53,7 +61,7 @@ fn rendered_pages(app: &App) -> bool {
 }
 
 #[test]
-#[ignore = "necesita typst en el PATH y GPU"]
+#[ignore = "necesita GPU"]
 fn recorrido_de_la_ui() {
     let tmp = std::env::temp_dir().join(format!("typst-editor-test-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
@@ -62,7 +70,9 @@ fn recorrido_de_la_ui() {
 
     let mut h = harness();
     wait(&mut h, "primera compilación", rendered_pages);
-    wait(&mut h, "render de páginas", |a| a.st.preview.fresh_pages() >= 1);
+    wait(&mut h, "render de páginas", |a| {
+        a.st.preview.fresh_pages() >= 1
+    });
     shot(&mut h, "01-inicio");
     // Ajuste de línea con números de línea (antes eran incompatibles).
     h.state_mut().st.actions.push(Action::ToggleWrap);
@@ -79,16 +89,26 @@ fn recorrido_de_la_ui() {
     shot(&mut h, "02-autocompletar");
     h.key_press(Key::Tab);
     h.run_steps(3);
-    assert!(cur_text(&h).contains("#table(columns: 2, [a], [b])"), "no se insertó el snippet:\n{}", cur_text(&h));
+    assert!(
+        cur_text(&h).contains("#table(columns: 2, [a], [b])"),
+        "no se insertó el snippet:\n{}",
+        cur_text(&h)
+    );
 
     // Error de compilación → banner + panel Problemas.
     h.key_press(Key::Enter);
     h.event(Event::Text("#funcion_inexistente(1)".into()));
     wait(&mut h, "diagnóstico", |a| {
         let d = a.st.docs.cur();
-        a.st.compiler.built.get(&d.id).is_some_and(|b| b.key.rev == d.rev && !b.diagnostics.is_empty())
+        a.st.compiler
+            .built
+            .get(&d.id)
+            .is_some_and(|b| b.key.rev == d.rev && !b.diagnostics.is_empty())
     });
-    h.state_mut().st.actions.push(Action::ShowPanel(Panel::Problems));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Problems));
     h.run_steps(4);
     assert!(layout::has_panel(&h.state().dock, Panel::Problems));
     shot(&mut h, "03-errores");
@@ -96,9 +116,14 @@ fn recorrido_de_la_ui() {
     // Clic en el problema → salta a la línea del error.
     let diag_line = {
         let a = h.state();
-        a.st.compiler.built[&a.st.docs.cur_id()].diagnostics[0].line.unwrap()
+        a.st.compiler.built[&a.st.docs.cur_id()].diagnostics[0]
+            .line
+            .unwrap()
     };
-    h.state_mut().st.actions.push(Action::JumpTo { line: diag_line, col: 1 });
+    h.state_mut().st.actions.push(Action::JumpTo {
+        line: diag_line,
+        col: 1,
+    });
     h.run_steps(4);
     let (l, _) = {
         let a = h.state();
@@ -113,20 +138,34 @@ fn recorrido_de_la_ui() {
     h.run_steps(2);
     h.key_press(Key::Enter);
     h.run_steps(4);
-    assert!(h.state().st.editor.find.current.is_some(), "Enter no seleccionó coincidencia");
+    assert!(
+        h.state().st.editor.find.current.is_some(),
+        "Enter no seleccionó coincidencia"
+    );
     shot(&mut h, "04-buscar");
     h.key_press(Key::Escape);
     h.run_steps(3);
     assert!(!h.state().st.editor.find.open);
-    assert_eq!(h.state().st.editor.focused, Some(h.state().st.docs.cur_id()), "Esc debería devolver el foco al editor");
+    assert_eq!(
+        h.state().st.editor.focused,
+        Some(h.state().st.docs.cur_id()),
+        "Esc debería devolver el foco al editor"
+    );
 
     // Tema claro + documento de varias páginas abierto desde disco.
     let multi = tmp.join("largo.typ");
     std::fs::write(&multi, "#set page(paper: \"a5\")\n= Largo\n#for i in range(1, 7) [\n  == Sección #i\n  #lorem(220)\n]\n").unwrap();
     h.state_mut().st.actions.push(Action::ToggleTheme);
-    h.state_mut().st.actions.push(Action::OpenPath(multi.clone()));
-    wait(&mut h, "doc multipágina", |a| a.st.docs.cur().path.as_deref() == Some(multi.as_path()) && a.st.preview.page_count() >= 3);
-    wait(&mut h, "render de páginas", |a| a.st.preview.fresh_pages() >= 1);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::OpenPath(multi.clone()));
+    wait(&mut h, "doc multipágina", |a| {
+        a.st.docs.cur().path.as_deref() == Some(multi.as_path()) && a.st.preview.page_count() >= 3
+    });
+    wait(&mut h, "render de páginas", |a| {
+        a.st.preview.fresh_pages() >= 1
+    });
     shot(&mut h, "05-claro-multipagina");
 
     // Zoom manual al 150 %.
@@ -152,41 +191,71 @@ fn recorrido_de_la_ui() {
     h.state_mut().st.modal = None;
 
     // Diseño «solo escritura» y vuelta al clásico.
-    h.state_mut().st.actions.push(Action::ApplyPreset(Preset::Writing));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ApplyPreset(Preset::Writing));
     h.run_steps(3);
     assert!(!layout::has_panel(&h.state().dock, Panel::Preview));
     shot(&mut h, "08-escritura");
-    h.state_mut().st.actions.push(Action::ApplyPreset(Preset::Classic));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ApplyPreset(Preset::Classic));
     h.run_steps(3);
     assert!(layout::has_panel(&h.state().dock, Panel::Preview));
 
     // Panel de símbolos: fuera de una ecuación envuelve en `$…$`, dentro
     // inserta el nombre separado del identificador vecino.
     h.state_mut().st.actions.push(Action::NewDoc);
-    h.state_mut().st.actions.push(Action::ShowPanel(Panel::Symbols));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Symbols));
     h.run_steps(3);
-    h.state_mut().st.actions.push(Action::InsertMath("alpha".into()));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::InsertMath("alpha".into()));
     h.run_steps(3);
     assert_eq!(cur_text(&h), "$alpha$");
     // El cursor quedó dentro de la ecuación (antes del `$` final).
-    h.state_mut().st.actions.push(Action::InsertMath("arrow.r".into()));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::InsertMath("arrow.r".into()));
     h.run_steps(3);
     assert_eq!(cur_text(&h), "$alpha arrow.r$");
     // Estructura sin selección: inserta relleno válido y lo deja seleccionado.
-    h.state_mut().st.actions.push(Action::InsertMath("frac(${sel:a}, ${b})".into()));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::InsertMath("frac(${sel:a}, ${b})".into()));
     h.run_steps(3);
     assert_eq!(cur_text(&h), "$alpha arrow.r frac(a, b)$");
-    assert_eq!(h.state().st.editor.selection, Some((20, 21)), "debería quedar seleccionada la «a»");
+    assert_eq!(
+        h.state().st.editor.selection,
+        Some((20, 21)),
+        "debería quedar seleccionada la «a»"
+    );
     shot(&mut h, "09-simbolos");
 
     // Con selección, la estructura la envuelve: selecciona «alpha» → abs(alpha).
     {
         let st = &mut h.state_mut().st;
         let id = st.docs.cur_id();
-        st.editor.goto = Some(Goto { doc: id, start: 1, end: 6, focus: true });
+        st.editor.goto = Some(Goto {
+            doc: id,
+            start: 1,
+            end: 6,
+            focus: true,
+        });
     }
     h.run_steps(3);
-    h.state_mut().st.actions.push(Action::InsertMath("abs(${sel:x})".into()));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::InsertMath("abs(${sel:x})".into()));
     h.run_steps(3);
     assert_eq!(cur_text(&h), "$abs(alpha) arrow.r frac(a, b)$");
 
@@ -199,10 +268,18 @@ fn recorrido_de_la_ui() {
     {
         let st = &mut h.state_mut().st;
         let id = st.docs.cur_id();
-        st.editor.goto = Some(Goto { doc: id, start: 5, end: 10, focus: true });
+        st.editor.goto = Some(Goto {
+            doc: id,
+            start: 5,
+            end: 10,
+            focus: true,
+        });
     }
     h.run_steps(3);
-    h.state_mut().st.actions.push(Action::InsertSnippet("*${sel:texto}*".into()));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::InsertSnippet("*${sel:texto}*".into()));
     h.run_steps(3);
     assert_eq!(cur_text(&h), "hola *mundo*");
 
@@ -210,10 +287,18 @@ fn recorrido_de_la_ui() {
     {
         let st = &mut h.state_mut().st;
         let id = st.docs.cur_id();
-        st.editor.goto = Some(Goto { doc: id, start: 5, end: 12, focus: true });
+        st.editor.goto = Some(Goto {
+            doc: id,
+            start: 5,
+            end: 12,
+            focus: true,
+        });
     }
     h.run_steps(3);
-    h.state_mut().st.actions.push(Action::ShowPanel(Panel::Snippets));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Snippets));
     h.state_mut().st.actions.push(Action::NewSnippet);
     h.run_steps(3);
     match &mut h.state_mut().st.modal {
@@ -226,7 +311,11 @@ fn recorrido_de_la_ui() {
     shot(&mut h, "10-nuevo-snippet");
     h.state_mut().finish_snippet_edit();
     h.run_steps(3);
-    assert_eq!(snippets::load_user().len(), 1, "snippets.json no se escribió");
+    assert_eq!(
+        snippets::load_user().len(),
+        1,
+        "snippets.json no se escribió"
+    );
     shot(&mut h, "11-snippets");
 
     // La sesión se guarda y se puede volver a leer.
@@ -254,16 +343,29 @@ fn plantillas_y_simbolos_compilan() {
         Some(72),
     );
     assert!(out.is_ok(), "{out:?}");
-    std::fs::write(dir.join("refs.bib"), "@book{clave, title={T}, author={A}, year={2020}}\n").unwrap();
+    std::fs::write(
+        dir.join("refs.bib"),
+        "@book{clave, title={T}, author={A}, year={2020}}\n",
+    )
+    .unwrap();
 
     let check = |what: &str, src: String| {
         let out = crate::engine::compile_pdf(&src, &dir, "main.typ");
-        assert!(out.pdf.map_or(false, |p| p.starts_with(b"%PDF")), "{what} no compila:\n{src}\n---\n{:?}", out.diags);
+        assert!(
+            out.pdf.is_some_and(|p| p.starts_with(b"%PDF")),
+            "{what} no compila:\n{src}\n---\n{:?}",
+            out.diags
+        );
     };
     // Símbolos y estructuras: todos juntos en una ecuación.
     // Sin selección (relleno) y con selección (envolviendo).
     let math: Vec<String> = symbols::all()
-        .flat_map(|s| [snippets::expand(s.insert, "").0, snippets::expand(s.insert, "y").0])
+        .flat_map(|s| {
+            [
+                snippets::expand(s.insert, "").0,
+                snippets::expand(s.insert, "y").0,
+            ]
+        })
         .collect();
     check("símbolos", format!("$ {} $", math.join(" quad ")));
     for g in snippets::BUILTIN {
@@ -276,7 +378,11 @@ fn plantillas_y_simbolos_compilan() {
                 src.push_str("\n#bibliography(\"refs.bib\")");
             }
             check(s.name, src);
-            check(s.name, snippets::expand(s.body, "").0 + "\n#figure([x]) <etiqueta>\n#bibliography(\"refs.bib\")");
+            check(
+                s.name,
+                snippets::expand(s.body, "").0
+                    + "\n#figure([x]) <etiqueta>\n#bibliography(\"refs.bib\")",
+            );
         }
     }
 }

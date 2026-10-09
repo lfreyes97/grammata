@@ -55,7 +55,11 @@ pub struct Docs {
 
 impl Docs {
     pub fn new() -> Self {
-        Self { list: Vec::new(), current: 0, next_id: 0 }
+        Self {
+            list: Vec::new(),
+            current: 0,
+            next_id: 0,
+        }
     }
 
     pub fn push(&mut self, path: Option<PathBuf>, text: String) -> DocId {

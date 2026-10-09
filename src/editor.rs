@@ -77,10 +77,16 @@ fn hash_prefix(text: &str, cursor: usize) -> Option<(usize, String)> {
     let end = text::char_to_byte(text, cursor);
     let head = &text[..end];
     let start = head.len().saturating_sub(32);
-    let start = (start..head.len()).find(|&b| head.is_char_boundary(b)).unwrap_or(head.len());
+    let start = (start..head.len())
+        .find(|&b| head.is_char_boundary(b))
+        .unwrap_or(head.len());
     let h = start + head[start..].rfind('#')?;
     let between = &head[h + 1..];
-    if between.len() > 24 || between.chars().any(|c| !(c.is_alphanumeric() || c == '-' || c == '_')) {
+    if between.len() > 24
+        || between
+            .chars()
+            .any(|c| !(c.is_alphanumeric() || c == '-' || c == '_'))
+    {
         return None;
     }
     Some((h, between.to_string()))
@@ -122,7 +128,12 @@ fn insert_completion(st: &mut State, di: usize, hash_byte: usize, c: &AcItem) {
             }
         },
     };
-    st.editor.goto = Some(Goto { doc: doc.id, start: sel_start, end: sel_end, focus: true });
+    st.editor.goto = Some(Goto {
+        doc: doc.id,
+        start: sel_start,
+        end: sel_end,
+        focus: true,
+    });
     st.editor.ac.forced = false;
     st.needs_persist = true;
 }
@@ -151,13 +162,19 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
     let p = prefix.to_lowercase();
     let mut out: Vec<AcItem> = syntax::matching(prefix)
         .iter()
-        .map(|c| AcItem { name: c.name.to_string(), snippet: c.snippet.to_string(), detail: c.detail.to_string() })
+        .map(|c| AcItem {
+            name: c.name.to_string(),
+            snippet: c.snippet.to_string(),
+            detail: c.detail.to_string(),
+        })
         .collect();
     if !p.is_empty() {
         out.extend(
             st.user_snippets
                 .iter()
-                .filter(|s| s.name.to_lowercase().contains(&p) || s.body.to_lowercase().contains(&p))
+                .filter(|s| {
+                    s.name.to_lowercase().contains(&p) || s.body.to_lowercase().contains(&p)
+                })
                 .map(|s| AcItem {
                     name: s.name.clone(),
                     snippet: s.body.clone(),
@@ -186,7 +203,9 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
 
     // ---- Autocompletado: teclas ANTES de que el editor las vea ----
     let prefix = if is_current && had_focus {
-        st.editor.cursor.and_then(|c| hash_prefix(&st.docs.list[di].text, c))
+        st.editor
+            .cursor
+            .and_then(|c| hash_prefix(&st.docs.list[di].text, c))
     } else {
         None
     };
@@ -213,7 +232,8 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
                 i.consume_key(Modifiers::NONE, Key::Escape),
                 i.consume_key(Modifiers::NONE, Key::ArrowDown),
                 i.consume_key(Modifiers::NONE, Key::ArrowUp),
-                i.consume_key(Modifiers::NONE, Key::Tab) || i.consume_key(Modifiers::NONE, Key::Enter),
+                i.consume_key(Modifiers::NONE, Key::Tab)
+                    || i.consume_key(Modifiers::NONE, Key::Enter),
             )
         });
         if down {
@@ -242,11 +262,17 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
     // ---- Editor ----
     let font = st.prefs.font_size;
     let wrap = st.prefs.wrap;
-    let row_h = ui.ctx().fonts_mut(|f| f.row_height(&egui::FontId::monospace(font)));
+    let row_h = ui
+        .ctx()
+        .fonts_mut(|f| f.row_height(&egui::FontId::monospace(font)));
     let rows = ((ui.available_height() / row_h).floor() as usize).max(4);
     let view = ui.max_rect();
     let doc = &mut st.docs.list[di];
-    let opt = crate::code_view::Options { font_size: font, wrap, rows };
+    let opt = crate::code_view::Options {
+        font_size: font,
+        wrap,
+        rows,
+    };
     let out = crate::code_view::show(ui, &format!("editor-{id}"), &mut doc.text, &opt, &pal);
     if out.response.changed() {
         doc.touch();
@@ -265,7 +291,10 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
         st.editor.selection = Some((a.min(b), a.max(b)));
         // Ancla de la barra de formato (coords de pantalla del cursor activo).
         if a != b {
-            let p = out.galley.pos_from_cursor(r.primary).translate(out.galley_pos.to_vec2());
+            let p = out
+                .galley
+                .pos_from_cursor(r.primary)
+                .translate(out.galley_pos.to_vec2());
             st.editor.sel_anchor = Some((st.docs.list[di].id, p.center()));
         } else {
             st.editor.sel_anchor = None;
@@ -276,7 +305,9 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
         let len = st.docs.list[di].text.chars().count();
         let (a, b) = (g.start.min(len), g.end.min(len));
         let mut state = out.state.clone();
-        state.cursor.set_char_range(Some(CCursorRange::two(CCursor::new(a), CCursor::new(b))));
+        state
+            .cursor
+            .set_char_range(Some(CCursorRange::two(CCursor::new(a), CCursor::new(b))));
         state.store(ui.ctx(), out.response.id);
         if g.focus {
             out.response.request_focus();
@@ -284,7 +315,10 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
         }
         st.editor.cursor = Some(b);
         st.editor.selection = Some((a, b));
-        let r = out.galley.pos_from_cursor(CCursor::new(b)).translate(out.galley_pos.to_vec2());
+        let r = out
+            .galley
+            .pos_from_cursor(CCursor::new(b))
+            .translate(out.galley_pos.to_vec2());
         scroll_into_view(ui, id, view, r, row_h);
     }
 
@@ -294,25 +328,40 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
     }
 
     // ---- Popup de autocompletado junto al cursor ----
-    if popup && is_current
-        && let Some(c) = st.editor.cursor {
-            let at = out.galley.pos_from_cursor(CCursor::new(c)).translate(out.galley_pos.to_vec2());
-            let mut pick = None;
-            completion_popup(ui, &pal, at.left_bottom(), &items, &mut st.editor.ac.selected, &mut pick);
-            if let Some(i) = pick {
-                let h = prefix
-                    .map(|(h, _)| h)
-                    .unwrap_or_else(|| text::char_to_byte(&st.docs.list[di].text, c));
-                insert_completion(st, di, h, &items[i]);
-            }
+    if popup
+        && is_current
+        && let Some(c) = st.editor.cursor
+    {
+        let at = out
+            .galley
+            .pos_from_cursor(CCursor::new(c))
+            .translate(out.galley_pos.to_vec2());
+        let mut pick = None;
+        completion_popup(
+            ui,
+            &pal,
+            at.left_bottom(),
+            &items,
+            &mut st.editor.ac.selected,
+            &mut pick,
+        );
+        if let Some(i) = pick {
+            let h = prefix
+                .map(|(h, _)| h)
+                .unwrap_or_else(|| text::char_to_byte(&st.docs.list[di].text, c));
+            insert_completion(st, di, h, &items[i]);
         }
+    }
 }
 
 /// Lleva `target` (px de pantalla) al centro del editor si no está a la vista.
 /// Se toca el estado del ScrollArea de `code_view` directamente: un
 /// `scroll_to_rect` pedido desde fuera de su closure no le llega.
 fn scroll_into_view(ui: &egui::Ui, id: DocId, view: egui::Rect, target: egui::Rect, row_h: f32) {
-    if view.shrink2(egui::vec2(0.0, row_h * 2.0)).contains(target.center()) {
+    if view
+        .shrink2(egui::vec2(0.0, row_h * 2.0))
+        .contains(target.center())
+    {
         return;
     }
     let sid = ui.make_persistent_id(format!("editor-{id}_outer_scroll"));
@@ -325,23 +374,44 @@ fn scroll_into_view(ui: &egui::Ui, id: DocId, view: egui::Rect, target: egui::Re
 
 /// Resalta las coincidencias visibles (la actual, más intensa). Solo recorre
 /// las que caen dentro de la vista.
-fn paint_matches(ui: &egui::Ui, out: &egui::text_edit::TextEditOutput, view: egui::Rect, f: &Find, pal: &Palette) {
+fn paint_matches(
+    ui: &egui::Ui,
+    out: &egui::text_edit::TextEditOutput,
+    view: egui::Rect,
+    f: &Find,
+    pal: &Palette,
+) {
     let g = &out.galley;
     let to_local = |p: egui::Pos2| p - out.galley_pos.to_vec2();
-    let first = g.cursor_from_pos(to_local(view.left_top()).to_vec2()).index.0;
-    let last = g.cursor_from_pos(to_local(view.right_bottom()).to_vec2()).index.0;
+    let first = g
+        .cursor_from_pos(to_local(view.left_top()).to_vec2())
+        .index
+        .0;
+    let last = g
+        .cursor_from_pos(to_local(view.right_bottom()).to_vec2())
+        .index
+        .0;
     let lo = f.matches.partition_point(|m| m.1 < first);
     let hi = f.matches.partition_point(|m| m.0 <= last);
-    let painter = ui.painter().with_clip_rect(view.intersect(out.text_clip_rect));
+    let painter = ui
+        .painter()
+        .with_clip_rect(view.intersect(out.text_clip_rect));
     let soft = pal.warn.gamma_multiply(0.28);
     let strong = pal.warn.gamma_multiply(0.6);
     for (i, &(a, b)) in f.matches.iter().enumerate().take(hi).skip(lo) {
         let ra = g.pos_from_cursor(CCursor::new(a));
         let rb = g.pos_from_cursor(CCursor::new(b));
         // Coincidencias partidas por el ajuste de línea: solo el primer tramo.
-        let right = if (rb.top() - ra.top()).abs() < 1.0 { rb.left() } else { ra.left() + 8.0 };
-        let r = egui::Rect::from_min_max(egui::pos2(ra.left(), ra.top()), egui::pos2(right, ra.bottom()))
-            .translate(out.galley_pos.to_vec2());
+        let right = if (rb.top() - ra.top()).abs() < 1.0 {
+            rb.left()
+        } else {
+            ra.left() + 8.0
+        };
+        let r = egui::Rect::from_min_max(
+            egui::pos2(ra.left(), ra.top()),
+            egui::pos2(right, ra.bottom()),
+        )
+        .translate(out.galley_pos.to_vec2());
         let fill = if f.current == Some(i) { strong } else { soft };
         painter.rect_filled(r.expand2(egui::vec2(1.0, 0.0)), 2.0, fill);
     }
@@ -360,40 +430,68 @@ fn completion_popup(
         .order(egui::Order::Foreground)
         .constrain(true)
         .show(ui.ctx(), |ui| {
-            egui::Frame::popup(ui.style()).inner_margin(4).show(ui, |ui| {
-                ui.set_width(330.0);
-                egui::ScrollArea::vertical().max_height(240.0).show(ui, |ui| {
-                    for (i, c) in items.iter().enumerate() {
-                        let sel = i == *selected;
-                        let r = ui
-                            .horizontal(|ui| {
-                                let name = RichText::new(format!("#{}", c.name)).monospace().color(if sel { pal.accent } else { pal.text });
-                                let resp = ui.add(egui::Button::new(name).selected(sel).frame_when_inactive(false).min_size(egui::vec2(140.0, 22.0)));
-                                ui.label(RichText::new(&c.detail).small().color(pal.text_faint));
-                                resp
-                            })
-                            .inner;
-                        if sel {
-                            r.scroll_to_me(None);
-                        }
-                        if r.clicked() {
-                            *pick = Some(i);
-                        }
-                        if r.hovered() {
-                            *selected = i;
-                        }
-                    }
+            egui::Frame::popup(ui.style())
+                .inner_margin(4)
+                .show(ui, |ui| {
+                    ui.set_width(330.0);
+                    egui::ScrollArea::vertical()
+                        .max_height(240.0)
+                        .show(ui, |ui| {
+                            for (i, c) in items.iter().enumerate() {
+                                let sel = i == *selected;
+                                let r = ui
+                                    .horizontal(|ui| {
+                                        let name = RichText::new(format!("#{}", c.name))
+                                            .monospace()
+                                            .color(if sel { pal.accent } else { pal.text });
+                                        let resp = ui.add(
+                                            egui::Button::new(name)
+                                                .selected(sel)
+                                                .frame_when_inactive(false)
+                                                .min_size(egui::vec2(140.0, 22.0)),
+                                        );
+                                        ui.label(
+                                            RichText::new(&c.detail).small().color(pal.text_faint),
+                                        );
+                                        resp
+                                    })
+                                    .inner;
+                                if sel {
+                                    r.scroll_to_me(None);
+                                }
+                                if r.clicked() {
+                                    *pick = Some(i);
+                                }
+                                if r.hovered() {
+                                    *selected = i;
+                                }
+                            }
+                        });
+                    ui.separator();
+                    // Vista previa con marcadores resueltos (como en el panel).
+                    let preview: String = items
+                        .get(*selected)
+                        .map(|c| crate::snippets::expand(&c.snippet, "…").0)
+                        .unwrap_or_default();
+                    let preview: String = preview
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .chars()
+                        .take(60)
+                        .collect();
+                    ui.label(
+                        RichText::new(preview)
+                            .monospace()
+                            .small()
+                            .color(pal.text_dim),
+                    );
+                    ui.label(
+                        RichText::new("Tab/Enter inserta · Esc cierra")
+                            .small()
+                            .color(pal.text_faint),
+                    );
                 });
-                ui.separator();
-                // Vista previa con marcadores resueltos (como en el panel).
-                let preview: String = items
-                    .get(*selected)
-                    .map(|c| crate::snippets::expand(&c.snippet, "…").0)
-                    .unwrap_or_default();
-                let preview: String = preview.lines().next().unwrap_or("").chars().take(60).collect();
-                ui.label(RichText::new(preview).monospace().small().color(pal.text_dim));
-                ui.label(RichText::new("Tab/Enter inserta · Esc cierra").small().color(pal.text_faint));
-            });
         });
 }
 
@@ -408,72 +506,97 @@ pub fn find_bar(st: &mut State, ui: &mut egui::Ui) {
     st.editor.find.refresh(id, rev, &doc.text);
     let mut step: Option<i32> = None;
 
-    widgets::toolbar_frame(&pal).fill(pal.chrome).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(icon::MAGNIFYING_GLASS).color(pal.text_faint));
-            let f = &mut st.editor.find;
-            let resp = ui.add(
-                egui::TextEdit::singleline(&mut f.query)
-                    .hint_text("Buscar en el documento")
-                    .desired_width(260.0),
-            );
-            if f.want_focus {
-                resp.request_focus();
-                f.want_focus = false;
-            }
-            if resp.has_focus() || resp.lost_focus() {
-                let (enter, shift_enter, esc) = ui.input_mut(|i| {
-                    (
-                        i.consume_key(Modifiers::NONE, Key::Enter),
-                        i.consume_key(Modifiers::SHIFT, Key::Enter),
-                        i.consume_key(Modifiers::NONE, Key::Escape),
-                    )
-                });
-                // `lost_focus` + Enter: egui suelta el foco del singleline al pulsar Enter.
-                if enter || (resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter) && !i.modifiers.shift)) {
-                    step = Some(1);
+    widgets::toolbar_frame(&pal)
+        .fill(pal.chrome)
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(icon::MAGNIFYING_GLASS).color(pal.text_faint));
+                let f = &mut st.editor.find;
+                let resp = ui.add(
+                    egui::TextEdit::singleline(&mut f.query)
+                        .hint_text("Buscar en el documento")
+                        .desired_width(260.0),
+                );
+                if f.want_focus {
                     resp.request_focus();
+                    f.want_focus = false;
                 }
-                if shift_enter {
-                    step = Some(-1);
-                    resp.request_focus();
-                }
-                if esc {
-                    f.open = false;
-                    let sel = f.current.and_then(|i| f.matches.get(i).copied());
-                    let (a, b) = sel.unwrap_or_else(|| {
-                        let c = st.editor.cursor.unwrap_or(0);
-                        (c, c)
+                if resp.has_focus() || resp.lost_focus() {
+                    let (enter, shift_enter, esc) = ui.input_mut(|i| {
+                        (
+                            i.consume_key(Modifiers::NONE, Key::Enter),
+                            i.consume_key(Modifiers::SHIFT, Key::Enter),
+                            i.consume_key(Modifiers::NONE, Key::Escape),
+                        )
                     });
-                    st.editor.goto = Some(Goto { doc: id, start: a, end: b, focus: true });
+                    // `lost_focus` + Enter: egui suelta el foco del singleline al pulsar Enter.
+                    if enter
+                        || (resp.lost_focus()
+                            && ui.input(|i| i.key_pressed(Key::Enter) && !i.modifiers.shift))
+                    {
+                        step = Some(1);
+                        resp.request_focus();
+                    }
+                    if shift_enter {
+                        step = Some(-1);
+                        resp.request_focus();
+                    }
+                    if esc {
+                        f.open = false;
+                        let sel = f.current.and_then(|i| f.matches.get(i).copied());
+                        let (a, b) = sel.unwrap_or_else(|| {
+                            let c = st.editor.cursor.unwrap_or(0);
+                            (c, c)
+                        });
+                        st.editor.goto = Some(Goto {
+                            doc: id,
+                            start: a,
+                            end: b,
+                            focus: true,
+                        });
+                    }
                 }
-            }
-            if widgets::icon_toggle(ui, f.match_case, icon::TEXT_AA, "Distinguir mayúsculas").clicked() {
-                f.match_case = !f.match_case;
-            }
-            let n = f.matches.len();
-            let label = match (n, f.current) {
-                (0, _) if !f.query.is_empty() => "sin resultados".to_string(),
-                (0, _) => String::new(),
-                (n, Some(c)) => format!("{} de {}{}", c + 1, n, if n >= 10_000 { "+" } else { "" }),
-                (n, None) => format!("{n} resultados"),
-            };
-            ui.label(RichText::new(label).small().color(if n == 0 && !f.query.is_empty() { pal.err } else { pal.text_dim }));
-            ui.add_enabled_ui(n > 0, |ui| {
-                if widgets::icon_button(ui, icon::ARROW_UP, "Anterior  (Mayús+Enter)").clicked() {
-                    step = Some(-1);
+                if widgets::icon_toggle(ui, f.match_case, icon::TEXT_AA, "Distinguir mayúsculas")
+                    .clicked()
+                {
+                    f.match_case = !f.match_case;
                 }
-                if widgets::icon_button(ui, icon::ARROW_DOWN, "Siguiente  (Enter / F3)").clicked() {
-                    step = Some(1);
-                }
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::icon_button(ui, icon::X, "Cerrar  (Esc)").clicked() {
-                    st.editor.find.open = false;
-                }
+                let n = f.matches.len();
+                let label = match (n, f.current) {
+                    (0, _) if !f.query.is_empty() => "sin resultados".to_string(),
+                    (0, _) => String::new(),
+                    (n, Some(c)) => {
+                        format!("{} de {}{}", c + 1, n, if n >= 10_000 { "+" } else { "" })
+                    }
+                    (n, None) => format!("{n} resultados"),
+                };
+                ui.label(
+                    RichText::new(label)
+                        .small()
+                        .color(if n == 0 && !f.query.is_empty() {
+                            pal.err
+                        } else {
+                            pal.text_dim
+                        }),
+                );
+                ui.add_enabled_ui(n > 0, |ui| {
+                    if widgets::icon_button(ui, icon::ARROW_UP, "Anterior  (Mayús+Enter)").clicked()
+                    {
+                        step = Some(-1);
+                    }
+                    if widgets::icon_button(ui, icon::ARROW_DOWN, "Siguiente  (Enter / F3)")
+                        .clicked()
+                    {
+                        step = Some(1);
+                    }
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if widgets::icon_button(ui, icon::X, "Cerrar  (Esc)").clicked() {
+                        st.editor.find.open = false;
+                    }
+                });
             });
         });
-    });
     if let Some(dir) = step {
         find_step(st, dir);
     }
@@ -502,7 +625,12 @@ pub fn find_step(st: &mut State, dir: i32) {
     };
     f.current = Some(i);
     let (a, b) = f.matches[i];
-    st.editor.goto = Some(Goto { doc: id, start: a, end: b, focus: false });
+    st.editor.goto = Some(Goto {
+        doc: id,
+        start: a,
+        end: b,
+        focus: false,
+    });
 }
 
 #[cfg(test)]

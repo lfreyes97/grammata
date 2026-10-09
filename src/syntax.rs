@@ -7,7 +7,11 @@ pub struct Completion {
 }
 
 const fn c(name: &'static str, snippet: &'static str, detail: &'static str) -> Completion {
-    Completion { name, snippet, detail }
+    Completion {
+        name,
+        snippet,
+        detail,
+    }
 }
 
 pub const COMPLETIONS: &[Completion] = &[
@@ -21,7 +25,11 @@ pub const COMPLETIONS: &[Completion] = &[
     c("counter", "counter(..)", "contador"),
     c("emph", "emph[..]", "cursiva"),
     c("enum", "+ item\n+ item", "enumeración"),
-    c("figure", "figure(caption: [], image(\"img.png\"))", "figura"),
+    c(
+        "figure",
+        "figure(caption: [], image(\"img.png\"))",
+        "figura",
+    ),
     c("footnote", "footnote[..]", "nota al pie"),
     c("for", "for x in (1, 2) [..]", "bucle"),
     c("grid", "grid(columns: 2, [..], [..])", "rejilla"),
@@ -57,7 +65,10 @@ pub const COMPLETIONS: &[Completion] = &[
 /// Coincidencias por prefijo primero, luego por subcadena.
 pub fn matching(prefix: &str) -> Vec<&'static Completion> {
     let p = prefix.to_lowercase();
-    let mut out: Vec<_> = COMPLETIONS.iter().filter(|c| c.name.starts_with(&p)).collect();
+    let mut out: Vec<_> = COMPLETIONS
+        .iter()
+        .filter(|c| c.name.starts_with(&p))
+        .collect();
     out.extend(
         COMPLETIONS
             .iter()

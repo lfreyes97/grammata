@@ -36,7 +36,13 @@ fn cache_key(text: &str, size: f32, dark: bool) -> u64 {
 
 /// Dibuja el editor. `salt` identifica su estado (cursor, scroll); el
 /// ScrollArea usa `"{salt}_outer_scroll"` (ver `editor::scroll_into_view`).
-pub fn show(ui: &mut egui::Ui, salt: &str, text: &mut String, opt: &Options, pal: &Palette) -> TextEditOutput {
+pub fn show(
+    ui: &mut egui::Ui,
+    salt: &str,
+    text: &mut String,
+    opt: &Options,
+    pal: &Palette,
+) -> TextEditOutput {
     let font = FontId::monospace(opt.font_size);
     let cache_id = ui.make_persistent_id(format!("{salt}_hl"));
     let digits = text.lines().count().max(1).to_string().len().max(2);
@@ -51,7 +57,15 @@ pub fn show(ui: &mut egui::Ui, salt: &str, text: &mut String, opt: &Options, pal
             Some(j) if cached.key == key => j,
             _ => {
                 let j = Arc::new(highlight::layout_job(src, font.clone(), pal));
-                ui.data_mut(|d| d.insert_temp(cache_id, JobCache { key, job: Some(j.clone()) }));
+                ui.data_mut(|d| {
+                    d.insert_temp(
+                        cache_id,
+                        JobCache {
+                            key,
+                            job: Some(j.clone()),
+                        },
+                    )
+                });
                 j
             }
         };
@@ -70,7 +84,11 @@ pub fn show(ui: &mut egui::Ui, salt: &str, text: &mut String, opt: &Options, pal
                 ui.add_space(gutter);
                 // Fondo de la línea actual: se reserva antes para quedar detrás del texto.
                 let line_bg = ui.painter().add(egui::Shape::Noop);
-                let width = if opt.wrap { ui.available_width() } else { f32::INFINITY };
+                let width = if opt.wrap {
+                    ui.available_width()
+                } else {
+                    f32::INFINITY
+                };
                 let out = egui::TextEdit::multiline(text)
                     .id_salt(salt)
                     .code_editor()
@@ -89,7 +107,14 @@ pub fn show(ui: &mut egui::Ui, salt: &str, text: &mut String, opt: &Options, pal
 }
 
 /// Números de línea (solo filas visibles) y resalte de la línea del cursor.
-fn paint_gutter(ui: &egui::Ui, out: &TextEditOutput, gutter: f32, line_bg: egui::layers::ShapeIdx, font: &FontId, pal: &Palette) {
+fn paint_gutter(
+    ui: &egui::Ui,
+    out: &TextEditOutput,
+    gutter: f32,
+    line_bg: egui::layers::ShapeIdx,
+    font: &FontId,
+    pal: &Palette,
+) {
     let clip = ui.clip_rect();
     let offset = out.galley_pos.to_vec2();
     let rows = &out.galley.rows;
@@ -104,7 +129,9 @@ fn paint_gutter(ui: &egui::Ui, out: &TextEditOutput, gutter: f32, line_bg: egui:
     }
     let cursor_line = out.cursor_range.and_then(|r| {
         let y = out.galley.pos_from_cursor(r.primary).center().y;
-        rows.iter().position(|p| p.rect().y_range().contains(y)).map(|i| lines[i])
+        rows.iter()
+            .position(|p| p.rect().y_range().contains(y))
+            .map(|i| lines[i])
     });
     let x_right = out.galley_pos.x - 8.0;
     let mut current: Option<Rect> = None;
@@ -117,7 +144,13 @@ fn paint_gutter(ui: &egui::Ui, out: &TextEditOutput, gutter: f32, line_bg: egui:
         let first_row = i == 0 || lines[i] != lines[i - 1];
         if first_row && r.bottom() >= clip.top() && r.top() <= clip.bottom() {
             let color = if is_cur { pal.text_dim } else { pal.text_faint };
-            ui.painter().text(egui::pos2(x_right, r.top()), Align2::RIGHT_TOP, lines[i].to_string(), font.clone(), color);
+            ui.painter().text(
+                egui::pos2(x_right, r.top()),
+                Align2::RIGHT_TOP,
+                lines[i].to_string(),
+                font.clone(),
+                color,
+            );
         }
     }
     if out.response.has_focus()
@@ -125,6 +158,9 @@ fn paint_gutter(ui: &egui::Ui, out: &TextEditOutput, gutter: f32, line_bg: egui:
     {
         let x = (out.galley_pos.x - gutter)..=clip.right().max(out.response.rect.right());
         let full = Rect::from_x_y_ranges(x, c.y_range());
-        ui.painter().set(line_bg, egui::epaint::RectShape::filled(full, 0.0, pal.surface_hover.gamma_multiply(0.55)));
+        ui.painter().set(
+            line_bg,
+            egui::epaint::RectShape::filled(full, 0.0, pal.surface_hover.gamma_multiply(0.55)),
+        );
     }
 }

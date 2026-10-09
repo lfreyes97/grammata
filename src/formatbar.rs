@@ -16,7 +16,8 @@ use egui_phosphor::regular as icon;
 
 /// Swatches del color pick (hex). El `+` abre el picker libre de egui.
 const SWATCHES: &[&str] = &[
-    "#ffffff", "#1e1e1e", "#808000", "#ffa500", "#008080", "#0066cc", "#800080", "#e03131", "#f06595",
+    "#ffffff", "#1e1e1e", "#808000", "#ffa500", "#008080", "#0066cc", "#800080", "#e03131",
+    "#f06595",
 ];
 const SIZES_PT: &[f32] = &[8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 18.0, 24.0, 32.0];
 
@@ -96,9 +97,7 @@ impl FormatBar {
 /// Prefijos rivales: dentro de un grupo solo vive uno por línea.
 /// `""` = quitar encabezado (las listas se quitan con su propio toggle).
 fn rivals_of(prefix: &str) -> &'static [&'static str] {
-    if prefix.is_empty() {
-        &["= ", "== ", "=== ", "==== "]
-    } else if prefix.starts_with('=') {
+    if prefix.is_empty() || prefix.starts_with('=') {
         &["= ", "== ", "=== ", "==== "]
     } else if prefix == "- " || prefix == "+ " || prefix == "/ " {
         &["- ", "+ ", "/ "]
@@ -136,7 +135,11 @@ pub fn toggle_prefix(text: &str, a: usize, b: usize, prefix: &str) -> (String, u
     let mut touched = Vec::new();
     for (i, (start, line)) in lines.iter().enumerate() {
         let end = start + line.chars().count() + usize::from(i + 1 < lines.len());
-        let hit = if a < b { *start < b && end > a } else { *start <= a && a <= end };
+        let hit = if a < b {
+            *start < b && end > a
+        } else {
+            *start <= a && a <= end
+        };
         if hit {
             touched.push(i);
         }
@@ -167,7 +170,10 @@ pub fn toggle_prefix(text: &str, a: usize, b: usize, prefix: &str) -> (String, u
         if touched.contains(&i) {
             if all_have {
                 // Quitar (el que lleve: prefix o rival).
-                for r in std::iter::once(prefix).chain(rivals.iter().copied()).filter(|r| !r.is_empty()) {
+                for r in std::iter::once(prefix)
+                    .chain(rivals.iter().copied())
+                    .filter(|r| !r.is_empty())
+                {
                     if let Some(stripped) = rest.strip_prefix(r) {
                         rest = stripped.to_string();
                         break;
@@ -213,7 +219,11 @@ fn hex_to_color(hex: &str) -> Option<egui::Color32> {
         return None;
     }
     let v = u32::from_str_radix(h, 16).ok()?;
-    Some(egui::Color32::from_rgb((v >> 16) as u8, (v >> 8) as u8, v as u8))
+    Some(egui::Color32::from_rgb(
+        (v >> 16) as u8,
+        (v >> 8) as u8,
+        v as u8,
+    ))
 }
 
 fn color_to_hex(c: egui::Color32) -> String {
@@ -222,7 +232,11 @@ fn color_to_hex(c: egui::Color32) -> String {
 
 /// "12" en vez de "12.0" para el `size: …pt` y la etiqueta.
 fn fmt_pt(s: f32) -> String {
-    if s.fract() == 0.0 { format!("{}", s as i32) } else { format!("{s}") }
+    if s.fract() == 0.0 {
+        format!("{}", s as i32)
+    } else {
+        format!("{s}")
+    }
 }
 
 // ---------- UI ----------
@@ -235,18 +249,26 @@ pub fn show(st: &mut State, ctx: &egui::Context) {
     if st.fmt.pinned {
         return;
     }
-    let Some((a, b)) = st.editor.selection else { return };
+    let Some((a, b)) = st.editor.selection else {
+        return;
+    };
     if a >= b {
         return;
     }
-    let Some((doc, anchor)) = st.editor.sel_anchor else { return };
+    let Some((doc, anchor)) = st.editor.sel_anchor else {
+        return;
+    };
     if doc != st.docs.cur_id() || st.modal.is_some() {
         return;
     }
     let vp = ctx.viewport_rect();
     // Sobre la selección; si no cabe, debajo (flip).
     let above = anchor.y - 60.0;
-    let y = if above < vp.min.y + 28.0 { anchor.y + 24.0 } else { above };
+    let y = if above < vp.min.y + 28.0 {
+        anchor.y + 24.0
+    } else {
+        above
+    };
     let x = (anchor.x - 200.0).clamp(vp.min.x + 8.0, (vp.max.x - 430.0).max(vp.min.x + 8.0));
     let pal0 = theme::palette(ctx);
     egui::Area::new(egui::Id::new("formatbar"))
@@ -280,227 +302,251 @@ pub fn docked(st: &mut State, ui: &mut egui::Ui) {
 fn bar_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Action> {
     let pal = theme::palette(ui.ctx());
     let mut act: Option<Action> = None;
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 2.0;
-                        if !floating {
-                            if widgets::icon_button(ui, icon::PUSH_PIN_SLASH, "Desfijar (flotante)").clicked() {
-                                st.fmt.pinned = false;
-                            }
-                            widgets::vsep(ui, &pal);
-                        }
-                        if widgets::icon_button(ui, icon::TEXT_BOLDER, "Negrita").clicked() {
-                            act = Some(Action::InsertSnippet("*${sel}*".into()));
-                        }
-                        if widgets::icon_button(ui, icon::TEXT_ITALIC, "Cursiva").clicked() {
-                            act = Some(Action::InsertSnippet("_${sel}_".into()));
-                        }
-                        if widgets::icon_button(ui, icon::TEXT_UNDERLINE, "Subrayado").clicked() {
-                            act = Some(Action::InsertSnippet("#underline[${sel}]".into()));
-                        }
-                        if widgets::icon_button(ui, icon::TEXT_STRIKETHROUGH, "Tachado").clicked() {
-                            act = Some(Action::InsertSnippet("#strike[${sel}]".into()));
-                        }
-                        widgets::vsep(ui, &pal);
-                        // Tamaño de fuente.
-                        ui.menu_button(RichText::new(fmt_pt(st.fmt.size_pt)).small(), |ui| {
-                            ui.set_min_width(120.0);
-                            for s in SIZES_PT {
-                                if ui.selectable_label(*s == st.fmt.size_pt, format!("{} pt", fmt_pt(*s))).clicked() {
-                                    st.fmt.size_pt = *s;
-                                    act = Some(Action::InsertSnippet(format!(
-                                        "#text(size: {}pt)[${{sel}}]",
-                                        fmt_pt(*s)
-                                    )));
-                                    ui.close();
-                                }
-                            }
-                        });
-                        // Familia (precargada en hilo al arrancar; el botón reintenta).
-                        ui.menu_button(
-                            RichText::new(if st.fmt.font.is_empty() { "Aa" } else { st.fmt.font.as_str() }).small(),
-                            |ui| {
-                                ui.set_min_width(240.0);
-                                if st.fmt.fonts.is_none() {
-                                    ui.label(RichText::new("Cargando fuentes…").small());
-                                    if ui.button("Reintentar").clicked() {
-                                        st.fmt.fonts = Some(compile::typst_fonts());
-                                    }
-                                    return;
-                                }
-                                let fonts = st.fmt.fonts.clone().unwrap_or_default();
-                                if fonts.is_empty() {
-                                    ui.label(RichText::new("Sin fuentes del sistema").small());
-                                    return;
-                                }
-                                ui.add(
-                                    egui::TextEdit::singleline(&mut st.fmt.font_filter)
-                                        .hint_text("Filtrar…")
-                                        .desired_width(f32::INFINITY),
-                                );
-                                let q = st.fmt.font_filter.to_lowercase();
-                                egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
-                                    for f in fonts.iter().filter(|f| q.is_empty() || f.to_lowercase().contains(&q)) {
-                                        if ui.selectable_label(*f == st.fmt.font, f).clicked() {
-                                            st.fmt.font = f.clone();
-                                            act = Some(Action::InsertSnippet(format!(
-                                                "#text(font: \"{f}\")[${{sel}}]"
-                                            )));
-                                            ui.close();
-                                        }
-                                    }
-                                });
-                            },
-                        );
-                        // Color.
-                        ui.menu_button(
-                            RichText::new(format!("A {}", st.fmt.color_hex)).small().color(
-                                hex_to_color(&st.fmt.color_hex).unwrap_or(pal.text),
-                            ),
-                            |ui| {
-                                ui.set_min_width(150.0);
-                                egui::Grid::new("fmt-colors").num_columns(3).spacing([4.0, 4.0]).show(ui, |ui| {
-                                    for (i, h) in SWATCHES.iter().enumerate() {
-                                        let c = hex_to_color(h).unwrap_or(pal.text);
-                                        if ui
-                                            .add(
-                                                egui::Button::new("")
-                                                    .fill(c)
-                                                    .min_size(egui::vec2(26.0, 22.0))
-                                                    .corner_radius(egui::CornerRadius::same(5)),
-                                            )
-                                            .on_hover_text(*h)
-                                            .clicked()
-                                        {
-                                            st.fmt.color_hex = h.to_string();
-                                            act = Some(Action::InsertSnippet(format!(
-                                                "#text(fill: rgb(\"{h}\"))[${{sel}}]"
-                                            )));
-                                            ui.close();
-                                        }
-                                        if i % 3 == 2 {
-                                            ui.end_row();
-                                        }
-                                    }
-                                });
-                                ui.separator();
-                                ui.horizontal(|ui| {
-                                    ui.color_edit_button_srgba(&mut st.fmt.custom);
-                                    if ui.small_button("Aplicar").clicked() {
-                                        let h = color_to_hex(st.fmt.custom);
-                                        st.fmt.color_hex = h.clone();
-                                        st.fmt.custom = hex_to_color(&h).unwrap_or(st.fmt.custom);
-                                        act = Some(Action::InsertSnippet(format!(
-                                            "#text(fill: rgb(\"{h}\"))[${{sel}}]"
-                                        )));
-                                        ui.close();
-                                    }
-                                });
-                            },
-                        );
-                        widgets::vsep(ui, &pal);
-                        // Alineación.
-                        ui.menu_button(RichText::new(icon::TEXT_ALIGN_LEFT).size(16.0), |ui| {
-                            ui.set_min_width(160.0);
-                            for (ic, name) in [
-                                (icon::TEXT_ALIGN_LEFT, "left"),
-                                (icon::TEXT_ALIGN_CENTER, "center"),
-                                (icon::TEXT_ALIGN_RIGHT, "right"),
-                                (icon::TEXT_ALIGN_JUSTIFY, "justify"),
-                            ] {
-                                if ui.add(egui::Button::new(format!("{ic}  {name}")).frame_when_inactive(false)).clicked()
-                                {
-                                    act = Some(Action::InsertSnippet(format!("#align({name})[${{sel}}]")));
-                                    ui.close();
-                                }
-                            }
-                        });
-                        // Enlace (despliega campo URL).
-                        if widgets::icon_button(ui, icon::LINK, "Enlace").clicked() {
-                            st.fmt.link_open = !st.fmt.link_open;
-                        }
-                        // Imagen (diálogo; se inserta tras la selección sin borrarla).
-                        if widgets::icon_button(ui, icon::IMAGE, "Imagen…").clicked() {
-                            if let Some(body) = pick_image(st) {
-                                // Colapsa al final para no sustituir lo seleccionado.
-                                if let Some((_, b)) = st.editor.selection {
-                                    st.editor.selection = Some((b, b));
-                                    st.editor.cursor = Some(b);
-                                }
-                                act = Some(Action::InsertSnippet(body));
-                            }
-                        }
-                        // Listas.
-                        ui.menu_button(RichText::new(icon::LIST_BULLETS).size(16.0), |ui| {
-                            ui.set_min_width(180.0);
-                            if ui.button("Viñetas (- )").clicked() {
-                                act = Some(Action::PrefixLines("- ".into()));
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        if !floating {
+            if widgets::icon_button(ui, icon::PUSH_PIN_SLASH, "Desfijar (flotante)").clicked() {
+                st.fmt.pinned = false;
+            }
+            widgets::vsep(ui, &pal);
+        }
+        if widgets::icon_button(ui, icon::TEXT_BOLDER, "Negrita").clicked() {
+            act = Some(Action::InsertSnippet("*${sel}*".into()));
+        }
+        if widgets::icon_button(ui, icon::TEXT_ITALIC, "Cursiva").clicked() {
+            act = Some(Action::InsertSnippet("_${sel}_".into()));
+        }
+        if widgets::icon_button(ui, icon::TEXT_UNDERLINE, "Subrayado").clicked() {
+            act = Some(Action::InsertSnippet("#underline[${sel}]".into()));
+        }
+        if widgets::icon_button(ui, icon::TEXT_STRIKETHROUGH, "Tachado").clicked() {
+            act = Some(Action::InsertSnippet("#strike[${sel}]".into()));
+        }
+        widgets::vsep(ui, &pal);
+        // Tamaño de fuente.
+        ui.menu_button(RichText::new(fmt_pt(st.fmt.size_pt)).small(), |ui| {
+            ui.set_min_width(120.0);
+            for s in SIZES_PT {
+                if ui
+                    .selectable_label(*s == st.fmt.size_pt, format!("{} pt", fmt_pt(*s)))
+                    .clicked()
+                {
+                    st.fmt.size_pt = *s;
+                    act = Some(Action::InsertSnippet(format!(
+                        "#text(size: {}pt)[${{sel}}]",
+                        fmt_pt(*s)
+                    )));
+                    ui.close();
+                }
+            }
+        });
+        // Familia (precargada en hilo al arrancar; el botón reintenta).
+        ui.menu_button(
+            RichText::new(if st.fmt.font.is_empty() {
+                "Aa"
+            } else {
+                st.fmt.font.as_str()
+            })
+            .small(),
+            |ui| {
+                ui.set_min_width(240.0);
+                if st.fmt.fonts.is_none() {
+                    ui.label(RichText::new("Cargando fuentes…").small());
+                    if ui.button("Reintentar").clicked() {
+                        st.fmt.fonts = Some(compile::typst_fonts());
+                    }
+                    return;
+                }
+                let fonts = st.fmt.fonts.clone().unwrap_or_default();
+                if fonts.is_empty() {
+                    ui.label(RichText::new("Sin fuentes del sistema").small());
+                    return;
+                }
+                ui.add(
+                    egui::TextEdit::singleline(&mut st.fmt.font_filter)
+                        .hint_text("Filtrar…")
+                        .desired_width(f32::INFINITY),
+                );
+                let q = st.fmt.font_filter.to_lowercase();
+                egui::ScrollArea::vertical()
+                    .max_height(220.0)
+                    .show(ui, |ui| {
+                        for f in fonts
+                            .iter()
+                            .filter(|f| q.is_empty() || f.to_lowercase().contains(&q))
+                        {
+                            if ui.selectable_label(*f == st.fmt.font, f).clicked() {
+                                st.fmt.font = f.clone();
+                                act = Some(Action::InsertSnippet(format!(
+                                    "#text(font: \"{f}\")[${{sel}}]"
+                                )));
                                 ui.close();
-                            }
-                            if ui.button("Numerada (+ )").clicked() {
-                                act = Some(Action::PrefixLines("+ ".into()));
-                                ui.close();
-                            }
-                            if ui.button("Término (/ …:)").clicked() {
-                                act = Some(Action::InsertSnippet("/ ${sel:término}: definición".into()));
-                                ui.close();
-                            }
-                        });
-                        // Encabezados.
-                        ui.menu_button(RichText::new(icon::TEXT_H).size(16.0), |ui| {
-                            ui.set_min_width(180.0);
-                            if ui.button("Texto normal").clicked() {
-                                act = Some(Action::PrefixLines(String::new()));
-                                ui.close();
-                            }
-                            for (label, mark) in [("Título (= )", "= "), ("Subtítulo (== )", "== "), ("Sección (=== )", "=== ")] {
-                                if ui.button(label).clicked() {
-                                    act = Some(Action::PrefixLines(mark.into()));
-                                    ui.close();
-                                }
-                            }
-                        });
-                        // Código en línea.
-                        if widgets::icon_button(ui, icon::CODE_SIMPLE, "Código").clicked() {
-                            act = Some(Action::InsertSnippet("`${sel:código}`".into()));
-                        }
-                        if floating {
-                            widgets::vsep(ui, &pal);
-                            if widgets::icon_button(ui, icon::PUSH_PIN, "Fijar en la barra superior").clicked() {
-                                st.fmt.pinned = true;
                             }
                         }
                     });
-                    // Segunda fila: URL del enlace.
-                    if st.fmt.link_open {
-                        ui.separator();
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(icon::LINK).small());
-                            let r = ui.add(
-                                egui::TextEdit::singleline(&mut st.fmt.url)
-                                    .hint_text("https://…")
-                                    .desired_width(220.0),
-                            );
-                            let go = ui.small_button("Aplicar").clicked()
-                                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-                            if go && !st.fmt.url.trim().is_empty() {
-                                let u = st.fmt.url.trim().replace('\\', "\\\\").replace('"', "\\\"");
-                                act = Some(Action::InsertSnippet(format!("#link(\"{u}\")[${{sel:enlace}}]")));
-                                st.fmt.link_open = false;
-                            }
-                            if ui.small_button("✕").clicked()
-                                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)))
+            },
+        );
+        // Color.
+        ui.menu_button(
+            RichText::new(format!("A {}", st.fmt.color_hex))
+                .small()
+                .color(hex_to_color(&st.fmt.color_hex).unwrap_or(pal.text)),
+            |ui| {
+                ui.set_min_width(150.0);
+                egui::Grid::new("fmt-colors")
+                    .num_columns(3)
+                    .spacing([4.0, 4.0])
+                    .show(ui, |ui| {
+                        for (i, h) in SWATCHES.iter().enumerate() {
+                            let c = hex_to_color(h).unwrap_or(pal.text);
+                            if ui
+                                .add(
+                                    egui::Button::new("")
+                                        .fill(c)
+                                        .min_size(egui::vec2(26.0, 22.0))
+                                        .corner_radius(egui::CornerRadius::same(5)),
+                                )
+                                .on_hover_text(*h)
+                                .clicked()
                             {
-                                st.fmt.link_open = false;
+                                st.fmt.color_hex = h.to_string();
+                                act = Some(Action::InsertSnippet(format!(
+                                    "#text(fill: rgb(\"{h}\"))[${{sel}}]"
+                                )));
+                                ui.close();
                             }
-                        });
+                            if i % 3 == 2 {
+                                ui.end_row();
+                            }
+                        }
+                    });
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.color_edit_button_srgba(&mut st.fmt.custom);
+                    if ui.small_button("Aplicar").clicked() {
+                        let h = color_to_hex(st.fmt.custom);
+                        st.fmt.color_hex = h.clone();
+                        st.fmt.custom = hex_to_color(&h).unwrap_or(st.fmt.custom);
+                        act = Some(Action::InsertSnippet(format!(
+                            "#text(fill: rgb(\"{h}\"))[${{sel}}]"
+                        )));
+                        ui.close();
                     }
-                    act
+                });
+            },
+        );
+        widgets::vsep(ui, &pal);
+        // Alineación.
+        ui.menu_button(RichText::new(icon::TEXT_ALIGN_LEFT).size(16.0), |ui| {
+            ui.set_min_width(160.0);
+            for (ic, name) in [
+                (icon::TEXT_ALIGN_LEFT, "left"),
+                (icon::TEXT_ALIGN_CENTER, "center"),
+                (icon::TEXT_ALIGN_RIGHT, "right"),
+                (icon::TEXT_ALIGN_JUSTIFY, "justify"),
+            ] {
+                if ui
+                    .add(egui::Button::new(format!("{ic}  {name}")).frame_when_inactive(false))
+                    .clicked()
+                {
+                    act = Some(Action::InsertSnippet(format!("#align({name})[${{sel}}]")));
+                    ui.close();
+                }
+            }
+        });
+        // Enlace (despliega campo URL).
+        if widgets::icon_button(ui, icon::LINK, "Enlace").clicked() {
+            st.fmt.link_open = !st.fmt.link_open;
+        }
+        // Imagen (diálogo; se inserta tras la selección sin borrarla).
+        if widgets::icon_button(ui, icon::IMAGE, "Imagen…").clicked()
+            && let Some(body) = pick_image(st)
+        {
+            // Colapsa al final para no sustituir lo seleccionado.
+            if let Some((_, b)) = st.editor.selection {
+                st.editor.selection = Some((b, b));
+                st.editor.cursor = Some(b);
+            }
+            act = Some(Action::InsertSnippet(body));
+        }
+        // Listas.
+        ui.menu_button(RichText::new(icon::LIST_BULLETS).size(16.0), |ui| {
+            ui.set_min_width(180.0);
+            if ui.button("Viñetas (- )").clicked() {
+                act = Some(Action::PrefixLines("- ".into()));
+                ui.close();
+            }
+            if ui.button("Numerada (+ )").clicked() {
+                act = Some(Action::PrefixLines("+ ".into()));
+                ui.close();
+            }
+            if ui.button("Término (/ …:)").clicked() {
+                act = Some(Action::InsertSnippet("/ ${sel:término}: definición".into()));
+                ui.close();
+            }
+        });
+        // Encabezados.
+        ui.menu_button(RichText::new(icon::TEXT_H).size(16.0), |ui| {
+            ui.set_min_width(180.0);
+            if ui.button("Texto normal").clicked() {
+                act = Some(Action::PrefixLines(String::new()));
+                ui.close();
+            }
+            for (label, mark) in [
+                ("Título (= )", "= "),
+                ("Subtítulo (== )", "== "),
+                ("Sección (=== )", "=== "),
+            ] {
+                if ui.button(label).clicked() {
+                    act = Some(Action::PrefixLines(mark.into()));
+                    ui.close();
+                }
+            }
+        });
+        // Código en línea.
+        if widgets::icon_button(ui, icon::CODE_SIMPLE, "Código").clicked() {
+            act = Some(Action::InsertSnippet("`${sel:código}`".into()));
+        }
+        if floating {
+            widgets::vsep(ui, &pal);
+            if widgets::icon_button(ui, icon::PUSH_PIN, "Fijar en la barra superior").clicked() {
+                st.fmt.pinned = true;
+            }
+        }
+    });
+    // Segunda fila: URL del enlace.
+    if st.fmt.link_open {
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(icon::LINK).small());
+            let r = ui.add(
+                egui::TextEdit::singleline(&mut st.fmt.url)
+                    .hint_text("https://…")
+                    .desired_width(220.0),
+            );
+            let go = ui.small_button("Aplicar").clicked()
+                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            if go && !st.fmt.url.trim().is_empty() {
+                let u = st.fmt.url.trim().replace('\\', "\\\\").replace('"', "\\\"");
+                act = Some(Action::InsertSnippet(format!(
+                    "#link(\"{u}\")[${{sel:enlace}}]"
+                )));
+                st.fmt.link_open = false;
+            }
+            if ui.small_button("✕").clicked()
+                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)))
+            {
+                st.fmt.link_open = false;
+            }
+        });
+    }
+    act
 }
 
 /// Diálogo de imagen → cuerpo `image(…)` con ruta relativa al documento.
 fn pick_image(st: &mut State) -> Option<String> {
-    let mut dlg = rfd::FileDialog::new()
-        .add_filter("Imagen", &["png", "jpg", "jpeg", "svg", "webp", "gif"]);
+    let mut dlg =
+        rfd::FileDialog::new().add_filter("Imagen", &["png", "jpg", "jpeg", "svg", "webp", "gif"]);
     if let Some(dir) = st.docs.cur().path.as_deref().and_then(|p| p.parent()) {
         dlg = dlg.set_directory(dir);
     }
@@ -524,13 +570,25 @@ mod tests {
     #[test]
     fn encabezado_toggle() {
         // Añade.
-        assert_eq!(toggle_prefix("Hola\n", 0, 4, "= "), ("= Hola\n".into(), 0, 7));
+        assert_eq!(
+            toggle_prefix("Hola\n", 0, 4, "= "),
+            ("= Hola\n".into(), 0, 7)
+        );
         // Quita (todas lo llevan).
-        assert_eq!(toggle_prefix("= Hola\n", 0, 6, "= "), ("Hola\n".into(), 0, 5));
+        assert_eq!(
+            toggle_prefix("= Hola\n", 0, 6, "= "),
+            ("Hola\n".into(), 0, 5)
+        );
         // Rival: == → =.
-        assert_eq!(toggle_prefix("== Hola\n", 0, 7, "= "), ("= Hola\n".into(), 0, 7));
+        assert_eq!(
+            toggle_prefix("== Hola\n", 0, 7, "= "),
+            ("= Hola\n".into(), 0, 7)
+        );
         // Normal quita encabezado pero no lista.
-        assert_eq!(toggle_prefix("- item\n", 0, 6, ""), ("- item\n".into(), 0, 7));
+        assert_eq!(
+            toggle_prefix("- item\n", 0, 6, ""),
+            ("- item\n".into(), 0, 7)
+        );
         assert_eq!(toggle_prefix("== T\n", 0, 4, ""), ("T\n".into(), 0, 2));
     }
 
@@ -553,8 +611,14 @@ mod tests {
 
     #[test]
     fn hex_color() {
-        assert_eq!(hex_to_color("#ff0000"), Some(egui::Color32::from_rgb(255, 0, 0)));
+        assert_eq!(
+            hex_to_color("#ff0000"),
+            Some(egui::Color32::from_rgb(255, 0, 0))
+        );
         assert!(hex_to_color("rojo").is_none());
-        assert_eq!(color_to_hex(egui::Color32::from_rgb(0, 102, 204)), "#0066cc");
+        assert_eq!(
+            color_to_hex(egui::Color32::from_rgb(0, 102, 204)),
+            "#0066cc"
+        );
     }
 }

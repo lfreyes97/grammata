@@ -118,7 +118,10 @@ impl Preview {
     /// Páginas con textura de la generación actual (para las pruebas).
     #[cfg(test)]
     pub fn fresh_pages(&self) -> usize {
-        self.textures.values().filter(|t| t.generation == self.generation).count()
+        self.textures
+            .values()
+            .filter(|t| t.generation == self.generation)
+            .count()
     }
 
     /// Carga un PDF. Si es otro documento, vuelve arriba y descarta texturas.
@@ -178,10 +181,18 @@ impl Preview {
                 Event::Failed { generation, error } if generation == self.generation => {
                     self.load_error = Some(error);
                 }
-                Event::Page { generation, job, image } if generation == self.generation => {
+                Event::Page {
+                    generation,
+                    job,
+                    image,
+                } if generation == self.generation => {
                     // Las miniaturas y la lupa viajan por el mismo canal: se
                     // distinguen por su escala pedida (estable por frame).
-                    if self.thumb_want.get(&job.page).is_some_and(|&s| (s - job.scale).abs() < 1e-6) {
+                    if self
+                        .thumb_want
+                        .get(&job.page)
+                        .is_some_and(|&s| (s - job.scale).abs() < 1e-6)
+                    {
                         let tex = ctx.load_texture(
                             format!("pdf-thumb-{}", job.page),
                             image,
@@ -190,7 +201,10 @@ impl Preview {
                         self.thumbs.insert(job.page, tex);
                         continue;
                     }
-                    if self.lens_want.is_some_and(|(p, s)| p == job.page && (s - job.scale).abs() < 1e-6) {
+                    if self
+                        .lens_want
+                        .is_some_and(|(p, s)| p == job.page && (s - job.scale).abs() < 1e-6)
+                    {
                         let tex = ctx.load_texture("pdf-lens", image, egui::TextureOptions::LINEAR);
                         self.lens_tex = Some((job.page, job.scale, tex));
                         continue;
@@ -207,7 +221,14 @@ impl Preview {
                                 image,
                                 egui::TextureOptions::LINEAR,
                             );
-                            self.textures.insert(job.page, PageTex { tex, scale: job.scale, generation });
+                            self.textures.insert(
+                                job.page,
+                                PageTex {
+                                    tex,
+                                    scale: job.scale,
+                                    generation,
+                                },
+                            );
                         }
                     }
                 }
@@ -216,14 +237,27 @@ impl Preview {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, info: &Info, actions: &mut Vec<Action>) {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        prefs: &mut Prefs,
+        info: &Info,
+        actions: &mut Vec<Action>,
+    ) {
         let pal = theme::palette(ui.ctx());
         self.toolbar(ui, prefs, info, &pal, actions);
         self.canvas(ui, prefs, &pal, info, actions);
     }
 
     /// Lienzo (páginas o estado vacío + banner). Compartido entre panel y presentación.
-    fn canvas(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, pal: &Palette, info: &Info, actions: &mut Vec<Action>) {
+    fn canvas(
+        &mut self,
+        ui: &mut egui::Ui,
+        prefs: &mut Prefs,
+        pal: &Palette,
+        info: &Info,
+        actions: &mut Vec<Action>,
+    ) {
         let canvas = egui::Frame::new().fill(pal.canvas);
         canvas.show(ui, |ui| {
             ui.set_min_size(ui.available_size());
@@ -252,7 +286,13 @@ impl Preview {
     }
 
     /// Presentación: lienzo a pantalla completa + controles flotantes.
-    pub fn present(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, info: &Info, actions: &mut Vec<Action>) {
+    pub fn present(
+        &mut self,
+        ui: &mut egui::Ui,
+        prefs: &mut Prefs,
+        info: &Info,
+        actions: &mut Vec<Action>,
+    ) {
         let pal = theme::palette(ui.ctx());
         self.canvas(ui, prefs, &pal, info, actions);
         let n = self.sizes.len();
@@ -273,7 +313,13 @@ impl Preview {
                                 self.set_presentation(&ctx, false);
                             }
                             ui.add_enabled_ui(n > 0, |ui| {
-                                if crate::widgets::icon_button(ui, icon::CARET_UP, "Página anterior").clicked() {
+                                if crate::widgets::icon_button(
+                                    ui,
+                                    icon::CARET_UP,
+                                    "Página anterior",
+                                )
+                                .clicked()
+                                {
                                     self.goto_page(self.current_page.saturating_sub(1));
                                 }
                                 let txt = if n == 0 {
@@ -282,15 +328,24 @@ impl Preview {
                                     format!("{} / {}", self.current_page + 1, n)
                                 };
                                 ui.label(egui::RichText::new(txt).monospace().color(pal.text));
-                                if crate::widgets::icon_button(ui, icon::CARET_DOWN, "Página siguiente").clicked() {
+                                if crate::widgets::icon_button(
+                                    ui,
+                                    icon::CARET_DOWN,
+                                    "Página siguiente",
+                                )
+                                .clicked()
+                                {
                                     self.goto_page(self.current_page + 1);
                                 }
                             });
                             ui.label(
-                                egui::RichText::new(format!("{:.0} %", self.effective_zoom * 100.0))
-                                    .monospace()
-                                    .small()
-                                    .color(pal.text_dim),
+                                egui::RichText::new(format!(
+                                    "{:.0} %",
+                                    self.effective_zoom * 100.0
+                                ))
+                                .monospace()
+                                .small()
+                                .color(pal.text_dim),
                             )
                             .on_hover_text("Zoom (Ctrl+rueda)");
                         });
@@ -303,7 +358,9 @@ impl Preview {
         if !self.lens {
             return;
         }
-        let Some((mouse, _page, x_pt, y_pt)) = self.lens_hit else { return };
+        let Some((mouse, _page, x_pt, y_pt)) = self.lens_hit else {
+            return;
+        };
         let ctx = ui.ctx();
         let ppp = ctx.pixels_per_point();
         // Posición: junto al cursor, dentro del panel.
@@ -332,7 +389,10 @@ impl Preview {
                     let y0 = (cy - half).clamp(0.0, (th - 2.0 * half).max(0.0));
                     let uv = Rect::from_min_max(
                         pos2(x0 / tw.max(1.0), y0 / th.max(1.0)),
-                        pos2((x0 + 2.0 * half) / tw.max(1.0), (y0 + 2.0 * half) / th.max(1.0)),
+                        pos2(
+                            (x0 + 2.0 * half) / tw.max(1.0),
+                            (y0 + 2.0 * half) / th.max(1.0),
+                        ),
                     );
                     egui::Frame::new()
                         .fill(Color32::WHITE)
@@ -340,7 +400,8 @@ impl Preview {
                         .corner_radius(CornerRadius::same(10))
                         .inner_margin(0.0)
                         .show(ui, |ui| {
-                            let (rect, _) = ui.allocate_exact_size(vec2(LENS_SIZE, LENS_SIZE), Sense::hover());
+                            let (rect, _) =
+                                ui.allocate_exact_size(vec2(LENS_SIZE, LENS_SIZE), Sense::hover());
                             let painter = ui.painter_at(rect);
                             painter.image(tex.id(), rect, uv, Color32::WHITE);
                             // Cruz central.
@@ -374,53 +435,75 @@ impl Preview {
         ui.vertical(|ui| {
             ui.set_min_width(THUMB_W + 16.0);
             ui.set_max_width(THUMB_W + 16.0);
-            egui::ScrollArea::vertical().id_salt("pdf-thumbs").auto_shrink([false, false]).show(ui, |ui| {
-                let mut go = None;
-                for (i, s) in self.sizes.iter().enumerate() {
-                    let h = THUMB_W * s.y / s.x.max(1.0);
-                    let selected = i == self.current_page;
-                    let frame = egui::Frame::new()
-                        .fill(Color32::WHITE)
-                        .stroke(egui::Stroke::new(
-                            if selected { 2.0 } else { 1.0 },
-                            if selected { pal.accent } else { pal.border_strong },
-                        ))
-                        .corner_radius(CornerRadius::same(3))
-                        .inner_margin(2.0);
-                    let r = frame
-                        .show(ui, |ui| {
-                            ui.set_min_size(vec2(THUMB_W, h));
-                            if let Some(tex) = self.thumbs.get(&i) {
-                                ui.add(
-                                    egui::Image::from_texture(egui::load::SizedTexture::from_handle(tex))
+            egui::ScrollArea::vertical()
+                .id_salt("pdf-thumbs")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let mut go = None;
+                    for (i, s) in self.sizes.iter().enumerate() {
+                        let h = THUMB_W * s.y / s.x.max(1.0);
+                        let selected = i == self.current_page;
+                        let frame = egui::Frame::new()
+                            .fill(Color32::WHITE)
+                            .stroke(egui::Stroke::new(
+                                if selected { 2.0 } else { 1.0 },
+                                if selected {
+                                    pal.accent
+                                } else {
+                                    pal.border_strong
+                                },
+                            ))
+                            .corner_radius(CornerRadius::same(3))
+                            .inner_margin(2.0);
+                        let r = frame
+                            .show(ui, |ui| {
+                                ui.set_min_size(vec2(THUMB_W, h));
+                                if let Some(tex) = self.thumbs.get(&i) {
+                                    ui.add(
+                                        egui::Image::from_texture(
+                                            egui::load::SizedTexture::from_handle(tex),
+                                        )
                                         .fit_to_exact_size(vec2(THUMB_W, h)),
-                                );
-                            } else {
-                                ui.centered_and_justified(|ui| {
-                                    ui.spinner();
-                                });
-                            }
-                        })
-                        .response
-                        .interact(Sense::click())
-                        .on_hover_text(format!("Ir a la página {}", i + 1));
-                    if r.clicked() {
-                        go = Some(i);
+                                    );
+                                } else {
+                                    ui.centered_and_justified(|ui| {
+                                        ui.spinner();
+                                    });
+                                }
+                            })
+                            .response
+                            .interact(Sense::click())
+                            .on_hover_text(format!("Ir a la página {}", i + 1));
+                        if r.clicked() {
+                            go = Some(i);
+                        }
+                        ui.add_space(6.0);
                     }
-                    ui.add_space(6.0);
-                }
-                if let Some(i) = go {
-                    self.goto_page(i);
-                }
-            });
+                    if let Some(i) = go {
+                        self.goto_page(i);
+                    }
+                });
         });
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, info: &Info, pal: &Palette, actions: &mut Vec<Action>) {
+    fn toolbar(
+        &mut self,
+        ui: &mut egui::Ui,
+        prefs: &mut Prefs,
+        info: &Info,
+        pal: &Palette,
+        actions: &mut Vec<Action>,
+    ) {
         crate::widgets::toolbar_frame(pal).show(ui, |ui| {
             ui.horizontal(|ui| {
                 let z = self.effective_zoom;
-                if crate::widgets::icon_button(ui, icon::MAGNIFYING_GLASS_MINUS, "Alejar  (Ctrl+rueda)").clicked() {
+                if crate::widgets::icon_button(
+                    ui,
+                    icon::MAGNIFYING_GLASS_MINUS,
+                    "Alejar  (Ctrl+rueda)",
+                )
+                .clicked()
+                {
                     prefs.fit = FitMode::Manual;
                     prefs.zoom = step_zoom(z, -1);
                 }
@@ -431,25 +514,50 @@ impl Preview {
                 };
                 ui.menu_button(egui::RichText::new(label).monospace(), |ui| {
                     ui.set_min_width(170.0);
-                    if ui.add(egui::Button::new(format!("{}  Ajustar al ancho", icon::ARROWS_OUT_LINE_HORIZONTAL)).selected(prefs.fit == FitMode::Width)).clicked() {
+                    if ui
+                        .add(
+                            egui::Button::new(format!(
+                                "{}  Ajustar al ancho",
+                                icon::ARROWS_OUT_LINE_HORIZONTAL
+                            ))
+                            .selected(prefs.fit == FitMode::Width),
+                        )
+                        .clicked()
+                    {
                         prefs.fit = FitMode::Width;
                         ui.close();
                     }
-                    if ui.add(egui::Button::new(format!("{}  Página completa", icon::FRAME_CORNERS)).selected(prefs.fit == FitMode::Page)).clicked() {
+                    if ui
+                        .add(
+                            egui::Button::new(format!("{}  Página completa", icon::FRAME_CORNERS))
+                                .selected(prefs.fit == FitMode::Page),
+                        )
+                        .clicked()
+                    {
                         prefs.fit = FitMode::Page;
                         ui.close();
                     }
                     ui.separator();
                     for p in [50, 75, 100, 125, 150, 200, 300] {
-                        let sel = prefs.fit == FitMode::Manual && (prefs.zoom * 100.0).round() as i32 == p;
-                        if ui.add(egui::Button::new(format!("{p} %")).selected(sel)).clicked() {
+                        let sel = prefs.fit == FitMode::Manual
+                            && (prefs.zoom * 100.0).round() as i32 == p;
+                        if ui
+                            .add(egui::Button::new(format!("{p} %")).selected(sel))
+                            .clicked()
+                        {
                             prefs.fit = FitMode::Manual;
                             prefs.zoom = p as f32 / 100.0;
                             ui.close();
                         }
                     }
                 });
-                if crate::widgets::icon_button(ui, icon::MAGNIFYING_GLASS_PLUS, "Acercar  (Ctrl+rueda)").clicked() {
+                if crate::widgets::icon_button(
+                    ui,
+                    icon::MAGNIFYING_GLASS_PLUS,
+                    "Acercar  (Ctrl+rueda)",
+                )
+                .clicked()
+                {
                     prefs.fit = FitMode::Manual;
                     prefs.zoom = step_zoom(z, 1);
                 }
@@ -458,18 +566,36 @@ impl Preview {
 
                 let n = self.sizes.len();
                 ui.add_enabled_ui(n > 0, |ui| {
-                    if crate::widgets::icon_button(ui, icon::CARET_UP, "Página anterior  (RePág)").clicked() {
+                    if crate::widgets::icon_button(ui, icon::CARET_UP, "Página anterior  (RePág)")
+                        .clicked()
+                    {
                         self.goto_page(self.current_page.saturating_sub(1));
                     }
-                    let txt = if n == 0 { "– / –".to_string() } else { format!("{} / {}", self.current_page + 1, n) };
-                    ui.label(egui::RichText::new(format!("{}  {txt}", icon::FILE_TEXT)).monospace().color(pal.text_dim));
-                    if crate::widgets::icon_button(ui, icon::CARET_DOWN, "Página siguiente  (AvPág)").clicked() {
+                    let txt = if n == 0 {
+                        "– / –".to_string()
+                    } else {
+                        format!("{} / {}", self.current_page + 1, n)
+                    };
+                    ui.label(
+                        egui::RichText::new(format!("{}  {txt}", icon::FILE_TEXT))
+                            .monospace()
+                            .color(pal.text_dim),
+                    );
+                    if crate::widgets::icon_button(
+                        ui,
+                        icon::CARET_DOWN,
+                        "Página siguiente  (AvPág)",
+                    )
+                    .clicked()
+                    {
                         self.goto_page(self.current_page + 1);
                     }
                 });
 
                 ui.add_enabled_ui(n > 1, |ui| {
-                    if crate::widgets::icon_toggle(ui, self.show_thumbs, icon::IMAGES, "Miniaturas").clicked() {
+                    if crate::widgets::icon_toggle(ui, self.show_thumbs, icon::IMAGES, "Miniaturas")
+                        .clicked()
+                    {
                         self.show_thumbs = !self.show_thumbs;
                         if !self.show_thumbs {
                             self.thumbs.clear();
@@ -479,7 +605,14 @@ impl Preview {
                 });
 
                 ui.add_enabled_ui(n > 0, |ui| {
-                    if crate::widgets::icon_toggle(ui, self.lens, icon::MAGNIFYING_GLASS, "Lupa (aumenta la zona del cursor)").clicked() {
+                    if crate::widgets::icon_toggle(
+                        ui,
+                        self.lens,
+                        icon::MAGNIFYING_GLASS,
+                        "Lupa (aumenta la zona del cursor)",
+                    )
+                    .clicked()
+                    {
                         self.lens = !self.lens;
                         if !self.lens {
                             self.lens_tex = None;
@@ -490,36 +623,59 @@ impl Preview {
                 });
 
                 ui.add_enabled_ui(n > 0, |ui| {
-                    if crate::widgets::icon_button(ui, icon::PRESENTATION, "Presentación  (F11)").clicked() {
+                    if crate::widgets::icon_button(ui, icon::PRESENTATION, "Presentación  (F11)")
+                        .clicked()
+                    {
                         let ctx = ui.ctx().clone();
                         self.set_presentation(&ctx, true);
                     }
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if crate::widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, "Compilar  (F5)").clicked() {
+                    if crate::widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, "Compilar  (F5)")
+                        .clicked()
+                    {
                         actions.push(Action::Compile);
                     }
                     if info.compiling {
                         ui.add(egui::Spinner::new().size(14.0).color(pal.accent));
                     } else if info.errors > 0 {
                         let r = ui.add(
-                            egui::Label::new(egui::RichText::new(format!("{} {}", icon::WARNING_CIRCLE, info.errors)).color(pal.err))
-                                .sense(Sense::click()),
+                            egui::Label::new(
+                                egui::RichText::new(format!(
+                                    "{} {}",
+                                    icon::WARNING_CIRCLE,
+                                    info.errors
+                                ))
+                                .color(pal.err),
+                            )
+                            .sense(Sense::click()),
                         );
-                        if r.on_hover_text("Errores de compilación — ver Problemas").clicked() {
+                        if r.on_hover_text("Errores de compilación — ver Problemas")
+                            .clicked()
+                        {
                             actions.push(Action::ShowPanel(Panel::Problems));
                         }
                     } else if info.stale && !info.auto {
-                        ui.label(egui::RichText::new(format!("{} desactualizado", icon::WARNING)).small().color(pal.warn))
-                            .on_hover_text("Autocompilar está desactivado: pulsa F5");
+                        ui.label(
+                            egui::RichText::new(format!("{} desactualizado", icon::WARNING))
+                                .small()
+                                .color(pal.warn),
+                        )
+                        .on_hover_text("Autocompilar está desactivado: pulsa F5");
                     }
                 });
             });
         });
     }
 
-    fn empty_state(&mut self, ui: &mut egui::Ui, info: &Info, pal: &Palette, actions: &mut Vec<Action>) {
+    fn empty_state(
+        &mut self,
+        ui: &mut egui::Ui,
+        info: &Info,
+        pal: &Palette,
+        actions: &mut Vec<Action>,
+    ) {
         ui.vertical_centered(|ui| {
             ui.add_space((ui.available_height() * 0.3).min(160.0));
             let (ic, title, sub) = if info.compiling {
@@ -527,9 +683,17 @@ impl Preview {
             } else if let Some(e) = &self.load_error {
                 (icon::FILE_X, "No se pudo mostrar el PDF", e.as_str())
             } else if info.errors > 0 {
-                (icon::WARNING_CIRCLE, "La compilación falló", "Revisa el panel Problemas para ver qué falla.")
+                (
+                    icon::WARNING_CIRCLE,
+                    "La compilación falló",
+                    "Revisa el panel Problemas para ver qué falla.",
+                )
             } else if !info.has_build {
-                (icon::FILE_PDF, "Sin vista previa todavía", "Compila el documento para verlo aquí.")
+                (
+                    icon::FILE_PDF,
+                    "Sin vista previa todavía",
+                    "Compila el documento para verlo aquí.",
+                )
             } else {
                 (icon::FILE_DASHED, "El documento no tiene páginas", "")
             };
@@ -541,16 +705,30 @@ impl Preview {
             }
             ui.add_space(10.0);
             if info.errors > 0 && !info.compiling {
-                if ui.button(format!("{}  Ver problemas", icon::LIST_MAGNIFYING_GLASS)).clicked() {
+                if ui
+                    .button(format!("{}  Ver problemas", icon::LIST_MAGNIFYING_GLASS))
+                    .clicked()
+                {
                     actions.push(Action::ShowPanel(Panel::Problems));
                 }
-            } else if !info.compiling && ui.button(format!("{}  Compilar  (F5)", icon::PLAY)).clicked() {
+            } else if !info.compiling
+                && ui
+                    .button(format!("{}  Compilar  (F5)", icon::PLAY))
+                    .clicked()
+            {
                 actions.push(Action::Compile);
             }
         });
     }
 
-    fn pages(&mut self, ui: &mut egui::Ui, prefs: &mut Prefs, pal: &Palette, info: &Info, actions: &mut Vec<Action>) {
+    fn pages(
+        &mut self,
+        ui: &mut egui::Ui,
+        prefs: &mut Prefs,
+        pal: &Palette,
+        info: &Info,
+        actions: &mut Vec<Action>,
+    ) {
         let avail = ui.available_size();
         let max_w = self.sizes.iter().map(|s| s.x).fold(1.0, f32::max) * PT_TO_PX;
         let max_h = self.sizes.iter().map(|s| s.y).fold(1.0, f32::max) * PT_TO_PX;
@@ -573,12 +751,17 @@ impl Preview {
         let content_h = y - GAP + MARGIN;
         let content_w = (max_w * zoom + 2.0 * MARGIN).max(avail.x - scrollbar);
 
-        let mut area = egui::ScrollArea::both().id_salt("pdf-canvas").auto_shrink([false, false]);
+        let mut area = egui::ScrollArea::both()
+            .id_salt("pdf-canvas")
+            .auto_shrink([false, false]);
         if let Some((p, y)) = self.scroll_to.take() {
             let top = tops.get(p).copied().unwrap_or(0.0);
             // Muestra el punto con contexto encima (30 % del viewport).
             area = area.vertical_scroll_offset((top + y * PT_TO_PX * zoom - MARGIN * 0.5).max(0.0));
-        } else if self.last_content_h > 0.0 && (content_h - self.last_content_h).abs() > 0.5 && (zoom - self.effective_zoom).abs() > 1e-4 {
+        } else if self.last_content_h > 0.0
+            && (content_h - self.last_content_h).abs() > 0.5
+            && (zoom - self.effective_zoom).abs() > 1e-4
+        {
             // Zoom: conserva la posición relativa del scroll.
             let k = content_h / self.last_content_h;
             area = area.scroll_offset(vec2(self.last_offset.x * k, self.last_offset.y * k));
@@ -588,7 +771,10 @@ impl Preview {
         let ppp = ui.ctx().pixels_per_point();
         let out = area.show_viewport(ui, |ui, viewport| {
             let origin = ui.max_rect().min;
-            ui.allocate_rect(Rect::from_min_size(origin, vec2(content_w, content_h)), Sense::hover());
+            ui.allocate_rect(
+                Rect::from_min_size(origin, vec2(content_w, content_h)),
+                Sense::hover(),
+            );
             let painter = ui.painter();
             let prefetch = viewport.expand2(vec2(0.0, viewport.height()));
             let probe = viewport.top() + viewport.height() * 0.3;
@@ -610,15 +796,28 @@ impl Preview {
                 // (p. ej. por centrar la página) re-muestrea toda la textura
                 // y el texto se ve borroso aunque la escala sea 1:1.
                 let rect = Rect::from_min_max(
-                    pos2((rect.min.x * ppp).round() / ppp, (rect.min.y * ppp).round() / ppp),
-                    pos2((rect.max.x * ppp).round() / ppp, (rect.max.y * ppp).round() / ppp),
+                    pos2(
+                        (rect.min.x * ppp).round() / ppp,
+                        (rect.min.y * ppp).round() / ppp,
+                    ),
+                    pos2(
+                        (rect.max.x * ppp).round() / ppp,
+                        (rect.max.y * ppp).round() / ppp,
+                    ),
                 );
                 let want = desired_scale(*s, zoom, ppp);
                 let tex = self.textures.get(&i);
                 let fresh = tex.is_some_and(|t| t.generation == self.generation && t.scale == want);
                 if !fresh {
-                    let job = Job { page: i, scale: want };
-                    if local.intersects(viewport) { visible.push(job) } else { near.push(job) }
+                    let job = Job {
+                        page: i,
+                        scale: want,
+                    };
+                    if local.intersects(viewport) {
+                        visible.push(job)
+                    } else {
+                        near.push(job)
+                    }
                 }
                 if !local.intersects(viewport) {
                     continue;
@@ -626,11 +825,22 @@ impl Preview {
                 page_shadow(painter, rect, pal);
                 match tex {
                     Some(t) => {
-                        painter.image(t.tex.id(), rect, Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)), Color32::WHITE);
+                        painter.image(
+                            t.tex.id(),
+                            rect,
+                            Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)),
+                            Color32::WHITE,
+                        );
                     }
                     None => {
                         painter.rect_filled(rect, CornerRadius::same(1), Color32::WHITE);
-                        painter.text(rect.center(), Align2::CENTER_CENTER, icon::HOURGLASS_MEDIUM, FontId::proportional(22.0), Color32::from_gray(190));
+                        painter.text(
+                            rect.center(),
+                            Align2::CENTER_CENTER,
+                            icon::HOURGLASS_MEDIUM,
+                            FontId::proportional(22.0),
+                            Color32::from_gray(190),
+                        );
                     }
                 }
                 if ui.rect_contains_pointer(rect) {
@@ -655,7 +865,9 @@ impl Preview {
             self.lens_hit = None;
             if self.lens {
                 if let Some(m) = hover {
-                    if let Some((i, x, y)) = page_pos(origin, &tops, &self.sizes, zoom, content_w, m) {
+                    if let Some((i, x, y)) =
+                        page_pos(origin, &tops, &self.sizes, zoom, content_w, m)
+                    {
                         self.lens_hit = Some((m, i, x, y));
                         let want_lens = desired_scale(self.sizes[i], zoom, ppp) * LENS_MAG;
                         let fresh = self
@@ -664,7 +876,10 @@ impl Preview {
                             .is_some_and(|(p, s, _)| *p == i && (*s - want_lens).abs() < 1e-6);
                         self.lens_want = Some((i, want_lens));
                         if !fresh {
-                            visible.push(Job { page: i, scale: want_lens });
+                            visible.push(Job {
+                                page: i,
+                                scale: want_lens,
+                            });
                         }
                     } else {
                         self.lens_want = None;
@@ -681,25 +896,34 @@ impl Preview {
             if ui.input(|i| i.pointer.primary_pressed()) {
                 self.press = hover;
             } else if ui.input(|i| i.pointer.primary_down()) {
-                if let (Some(down), Some(cur)) = (self.press, hover) {
-                    if down.distance(cur) >= 6.0 {
-                        self.press = None;
-                    }
+                if let (Some(down), Some(cur)) = (self.press, hover)
+                    && down.distance(cur) >= 6.0
+                {
+                    self.press = None;
                 }
             } else {
                 // primary_released (o sin botón): si hubo press cerca, es clic.
                 let click = self.press.take().and_then(|down| {
-                    hover.filter(|up| down.distance(*up) < 6.0).map(|up| (down, up))
+                    hover
+                        .filter(|up| down.distance(*up) < 6.0)
+                        .map(|up| (down, up))
                 });
-                if let Some((_, up)) = click {
-                    if let Some((page, _, y)) = page_pos(origin, &tops, &self.sizes, zoom, content_w, up) {
-                        if let Some(e) = crate::engine::line_for_pos(&info.sync, page, y) {
-                            actions.push(match &e.file {
-                                None => Action::JumpTo { line: e.line, col: e.col },
-                                Some(f) => Action::OpenAt { path: info.root.join(f), line: e.line, col: e.col },
-                            });
-                        }
-                    }
+                if let Some((_, up)) = click
+                    && let Some((page, _, y)) =
+                        page_pos(origin, &tops, &self.sizes, zoom, content_w, up)
+                    && let Some(e) = crate::engine::line_for_pos(&info.sync, page, y)
+                {
+                    actions.push(match &e.file {
+                        None => Action::JumpTo {
+                            line: e.line,
+                            col: e.col,
+                        },
+                        Some(f) => Action::OpenAt {
+                            path: info.root.join(f),
+                            line: e.line,
+                            col: e.col,
+                        },
+                    });
                 }
                 self.press = None;
             }
@@ -716,7 +940,12 @@ impl Preview {
         }
         // RePág/AvPág: con el puntero encima y sin un campo de texto con foco.
         if hovered && ui.ctx().memory(|m| m.focused().is_none()) {
-            let (up, down) = ui.input(|i| (i.key_pressed(egui::Key::PageUp), i.key_pressed(egui::Key::PageDown)));
+            let (up, down) = ui.input(|i| {
+                (
+                    i.key_pressed(egui::Key::PageUp),
+                    i.key_pressed(egui::Key::PageDown),
+                )
+            });
             if up {
                 self.goto_page(self.current_page.saturating_sub(1));
             }
@@ -731,7 +960,12 @@ impl Preview {
         if self.textures.len() <= KEEP_TEXTURES {
             return;
         }
-        let drop: Vec<usize> = self.textures.keys().copied().filter(|i| !keep.contains(i)).collect();
+        let drop: Vec<usize> = self
+            .textures
+            .keys()
+            .copied()
+            .filter(|i| !keep.contains(i))
+            .collect();
         for i in drop {
             self.textures.remove(&i);
             self.renderer.forget(i);
@@ -741,10 +975,21 @@ impl Preview {
 
 /// Página bajo el punto de pantalla y su posición en puntos (coords de frame).
 /// Replica la geometría del bucle de dibujado para el clic inverso y la lupa.
-fn page_pos(origin: Pos2, tops: &[f32], sizes: &[Vec2], zoom: f32, content_w: f32, p: Pos2) -> Option<(usize, f32, f32)> {
+fn page_pos(
+    origin: Pos2,
+    tops: &[f32],
+    sizes: &[Vec2],
+    zoom: f32,
+    content_w: f32,
+    p: Pos2,
+) -> Option<(usize, f32, f32)> {
     for (i, s) in sizes.iter().enumerate() {
         let size = *s * PT_TO_PX * zoom;
-        let min = origin + vec2((content_w - size.x) * 0.5, tops.get(i).copied().unwrap_or(0.0));
+        let min = origin
+            + vec2(
+                (content_w - size.x) * 0.5,
+                tops.get(i).copied().unwrap_or(0.0),
+            );
         if Rect::from_min_size(min, size).contains(p) {
             let x = ((p.x - min.x) / (PT_TO_PX * zoom)).max(0.0);
             let y = ((p.y - min.y) / (PT_TO_PX * zoom)).max(0.0);
@@ -756,14 +1001,17 @@ fn page_pos(origin: Pos2, tops: &[f32], sizes: &[Vec2], zoom: f32, content_w: f3
 
 /// Escala de render (px de pantalla por punto PDF), cuantizada a pasos de
 /// 2^(1/8) para no re-renderizar en cada frame de un zoom continuo.
-fn desired_scale(page_pt: Vec2, zoom: f32, ppp: f32) -> f32 {    let raw = zoom * PT_TO_PX * ppp;
+fn desired_scale(page_pt: Vec2, zoom: f32, ppp: f32) -> f32 {
+    let raw = zoom * PT_TO_PX * ppp;
     let q = 2f32.powf((raw.log2() * 8.0).round() / 8.0);
     let cap = pdf_render::MAX_SIDE / page_pt.x.max(page_pt.y).max(1.0);
     q.min(cap)
 }
 
 fn step_zoom(z: f32, dir: i32) -> f32 {
-    const STEPS: [f32; 13] = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0, 3.0, 4.0];
+    const STEPS: [f32; 13] = [
+        0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 2.0, 3.0, 4.0,
+    ];
     let next = if dir > 0 {
         STEPS.iter().copied().find(|&s| s > z + 0.01)
     } else {

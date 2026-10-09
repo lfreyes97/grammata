@@ -41,7 +41,8 @@ pub struct Status {
 impl Status {
     pub fn visible(&self) -> Option<(&str, StatusKind)> {
         let ttl = if self.kind == StatusKind::Err { 15 } else { 6 };
-        (!self.msg.is_empty() && self.at.elapsed() < Duration::from_secs(ttl)).then_some((self.msg.as_str(), self.kind))
+        (!self.msg.is_empty() && self.at.elapsed() < Duration::from_secs(ttl))
+            .then_some((self.msg.as_str(), self.kind))
     }
 }
 
@@ -104,7 +105,11 @@ pub struct State {
 
 impl State {
     fn set_status(&mut self, msg: impl Into<String>, kind: StatusKind) {
-        self.status = Status { msg: msg.into(), kind, at: Instant::now() };
+        self.status = Status {
+            msg: msg.into(),
+            kind,
+            at: Instant::now(),
+        };
     }
 
     fn preview_info(&self) -> preview::Info {
@@ -113,7 +118,9 @@ impl State {
         preview::Info {
             compiling: self.compiler.in_flight.is_some_and(|k| k.doc == doc.id),
             auto: self.prefs.auto_compile,
-            errors: built.map(|b| diagnostics::count(&b.diagnostics).0).unwrap_or(0),
+            errors: built
+                .map(|b| diagnostics::count(&b.diagnostics).0)
+                .unwrap_or(0),
             stale: self.preview.loaded.is_some_and(|k| k.rev != doc.rev),
             has_build: built.is_some(),
             sync: built.map(|b| b.sync.clone()).unwrap_or_default(),
@@ -155,7 +162,9 @@ impl App {
             .filter(|_| !ids.is_empty())
             .map(|l| session::restore_layout(l, &ids))
             .filter(|d| d.iter_all_tabs().any(|(_, t)| matches!(t, Tab::Doc(_))))
-            .unwrap_or_else(|| Preset::Classic.build(docs.list.iter().map(|d| Tab::Doc(d.id)).collect()));
+            .unwrap_or_else(|| {
+                Preset::Classic.build(docs.list.iter().map(|d| Tab::Doc(d.id)).collect())
+            });
         // Docs que el diseño guardado no conocía (o diseño nuevo).
         let first = docs.list[0].id;
         for d in &docs.list {
@@ -175,7 +184,11 @@ impl App {
             editor: EditorUi::default(),
             outline: OutlineCache::default(),
             stats: Stats::default(),
-            status: Status { msg: String::new(), kind: StatusKind::Info, at: Instant::now() },
+            status: Status {
+                msg: String::new(),
+                kind: StatusKind::Info,
+                at: Instant::now(),
+            },
             actions: Vec::new(),
             modal: None,
             typst_version: compile::typst_version(),
@@ -187,8 +200,14 @@ impl App {
             fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
         };
-        let app = Self { st, dock, dock_style: None, last_persist: Instant::now(), title: String::new() };
-        app
+
+        Self {
+            st,
+            dock,
+            dock_style: None,
+            last_persist: Instant::now(),
+            title: String::new(),
+        }
     }
 
     // ---------- Sesión ----------
@@ -202,15 +221,28 @@ impl App {
             .map(|d| SessionTab {
                 path: d.path.clone(),
                 // Archivo guardado y sin cambios: se relee del disco al abrir.
-                text: if d.path.is_some() && !d.modified() { String::new() } else { session::tab_text(&d.text) },
+                text: if d.path.is_some() && !d.modified() {
+                    String::new()
+                } else {
+                    session::tab_text(&d.text)
+                },
             })
             .collect();
         let layout = session::save_layout(&self.dock, &order);
         let recent = self.st.recent_symbols.clone();
-        let s = Session::new(tabs, self.st.docs.current, self.st.prefs.clone(), layout, recent);
+        let s = Session::new(
+            tabs,
+            self.st.docs.current,
+            self.st.prefs.clone(),
+            layout,
+            recent,
+        );
         match session::save(&s) {
             Ok(()) => self.st.needs_persist = false,
-            Err(e) => self.st.set_status(format!("No se pudo guardar la sesión: {e}"), StatusKind::Err),
+            Err(e) => self.st.set_status(
+                format!("No se pudo guardar la sesión: {e}"),
+                StatusKind::Err,
+            ),
         }
         self.last_persist = Instant::now();
     }
@@ -226,24 +258,60 @@ impl App {
         ctx.input_mut(|i| {
             let mut k = |m: M, key: K| i.consume_key(m, key);
             // Con Mayús primero: `consume_key(CTRL, …)` también acepta Ctrl+Mayús.
-            if k(cs, K::S) { a.push(Action::SaveAs) }
-            if k(cs, K::Tab) { a.push(Action::PrevDoc) }
-            if k(cs, K::O) { a.push(Action::TogglePanel(Panel::Outline)) }
-            if k(cs, K::V) { a.push(Action::TogglePanel(Panel::Preview)) }
-            if k(cs, K::M) { a.push(Action::TogglePanel(Panel::Problems)) }
-            if k(cs, K::Y) { a.push(Action::TogglePanel(Panel::Symbols)) }
-            if k(cs, K::I) { a.push(Action::TogglePanel(Panel::Snippets)) }
-            if k(M::SHIFT, K::F3) { self.st.editor.pending_step = Some(-1) }
-            if k(M::CTRL, K::N) || k(M::CTRL, K::T) { a.push(Action::NewDoc) }
-            if k(M::CTRL, K::O) { a.push(Action::Open) }
-            if k(M::CTRL, K::S) { a.push(Action::Save) }
-            if k(M::CTRL, K::W) { a.push(Action::CloseCurrent) }
-            if k(M::CTRL, K::Tab) || k(M::CTRL, K::PageDown) { a.push(Action::NextDoc) }
-            if k(M::CTRL, K::PageUp) { a.push(Action::PrevDoc) }
-            if k(M::CTRL, K::F) { a.push(Action::Find) }
-            if k(M::CTRL, K::G) { a.push(Action::GotoLinePrompt) }
-            if k(M::CTRL, K::E) { a.push(Action::ExportPdf) }
-            if k(M::NONE, K::F5) { a.push(Action::Compile) }
+            if k(cs, K::S) {
+                a.push(Action::SaveAs)
+            }
+            if k(cs, K::Tab) {
+                a.push(Action::PrevDoc)
+            }
+            if k(cs, K::O) {
+                a.push(Action::TogglePanel(Panel::Outline))
+            }
+            if k(cs, K::V) {
+                a.push(Action::TogglePanel(Panel::Preview))
+            }
+            if k(cs, K::M) {
+                a.push(Action::TogglePanel(Panel::Problems))
+            }
+            if k(cs, K::Y) {
+                a.push(Action::TogglePanel(Panel::Symbols))
+            }
+            if k(cs, K::I) {
+                a.push(Action::TogglePanel(Panel::Snippets))
+            }
+            if k(M::SHIFT, K::F3) {
+                self.st.editor.pending_step = Some(-1)
+            }
+            if k(M::CTRL, K::N) || k(M::CTRL, K::T) {
+                a.push(Action::NewDoc)
+            }
+            if k(M::CTRL, K::O) {
+                a.push(Action::Open)
+            }
+            if k(M::CTRL, K::S) {
+                a.push(Action::Save)
+            }
+            if k(M::CTRL, K::W) {
+                a.push(Action::CloseCurrent)
+            }
+            if k(M::CTRL, K::Tab) || k(M::CTRL, K::PageDown) {
+                a.push(Action::NextDoc)
+            }
+            if k(M::CTRL, K::PageUp) {
+                a.push(Action::PrevDoc)
+            }
+            if k(M::CTRL, K::F) {
+                a.push(Action::Find)
+            }
+            if k(M::CTRL, K::G) {
+                a.push(Action::GotoLinePrompt)
+            }
+            if k(M::CTRL, K::E) {
+                a.push(Action::ExportPdf)
+            }
+            if k(M::NONE, K::F5) {
+                a.push(Action::Compile)
+            }
             if k(M::NONE, K::F11) {
                 let on = !self.st.preview.presentation;
                 self.st.preview.set_presentation(ctx, on);
@@ -251,19 +319,50 @@ impl App {
             if k(M::NONE, K::Escape) && self.st.preview.presentation {
                 self.st.preview.set_presentation(ctx, false);
             }
-            if k(M::NONE, K::F3) { self.st.editor.pending_step = Some(1) }
-            if k(M::CTRL, K::Equals) || k(M::CTRL, K::Plus) { a.push(Action::FontDelta(1.0)) }
-            if k(M::CTRL, K::Minus) { a.push(Action::FontDelta(-1.0)) }
-            if k(M::CTRL, K::Num0) { a.push(Action::FontReset) }
-            if k(M::ALT, K::Z) { a.push(Action::ToggleWrap) }
-            if k(M::CTRL, K::Space) { self.st.editor.ac.forced = true }
-            let nums = [K::Num1, K::Num2, K::Num3, K::Num4, K::Num5, K::Num6, K::Num7, K::Num8, K::Num9];
+            if k(M::NONE, K::F3) {
+                self.st.editor.pending_step = Some(1)
+            }
+            if k(M::CTRL, K::Equals) || k(M::CTRL, K::Plus) {
+                a.push(Action::FontDelta(1.0))
+            }
+            if k(M::CTRL, K::Minus) {
+                a.push(Action::FontDelta(-1.0))
+            }
+            if k(M::CTRL, K::Num0) {
+                a.push(Action::FontReset)
+            }
+            if k(M::ALT, K::Z) {
+                a.push(Action::ToggleWrap)
+            }
+            if k(M::CTRL, K::Space) {
+                self.st.editor.ac.forced = true
+            }
+            let nums = [
+                K::Num1,
+                K::Num2,
+                K::Num3,
+                K::Num4,
+                K::Num5,
+                K::Num6,
+                K::Num7,
+                K::Num8,
+                K::Num9,
+            ];
             for (n, key) in nums.into_iter().enumerate() {
-                if k(M::CTRL, key) { a.push(Action::SwitchTo(n)) }
+                if k(M::CTRL, key) {
+                    a.push(Action::SwitchTo(n))
+                }
             }
         });
         // Archivos soltados sobre la ventana.
-        let dropped: Vec<PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
+        let dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect()
+        });
         for p in dropped {
             self.st.actions.push(Action::OpenPath(p));
         }
@@ -275,10 +374,15 @@ impl App {
         let st = &mut self.st;
         for key in st.compiler.poll() {
             if key.doc == st.docs.cur_id()
-                && let Some(e) = st.compiler.built.get(&key.doc).and_then(|b| b.diagnostics.iter().find(|d| d.severity == diagnostics::Severity::Error)) {
-                    let msg = e.message.lines().next().unwrap_or("").to_string();
-                    st.set_status(format!("{}: {msg}", e.location()), StatusKind::Err);
-                }
+                && let Some(e) = st.compiler.built.get(&key.doc).and_then(|b| {
+                    b.diagnostics
+                        .iter()
+                        .find(|d| d.severity == diagnostics::Severity::Error)
+                })
+            {
+                let msg = e.message.lines().next().unwrap_or("").to_string();
+                st.set_status(format!("{}: {msg}", e.location()), StatusKind::Err);
+            }
         }
         // Vista previa ← último PDF válido del doc actual.
         let cur = st.docs.cur_id();
@@ -293,7 +397,10 @@ impl App {
             return;
         }
         let doc = st.docs.cur();
-        let key = Key { doc: doc.id, rev: doc.rev };
+        let key = Key {
+            doc: doc.id,
+            rev: doc.rev,
+        };
         let go = if st.force_compile {
             st.force_compile = false;
             true
@@ -337,7 +444,9 @@ impl App {
                 self.st.needs_persist = true;
             }
             Action::Open => {
-                let mut dlg = rfd::FileDialog::new().add_filter("Typst", &["typ"]).add_filter("Todos", &["*"]);
+                let mut dlg = rfd::FileDialog::new()
+                    .add_filter("Typst", &["typ"])
+                    .add_filter("Todos", &["*"]);
                 if let Some(dir) = self.st.docs.cur().path.as_deref().and_then(Path::parent) {
                     dlg = dlg.set_directory(dir);
                 }
@@ -377,7 +486,11 @@ impl App {
             Action::NextDoc | Action::PrevDoc => {
                 let n = self.st.docs.list.len();
                 let i = self.st.docs.current;
-                let j = if matches!(action, Action::NextDoc) { (i + 1) % n } else { (i + n - 1) % n };
+                let j = if matches!(action, Action::NextDoc) {
+                    (i + 1) % n
+                } else {
+                    (i + n - 1) % n
+                };
                 let id = self.st.docs.list[j].id;
                 self.switch_to_id(id);
             }
@@ -399,13 +512,23 @@ impl App {
                 f.want_focus = true;
             }
             Action::GotoLinePrompt => {
-                let (l, _) = self.st.editor.cursor.map(|c| text::char_to_line_col(&self.st.docs.cur().text, c)).unwrap_or((1, 1));
+                let (l, _) = self
+                    .st
+                    .editor
+                    .cursor
+                    .map(|c| text::char_to_line_col(&self.st.docs.cur().text, c))
+                    .unwrap_or((1, 1));
                 self.st.modal = Some(Modal::GotoLine(l.to_string()));
             }
             Action::JumpTo { line, col } => self.jump_to(line, col),
             Action::GotoPreviewPage { page, y } => self.st.preview.goto_position(page, y),
             Action::Select { start, end } => {
-                self.st.editor.goto = Some(Goto { doc: cur, start, end, focus: true });
+                self.st.editor.goto = Some(Goto {
+                    doc: cur,
+                    start,
+                    end,
+                    focus: true,
+                });
                 layout::focus_doc(&mut self.dock, cur);
             }
             Action::TogglePanel(p) => layout::toggle_panel(&mut self.dock, p, cur),
@@ -450,11 +573,19 @@ impl App {
             Action::PrefixLines(prefix) => self.prefix_lines(&prefix),
             Action::NewSnippet => {
                 let body = self.selected_text();
-                self.st.modal = Some(Modal::EditSnippet(snippets::Editing { index: None, name: String::new(), body }));
+                self.st.modal = Some(Modal::EditSnippet(snippets::Editing {
+                    index: None,
+                    name: String::new(),
+                    body,
+                }));
             }
             Action::EditSnippet(i) => {
                 if let Some(s) = self.st.user_snippets.get(i) {
-                    let e = snippets::Editing { index: Some(i), name: s.name.clone(), body: s.body.clone() };
+                    let e = snippets::Editing {
+                        index: Some(i),
+                        name: s.name.clone(),
+                        body: s.body.clone(),
+                    };
                     self.st.modal = Some(Modal::EditSnippet(e));
                 }
             }
@@ -462,7 +593,8 @@ impl App {
                 if i < self.st.user_snippets.len() {
                     let s = self.st.user_snippets.remove(i);
                     self.save_snippets();
-                    self.st.set_status(format!("Snippet «{}» eliminado", s.name), StatusKind::Info);
+                    self.st
+                        .set_status(format!("Snippet «{}» eliminado", s.name), StatusKind::Info);
                 }
             }
         }
@@ -491,7 +623,12 @@ impl App {
         let d = self.st.docs.cur_mut();
         d.text = text;
         d.touch();
-        self.st.editor.goto = Some(Goto { doc: id, start: na, end: nb, focus: true });
+        self.st.editor.goto = Some(Goto {
+            doc: id,
+            start: na,
+            end: nb,
+            focus: true,
+        });
         layout::focus_doc(&mut self.dock, id);
         self.st.needs_persist = true;
     }
@@ -517,7 +654,9 @@ impl App {
                 sa += 1;
                 sb += 1;
             } else {
-                let word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '.' || c == ')');
+                let word = |c: Option<char>| {
+                    c.is_some_and(|c| c.is_alphanumeric() || c == '.' || c == ')')
+                };
                 let before = a.checked_sub(1).and_then(|i| doc.text.chars().nth(i));
                 let after = doc.text.chars().nth(b);
                 if word(before) {
@@ -532,31 +671,48 @@ impl App {
         }
         let id = doc.id;
         let d = self.st.docs.cur_mut();
-        let (ba, bb) = (text::char_to_byte(&d.text, a), text::char_to_byte(&d.text, b));
+        let (ba, bb) = (
+            text::char_to_byte(&d.text, a),
+            text::char_to_byte(&d.text, b),
+        );
         d.text.replace_range(ba..bb, &text);
         d.touch();
-        self.st.editor.goto = Some(Goto { doc: id, start: a + sa, end: a + sb, focus: true });
+        self.st.editor.goto = Some(Goto {
+            doc: id,
+            start: a + sa,
+            end: a + sb,
+            focus: true,
+        });
         layout::focus_doc(&mut self.dock, id);
         self.st.needs_persist = true;
     }
 
     fn save_snippets(&mut self) {
         if let Err(e) = snippets::save_user(&self.st.user_snippets) {
-            self.st.set_status(format!("No se pudieron guardar los snippets: {e}"), StatusKind::Err);
+            self.st.set_status(
+                format!("No se pudieron guardar los snippets: {e}"),
+                StatusKind::Err,
+            );
         }
     }
 
     /// Cierra el diálogo de snippet guardándolo (o no).
     pub fn finish_snippet_edit(&mut self) {
-        let Some(Modal::EditSnippet(e)) = self.st.modal.take() else { return };
-        let s = UserSnippet { name: e.name.trim().to_string(), body: e.body };
+        let Some(Modal::EditSnippet(e)) = self.st.modal.take() else {
+            return;
+        };
+        let s = UserSnippet {
+            name: e.name.trim().to_string(),
+            body: e.body,
+        };
         let name = s.name.clone();
         match e.index {
             Some(i) if i < self.st.user_snippets.len() => self.st.user_snippets[i] = s,
             _ => self.st.user_snippets.push(s),
         }
         self.save_snippets();
-        self.st.set_status(format!("Snippet «{name}» guardado"), StatusKind::Ok);
+        self.st
+            .set_status(format!("Snippet «{name}» guardado"), StatusKind::Ok);
     }
 
     fn switch_to_id(&mut self, id: DocId) {
@@ -580,7 +736,12 @@ impl App {
     fn jump_to(&mut self, line: usize, col: usize) {
         let doc = self.st.docs.cur();
         let c = text::line_col_to_char(&doc.text, line, col);
-        self.st.editor.goto = Some(Goto { doc: doc.id, start: c, end: c, focus: true });
+        self.st.editor.goto = Some(Goto {
+            doc: doc.id,
+            start: c,
+            end: c,
+            focus: true,
+        });
         layout::focus_doc(&mut self.dock, doc.id);
     }
 
@@ -593,13 +754,19 @@ impl App {
             return true;
         }
         if std::fs::metadata(&p).is_ok_and(|m| m.len() > MAX_OPEN_BYTES) {
-            self.st.set_status(format!("{} es demasiado grande (> 5 MB)", p.display()), StatusKind::Err);
+            self.st.set_status(
+                format!("{} es demasiado grande (> 5 MB)", p.display()),
+                StatusKind::Err,
+            );
             return false;
         }
         let text = match std::fs::read_to_string(&p) {
             Ok(t) => t,
             Err(e) => {
-                self.st.set_status(format!("No se pudo abrir {}: {e}", p.display()), StatusKind::Err);
+                self.st.set_status(
+                    format!("No se pudo abrir {}: {e}", p.display()),
+                    StatusKind::Err,
+                );
                 return false;
             }
         };
@@ -620,17 +787,22 @@ impl App {
             layout::add_doc(&mut self.dock, id, cur_id);
             self.switch_to_id(id);
         }
-        self.st.set_status(format!("Abierto {}", p.display()), StatusKind::Info);
+        self.st
+            .set_status(format!("Abierto {}", p.display()), StatusKind::Info);
         self.st.needs_persist = true;
         true
     }
 
     fn save(&mut self, id: DocId, save_as: bool) -> bool {
-        let Some(doc) = self.st.docs.get(id) else { return false };
+        let Some(doc) = self.st.docs.get(id) else {
+            return false;
+        };
         let dest = match (&doc.path, save_as) {
             (Some(p), false) => Some(p.clone()),
             _ => {
-                let mut dlg = rfd::FileDialog::new().add_filter("Typst", &["typ"]).set_file_name(doc.fname());
+                let mut dlg = rfd::FileDialog::new()
+                    .add_filter("Typst", &["typ"])
+                    .set_file_name(doc.fname());
                 if let Some(dir) = doc.path.as_deref().and_then(Path::parent) {
                     dlg = dlg.set_directory(dir);
                 }
@@ -649,12 +821,14 @@ impl App {
                     // Cambió la carpeta raíz: las rutas relativas se resuelven distinto.
                     d.touch();
                 }
-                self.st.set_status(format!("Guardado {}", dest.display()), StatusKind::Ok);
+                self.st
+                    .set_status(format!("Guardado {}", dest.display()), StatusKind::Ok);
                 self.st.needs_persist = true;
                 true
             }
             Err(e) => {
-                self.st.set_status(format!("No se pudo guardar: {e}"), StatusKind::Err);
+                self.st
+                    .set_status(format!("No se pudo guardar: {e}"), StatusKind::Err);
                 false
             }
         }
@@ -686,36 +860,69 @@ impl App {
 
     fn export_with(&mut self, fmt: &str, ppi: Option<u32>) {
         let doc = self.st.docs.cur();
-        let stem = doc.path.as_deref().and_then(Path::file_stem).map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "documento".into());
+        let stem = doc
+            .path
+            .as_deref()
+            .and_then(Path::file_stem)
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "documento".into());
         let multi = fmt != "pdf" && self.st.preview.page_count() > 1;
-        let name = if multi { format!("{stem}-{{p}}.{fmt}") } else { format!("{stem}.{fmt}") };
-        let mut dlg = rfd::FileDialog::new().add_filter(fmt.to_uppercase(), &[fmt]).set_file_name(name);
+        let name = if multi {
+            format!("{stem}-{{p}}.{fmt}")
+        } else {
+            format!("{stem}.{fmt}")
+        };
+        let mut dlg = rfd::FileDialog::new()
+            .add_filter(fmt.to_uppercase(), &[fmt])
+            .set_file_name(name);
         if let Some(dir) = doc.path.as_deref().and_then(Path::parent) {
             dlg = dlg.set_directory(dir);
         }
-        let Some(mut dest) = dlg.save_file() else { return };
+        let Some(mut dest) = dlg.save_file() else {
+            return;
+        };
         // Varias páginas en PNG/SVG: typst exige una plantilla `{p}` en el nombre.
         if multi && !dest.to_string_lossy().contains("{p}") {
-            let s = dest.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+            let s = dest
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
             dest.set_file_name(format!("{s}-{{p}}.{fmt}"));
         }
 
         // PDF al día: se copia el de la vista previa, sin recompilar.
-        let key = Key { doc: doc.id, rev: doc.rev };
+        let key = Key {
+            doc: doc.id,
+            rev: doc.rev,
+        };
         if fmt == "pdf"
-            && let Some((k, data)) = self.st.compiler.built.get(&doc.id).and_then(|b| b.pdf.clone())
-                && k == key {
-                    match std::fs::write(&dest, data.as_slice()) {
-                        Ok(()) => self.st.set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
-                        Err(e) => self.st.set_status(format!("No se pudo exportar: {e}"), StatusKind::Err),
-                    }
-                    return;
-                }
+            && let Some((k, data)) = self
+                .st
+                .compiler
+                .built
+                .get(&doc.id)
+                .and_then(|b| b.pdf.clone())
+            && k == key
+        {
+            match std::fs::write(&dest, data.as_slice()) {
+                Ok(()) => self
+                    .st
+                    .set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
+                Err(e) => self
+                    .st
+                    .set_status(format!("No se pudo exportar: {e}"), StatusKind::Err),
+            }
+            return;
+        }
         // PNG/SVG: se recompila en proceso (el PDF usa el construido).
         let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref());
         match crate::engine::export_pages(&doc.text, &doc.root_dir(), &filename, &dest, fmt, ppi) {
-            Ok(()) => self.st.set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
-            Err(e) => self.st.set_status(format!("Falló la exportación: {e}"), StatusKind::Err),
+            Ok(()) => self
+                .st
+                .set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
+            Err(e) => self
+                .st
+                .set_status(format!("Falló la exportación: {e}"), StatusKind::Err),
         }
     }
 
@@ -805,30 +1012,37 @@ impl eframe::App for App {
         // Presentación: solo el lienzo del PDF a pantalla completa.
         if self.st.preview.presentation {
             let info = self.st.preview_info();
-            egui::CentralPanel::default().frame(egui::Frame::new().fill(pal.chrome)).show(ui, |ui| {
-                self.st.preview.present(ui, &mut self.st.prefs, &info, &mut self.st.actions);
-            });
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(pal.chrome))
+                .show(ui, |ui| {
+                    self.st
+                        .preview
+                        .present(ui, &mut self.st.prefs, &info, &mut self.st.actions);
+                });
         } else {
             let style = self.dock_style(&ctx);
-            egui::CentralPanel::default().frame(egui::Frame::new().fill(pal.chrome)).show(ui, |ui| {
-                editor::find_bar(&mut self.st, ui);
-                DockArea::new(&mut self.dock)
-                    .style(style)
-                    .show_add_buttons(false)
-                    .show_leaf_collapse_buttons(false)
-                    .show_leaf_close_all_buttons(false)
-                    .show_inside(ui, &mut Viewer { st: &mut self.st });
-            });
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(pal.chrome))
+                .show(ui, |ui| {
+                    editor::find_bar(&mut self.st, ui);
+                    DockArea::new(&mut self.dock)
+                        .style(style)
+                        .show_add_buttons(false)
+                        .show_leaf_collapse_buttons(false)
+                        .show_leaf_close_all_buttons(false)
+                        .show_inside(ui, &mut Viewer { st: &mut self.st });
+                });
         }
 
         // Doc actual = pestaña de documento activa en el nodo con foco.
         if let Some((_, Tab::Doc(id))) = self.dock.find_active_focused() {
             let id = *id;
             if id != self.st.docs.cur_id()
-                && let Some(i) = self.st.docs.index_of(id) {
-                    self.st.docs.current = i;
-                    self.on_doc_changed();
-                }
+                && let Some(i) = self.st.docs.index_of(id)
+            {
+                self.st.docs.current = i;
+                self.on_doc_changed();
+            }
         }
 
         // Barra flotante de formato (tras el dock: usa el ancla del frame).
@@ -846,7 +1060,11 @@ impl eframe::App for App {
         self.run_actions(&ctx);
 
         let doc = self.st.docs.cur();
-        let title = format!("{}{} — Typst Editor", doc.fname(), if doc.modified() { " •" } else { "" });
+        let title = format!(
+            "{}{} — Typst Editor",
+            doc.fname(),
+            if doc.modified() { " •" } else { "" }
+        );
         if title != self.title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.title = title;
@@ -854,7 +1072,9 @@ impl eframe::App for App {
         let since = self.last_persist.elapsed();
         // Cambios marcados: a los 3 s. El resto (p. ej. arrastrar divisores del
         // dock) no se marca: se guarda cada 2 min y al salir.
-        if (self.st.needs_persist && since > Duration::from_secs(3)) || since > Duration::from_secs(120) {
+        if (self.st.needs_persist && since > Duration::from_secs(3))
+            || since > Duration::from_secs(120)
+        {
             self.persist();
         }
         if self.st.needs_persist {
@@ -886,9 +1106,19 @@ impl TabViewer for Viewer<'_> {
             },
             Tab::Panel(Panel::Problems) => {
                 let cur = self.st.docs.cur_id();
-                let n = self.st.compiler.built.get(&cur).map(|b| b.diagnostics.len()).unwrap_or(0);
+                let n = self
+                    .st
+                    .compiler
+                    .built
+                    .get(&cur)
+                    .map(|b| b.diagnostics.len())
+                    .unwrap_or(0);
                 let p = Panel::Problems;
-                if n > 0 { format!("{} {}  {n}", p.icon(), p.title()).into() } else { format!("{} {}", p.icon(), p.title()).into() }
+                if n > 0 {
+                    format!("{} {}  {n}", p.icon(), p.title()).into()
+                } else {
+                    format!("{} {}", p.icon(), p.title()).into()
+                }
             }
             Tab::Panel(p) => format!("{} {}", p.icon(), p.title()).into(),
         }
@@ -911,18 +1141,26 @@ impl TabViewer for Viewer<'_> {
 
     fn context_menu(&mut self, ui: &mut egui::Ui, tab: &mut Tab, _path: egui_dock::NodePath) {
         if let Tab::Doc(id) = *tab {
-            let Some(d) = self.st.docs.get(id) else { return };
+            let Some(d) = self.st.docs.get(id) else {
+                return;
+            };
             let path = d.path.clone();
-            if ui.button(format!("{}  Guardar", icon::FLOPPY_DISK)).clicked() {
-                self.st.actions.push(Action::SwitchTo(self.st.docs.index_of(id).unwrap_or(0)));
+            if ui
+                .button(format!("{}  Guardar", icon::FLOPPY_DISK))
+                .clicked()
+            {
+                self.st
+                    .actions
+                    .push(Action::SwitchTo(self.st.docs.index_of(id).unwrap_or(0)));
                 self.st.actions.push(Action::Save);
                 ui.close();
             }
             if let Some(p) = path
-                && ui.button(format!("{}  Copiar ruta", icon::COPY)).clicked() {
-                    ui.ctx().copy_text(p.display().to_string());
-                    ui.close();
-                }
+                && ui.button(format!("{}  Copiar ruta", icon::COPY)).clicked()
+            {
+                ui.ctx().copy_text(p.display().to_string());
+                ui.close();
+            }
             ui.separator();
             if ui.button(format!("{}  Cerrar", icon::X)).clicked() {
                 self.st.actions.push(Action::Close(id));
