@@ -45,6 +45,8 @@ pub struct Prefs {
     pub format_bar: bool,
     /// Formato en línea fijado en esa fila (sin barra flotante).
     pub inline_pinned: bool,
+    /// Carpeta raíz del gestor de archivos (`None` = sin elegir).
+    pub files_root: Option<PathBuf>,
 }
 
 impl Default for Prefs {
@@ -58,6 +60,7 @@ impl Default for Prefs {
             fit: FitMode::Width,
             format_bar: true,
             inline_pinned: false,
+            files_root: None,
         }
     }
 }

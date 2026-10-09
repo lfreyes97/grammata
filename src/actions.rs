@@ -11,6 +11,8 @@ pub enum Action {
     NewDoc,
     /// Nuevo documento con el texto ya puesto (builder de plantillas).
     NewFromTemplate { text: String },
+    /// Elige la carpeta raíz del gestor de archivos y lo muestra.
+    PickFolder,
     Open,
     OpenPath(PathBuf),
     /// Abre (o enfoca) un archivo y salta a L:C — errores en `#include`.

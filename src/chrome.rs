@@ -43,6 +43,9 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             if menu_item(ui, icon::FOLDER_OPEN, "Abrir…", "Ctrl+O") {
                 a.push(Action::Open)
             }
+            if menu_item(ui, icon::FOLDER, "Abrir carpeta…", "") {
+                a.push(Action::PickFolder)
+            }
             ui.separator();
             if menu_item(ui, icon::FLOPPY_DISK, "Guardar", "Ctrl+S") {
                 a.push(Action::Save)
@@ -196,6 +199,7 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                 Panel::Preview,
                 Panel::Snippets,
                 Panel::Templates,
+                Panel::Files,
                 Panel::Symbols,
                 Panel::Outline,
             ] {
@@ -372,6 +376,38 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
                     }
                     if ui.button("No guardar").clicked() {
                         st.actions.push(Action::Discard(id));
+                        close = true;
+                    }
+                    if ui.button("Cancelar").clicked()
+                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
+                        close = true;
+                    }
+                });
+            });
+        }
+        Modal::ConfirmDelete(path) => {
+            let path = path.clone();
+            let name = path
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            egui::Modal::new(egui::Id::new("confirm-delete")).show(ctx, |ui| {
+                ui.set_width(360.0);
+                ui.label(
+                    RichText::new(format!("¿Eliminar «{name}»?"))
+                        .size(15.0)
+                        .color(pal.text),
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("Se borra del disco y no se puede deshacer.")
+                        .color(pal.text_dim),
+                );
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if widgets::accent_button(ui, &pal, "Eliminar").clicked() {
+                        crate::files::delete_path(st, &path);
                         close = true;
                     }
                     if ui.button("Cancelar").clicked()

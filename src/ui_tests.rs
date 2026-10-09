@@ -372,6 +372,45 @@ fn esquema_navega_al_buffer() {
     );
 }
 
+/// Gestor de archivos: plegar oculta hijos, desplegar y clicar abre en el editor.
+#[test]
+#[ignore = "necesita GPU"]
+fn archivos_pliegan_y_abren() {
+    use egui_kittest::kittest::Queryable;
+    let tmp = std::env::temp_dir().join(format!("typst-editor-test-fm-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let root = tmp.join("proyecto");
+    std::fs::create_dir_all(root.join("capitulos")).unwrap();
+    std::fs::write(root.join("main.typ"), "= Principal\n").unwrap();
+    std::fs::write(root.join("capitulos").join("uno.typ"), "= Uno\n").unwrap();
+    std::fs::create_dir_all(tmp.join("cfg")).unwrap();
+    // SAFETY: único test que toca el entorno; se fija antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut().st.prefs.files_root = Some(root.clone());
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Files));
+    h.run_steps(5);
+    // "capitulos" plegada esconde a "uno.typ": se despliega y se abre.
+    assert!(
+        h.query_by_label_contains("uno.typ").is_none(),
+        "plegada debería ocultar a sus hijos"
+    );
+    h.get_by_label_contains("capitulos").click();
+    h.run_steps(5);
+    h.get_by_label_contains("uno.typ").click();
+    h.run_steps(5);
+    let opened = h.state().st.docs.cur().path.clone();
+    assert!(
+        opened.as_deref().is_some_and(|p| p.ends_with("uno.typ")),
+        "el clic no abrió uno.typ: {opened:?}"
+    );
+    assert_eq!(cur_text(&h), "= Uno\n");
+}
+
 /// Cada símbolo, estructura y snippet de serie compila con el motor embebido.
 #[test]
 #[ignore = "compila ~100 documentos (lento)"]

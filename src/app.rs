@@ -6,6 +6,7 @@ use crate::compile::{self, Compiler, Key};
 use crate::diagnostics;
 use crate::doc::{Doc, DocId, Docs};
 use crate::editor::{self, EditorUi, Goto};
+use crate::files;
 use crate::formatbar::FormatBar;
 use crate::layout::{self, Panel, Preset, Tab};
 use crate::panels::{self, OutlineCache};
@@ -49,6 +50,7 @@ impl Status {
 
 pub enum Modal {
     ConfirmClose(DocId),
+    ConfirmDelete(PathBuf),
     GotoLine(String),
     About,
     EditSnippet(snippets::Editing),
@@ -100,6 +102,7 @@ pub struct State {
     pub recent_symbols: Vec<String>,
     pub snippet_query: String,
     pub template: templates::Article,
+    pub files: files::FileMgr,
     pub user_snippets: Vec<UserSnippet>,
     pub fmt: FormatBar,
     force_compile: bool,
@@ -200,6 +203,7 @@ impl App {
             snippet_query: String::new(),
             user_snippets: snippets::load_user(),
             template: templates::Article::default(),
+            files: files::FileMgr::default(),
             fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
         };
@@ -284,6 +288,9 @@ impl App {
             }
             if k(cs, K::T) {
                 a.push(Action::TogglePanel(Panel::Templates))
+            }
+            if k(cs, K::F) {
+                a.push(Action::TogglePanel(Panel::Files))
             }
             if k(M::SHIFT, K::F3) {
                 self.st.editor.pending_step = Some(-1)
@@ -457,6 +464,10 @@ impl App {
                 layout::add_doc(&mut self.dock, id, cur);
                 self.switch_to_id(id);
                 self.st.needs_persist = true;
+            }
+            Action::PickFolder => {
+                crate::files::pick_root(&mut self.st);
+                self.st.actions.push(Action::ShowPanel(Panel::Files));
             }
             Action::Open => {
                 let mut dlg = rfd::FileDialog::new()
@@ -1180,6 +1191,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Panel(Panel::Symbols) => symbols::panel(st, ui),
             Tab::Panel(Panel::Snippets) => snippets::panel(st, ui),
             Tab::Panel(Panel::Templates) => templates::panel(st, ui),
+            Tab::Panel(Panel::Files) => files::panel(st, ui),
         }
     }
 

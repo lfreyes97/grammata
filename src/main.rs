@@ -7,6 +7,7 @@ mod diagnostics;
 mod doc;
 mod editor;
 mod engine;
+mod files;
 mod formatbar;
 mod highlight;
 mod layout;
