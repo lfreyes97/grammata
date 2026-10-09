@@ -32,14 +32,19 @@ use crate::diagnostics::{self, Diagnostic};
 
 static SHARED_FONTS: OnceLock<Arc<FontStore>> = OnceLock::new();
 
-/// Catálogo de fuentes del sistema. Solo se escanean los metadatos; cada
-/// fuente se lee del disco la primera vez que un documento la usa (cargarlas
-/// todas de entrada eran GB de RAM con colecciones .ttc grandes).
+/// Catálogo de fuentes del sistema más las de serie de typst. De las del
+/// sistema solo se escanean los metadatos; cada una se lee del disco la
+/// primera vez que un documento la usa (cargarlas todas de entrada eran GB
+/// de RAM con colecciones .ttc grandes).
 fn shared_fonts() -> Arc<FontStore> {
     SHARED_FONTS
         .get_or_init(|| {
             let mut store = FontStore::new();
             store.extend(typst_kit::fonts::system());
+            // Las de serie de typst (Libertinus, New Computer Modern…) tras
+            // las del sistema, como el CLI: sin ellas un documento sin
+            // `#set text(font:)` sale con una fuente de reserva cualquiera.
+            store.extend(typst_kit::fonts::embedded());
             Arc::new(store)
         })
         .clone()
