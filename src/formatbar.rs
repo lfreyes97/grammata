@@ -12,7 +12,6 @@
 
 use crate::actions::Action;
 use crate::app::{State, StatusKind};
-use crate::compile;
 use crate::theme;
 use crate::widgets;
 use egui::{Margin, RichText, Stroke};
@@ -255,6 +254,15 @@ fn color_to_hex(c: egui::Color32) -> String {
     format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b())
 }
 
+/// Recorta a `n` chars con «…» (nombres largos de fuente en la barra).
+fn ellipsize(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.to_string()
+    } else {
+        format!("{}…", s.chars().take(n - 1).collect::<String>())
+    }
+}
+
 /// "12" en vez de "12.0" para el `size: …pt` y la etiqueta.
 fn fmt_pt(s: f32) -> String {
     if s.fract() == 0.0 {
@@ -289,16 +297,16 @@ pub fn show(st: &mut State, ctx: &egui::Context) {
     // Centrada sobre la selección, creciendo hacia arriba (la fila del enlace
     // no tapa el texto); si no cabe arriba, debajo. `constrain` la mantiene
     // dentro de la ventana sin suponer su tamaño.
-    let (pivot, y) = if anchor.y - 60.0 < vp.min.y + 28.0 {
-        (egui::Align2::CENTER_TOP, anchor.y + 14.0)
+    let (pivot, y) = if anchor.top() - 60.0 < vp.min.y + 28.0 {
+        (egui::Align2::CENTER_TOP, anchor.bottom() + 8.0)
     } else {
-        (egui::Align2::CENTER_BOTTOM, anchor.y - 14.0)
+        (egui::Align2::CENTER_BOTTOM, anchor.top() - 8.0)
     };
     let pal0 = theme::palette(ctx);
     egui::Area::new(egui::Id::new("formatbar"))
         .order(egui::Order::Foreground)
         .pivot(pivot)
-        .fixed_pos(egui::pos2(anchor.x, y))
+        .fixed_pos(egui::pos2(anchor.center().x, y))
         .constrain(true)
         .show(ctx, |ui| {
             egui::Frame::new()
@@ -421,7 +429,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
     let pal = theme::palette(ui.ctx());
     let mut act: Option<Action> = None;
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.spacing_mut().item_spacing.x = 4.0;
         // Estilo de párrafo: muestra el de la línea del cursor.
         let level = {
             let doc = st.docs.cur();
@@ -431,8 +439,12 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             .iter()
             .find(|(_, mark)| mark.trim_end().len() == level)
             .map_or("Encabezado", |(label, _)| *label);
-        ui.menu_button(
+        widgets::combo(
+            ui,
+            &pal,
             RichText::new(format!("{}  {current}", icon::PARAGRAPH)).small(),
+            128.0,
+            "Estilo de párrafo",
             |ui| {
                 ui.set_min_width(180.0);
                 for (label, mark) in STYLES {
@@ -450,7 +462,8 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
         );
         widgets::vsep(ui, &pal);
         // Tamaño de fuente.
-        ui.menu_button(RichText::new(fmt_pt(st.fmt.size_pt)).small(), |ui| {
+        let size = RichText::new(format!("{} pt", fmt_pt(st.fmt.size_pt))).small();
+        widgets::combo(ui, &pal, size, 64.0, "Tamaño", |ui| {
             ui.set_min_width(120.0);
             for s in SIZES_PT {
                 if ui
@@ -466,24 +479,27 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                 }
             }
         });
-        // Familia (precargada en hilo al arrancar; el botón reintenta).
-        ui.menu_button(
-            RichText::new(if st.fmt.font.is_empty() {
-                "Aa"
-            } else {
-                st.fmt.font.as_str()
-            })
-            .small(),
+        // Familia (precargada en un hilo al arrancar).
+        let family = if st.fmt.font.is_empty() {
+            "Fuente".to_string()
+        } else {
+            ellipsize(&st.fmt.font, 16)
+        };
+        widgets::combo(
+            ui,
+            &pal,
+            RichText::new(format!("{}  {family}", icon::TEXT_AA)).small(),
+            132.0,
+            "Familia de fuente",
             |ui| {
                 ui.set_min_width(240.0);
-                if st.fmt.fonts.is_none() {
-                    ui.label(RichText::new("Cargando fuentes…").small());
-                    if ui.button("Reintentar").clicked() {
-                        st.fmt.fonts = Some(compile::typst_fonts());
-                    }
+                let Some(fonts) = &st.fmt.fonts else {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label(RichText::new("Cargando fuentes…").small());
+                    });
                     return;
-                }
-                let fonts = st.fmt.fonts.clone().unwrap_or_default();
+                };
                 if fonts.is_empty() {
                     ui.label(RichText::new("Sin fuentes del sistema").small());
                     return;
@@ -503,6 +519,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                         {
                             if ui.selectable_label(*f == st.fmt.font, f).clicked() {
                                 st.fmt.font = f.clone();
+                                let f = f.replace('\\', "\\\\").replace('"', "\\\"");
                                 act = Some(Action::InsertSnippet(format!(
                                     "#text(font: \"{f}\")[${{sel}}]"
                                 )));
@@ -512,11 +529,14 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                     });
             },
         );
-        // Color.
-        ui.menu_button(
-            RichText::new(format!("A {}", st.fmt.color_hex))
-                .small()
-                .color(hex_to_color(&st.fmt.color_hex).unwrap_or(pal.text)),
+        // Color: «A» con una barra del último color usado debajo.
+        let current_color = hex_to_color(&st.fmt.color_hex).unwrap_or(pal.text);
+        let r = widgets::combo(
+            ui,
+            &pal,
+            RichText::new("A").strong(),
+            44.0,
+            "Color del texto",
             |ui| {
                 ui.set_min_width(150.0);
                 egui::Grid::new("fmt-colors")
@@ -561,9 +581,18 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                 });
             },
         );
+        let pad = ui.spacing().button_padding.x;
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(
+                egui::pos2(r.rect.left() + pad, r.rect.bottom() - 6.0),
+                egui::vec2(11.0, 3.0),
+            ),
+            egui::CornerRadius::same(1),
+            current_color,
+        );
         widgets::vsep(ui, &pal);
         // Alineación.
-        ui.menu_button(RichText::new(icon::TEXT_ALIGN_LEFT).size(16.0), |ui| {
+        widgets::icon_menu(ui, icon::TEXT_ALIGN_LEFT, "Alineación", |ui| {
             ui.set_min_width(160.0);
             for (ic, name) in [
                 (icon::TEXT_ALIGN_LEFT, "left"),
@@ -581,7 +610,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             }
         });
         // Listas.
-        ui.menu_button(RichText::new(icon::LIST_BULLETS).size(16.0), |ui| {
+        widgets::icon_menu(ui, icon::LIST_BULLETS, "Listas", |ui| {
             ui.set_min_width(180.0);
             if ui.button("Viñetas (- )").clicked() {
                 act = Some(Action::PrefixLines("- ".into()));
@@ -605,7 +634,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
         }
         widgets::vsep(ui, &pal);
         // Tabla: N columnas × 2 filas; la selección va a la primera celda.
-        ui.menu_button(RichText::new(icon::TABLE).size(16.0), |ui| {
+        widgets::icon_menu(ui, icon::TABLE, "Tabla", |ui| {
             ui.set_min_width(160.0);
             for n in 2..=5 {
                 if ui.button(format!("{n} columnas")).clicked() {
@@ -613,11 +642,9 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                     ui.close();
                 }
             }
-        })
-        .response
-        .on_hover_text("Tabla");
+        });
         // Ecuación (envuelve la selección).
-        ui.menu_button(RichText::new(icon::SIGMA).size(16.0), |ui| {
+        widgets::icon_menu(ui, icon::SIGMA, "Ecuación", |ui| {
             ui.set_min_width(180.0);
             if ui.button("En línea   $x$").clicked() {
                 act = Some(Action::InsertSnippet("$${sel:x}$".into()));
@@ -627,11 +654,9 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                 act = Some(Action::InsertSnippet("$ ${sel:x} $".into()));
                 ui.close();
             }
-        })
-        .response
-        .on_hover_text("Ecuación");
+        });
         // Nota al pie y referencias a etiquetas del documento.
-        ui.menu_button(RichText::new(icon::AT).size(16.0), |ui| {
+        widgets::icon_menu(ui, icon::AT, "Nota y referencia", |ui| {
             ui.set_min_width(200.0);
             if ui.button("Nota al pie").clicked() {
                 collapse_to_end(st);
@@ -659,11 +684,9 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                         }
                     }
                 });
-        })
-        .response
-        .on_hover_text("Nota y referencia");
+        });
         // Página.
-        ui.menu_button(RichText::new(icon::FILE_TEXT).size(16.0), |ui| {
+        widgets::icon_menu(ui, icon::FILE_TEXT, "Página", |ui| {
             ui.set_min_width(200.0);
             for (label, body) in [
                 ("Salto de página", "#pagebreak()\n"),
@@ -676,9 +699,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                     ui.close();
                 }
             }
-        })
-        .response
-        .on_hover_text("Página");
+        });
     });
     act
 }

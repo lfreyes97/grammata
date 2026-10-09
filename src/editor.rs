@@ -25,9 +25,9 @@ pub struct EditorUi {
     pub find: Find,
     /// F3 / Mayús+F3 pendiente (se resuelve con acceso al doc).
     pub pending_step: Option<i32>,
-    /// Ancla de la barra de formato: (doc, posición en pantalla del final de
-    /// la selección). La escribe `doc_tab`; la lee `formatbar::show`.
-    pub sel_anchor: Option<(DocId, egui::Pos2)>,
+    /// Ancla de la barra de formato: (doc, alto en pantalla de la selección
+    /// en la x del cursor). La escribe `doc_tab`; la lee `formatbar::show`.
+    pub sel_anchor: Option<(DocId, egui::Rect)>,
 }
 
 #[derive(Clone, Copy)]
@@ -301,11 +301,20 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
         st.editor.selection = Some((a.min(b), a.max(b)));
         // Ancla de la barra de formato (coords de pantalla del cursor activo).
         if a != b {
-            let p = out
-                .galley
-                .pos_from_cursor(r.primary)
-                .translate(out.galley_pos.to_vec2());
-            st.editor.sel_anchor = Some((st.docs.list[di].id, p.center()));
+            // Rect de toda la selección en vertical (de su primera a su
+            // última fila) en la x del cursor: la barra va encima sin taparla.
+            let at = |c| {
+                out.galley
+                    .pos_from_cursor(c)
+                    .translate(out.galley_pos.to_vec2())
+            };
+            let (p, q) = (at(r.primary), at(r.secondary));
+            let x = p.center().x;
+            let rect = egui::Rect::from_x_y_ranges(
+                x..=x,
+                p.top().min(q.top())..=p.bottom().max(q.bottom()),
+            );
+            st.editor.sel_anchor = Some((st.docs.list[di].id, rect));
         } else {
             st.editor.sel_anchor = None;
         }

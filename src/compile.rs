@@ -187,8 +187,3 @@ fn run(job: &Job) -> Output {
 pub fn typst_version() -> Option<String> {
     Some("typst 0.15.1 (embebido)".to_string())
 }
-
-/// Familias de fuentes del motor embebido (antes: shell a `typst fonts`).
-pub fn typst_fonts() -> Vec<String> {
-    crate::engine::font_families()
-}

@@ -48,6 +48,39 @@ pub fn accent_button(ui: &mut Ui, pal: &Palette, text: &str) -> Response {
     )
 }
 
+/// Desplegable con valor visible: marco suave, texto y flecha a la derecha.
+/// Devuelve la respuesta del botón (para pintar encima, p. ej. el color).
+pub fn combo(
+    ui: &mut Ui,
+    pal: &Palette,
+    text: RichText,
+    min_w: f32,
+    tip: &str,
+    content: impl FnOnce(&mut Ui),
+) -> Response {
+    let button = Button::new(text)
+        .right_text(
+            RichText::new(egui_phosphor::regular::CARET_DOWN)
+                .small()
+                .color(pal.text_faint),
+        )
+        .fill(pal.chrome)
+        .stroke(Stroke::new(1.0, pal.border))
+        .corner_radius(CornerRadius::same(5))
+        .min_size(vec2(min_w, 24.0));
+    let (r, _) = egui::containers::menu::MenuButton::from_button(button).ui(ui, content);
+    r.on_hover_text(tip)
+}
+
+/// Menú desplegable con solo icono (sin marco hasta el hover) y tooltip.
+pub fn icon_menu(ui: &mut Ui, icon: &str, tip: &str, content: impl FnOnce(&mut Ui)) -> Response {
+    let button = Button::new(RichText::new(icon).size(16.0))
+        .frame_when_inactive(false)
+        .min_size(vec2(26.0, 24.0));
+    let (r, _) = egui::containers::menu::MenuButton::from_button(button).ui(ui, content);
+    r.on_hover_text(tip)
+}
+
 /// Separador vertical fino para barras.
 pub fn vsep(ui: &mut Ui, pal: &Palette) {
     let h = 16.0;
