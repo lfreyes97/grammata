@@ -125,7 +125,7 @@ pub const BUILTIN: &[Group] = &[
             sn("Fracción", "$ frac(${a}, ${b}) $"),
             sn("Límite", "$ lim_(${x} -> ${0}) ${f(x)} $"),
             sn("Derivada", "$ (dif ${f}) / (dif ${x}) $"),
-            sn("Integral", "$ integral_${a}^{b} ${f(x)} dif x $"),
+            sn("Integral", "$ integral_${a}^${b} ${f(x)} dif x $"),
             sn("Sumatorio", "$ sum_(${i} = 1)^${n} ${a_i} $"),
             sn("Productorio", "$ product_(${i} = 1)^${n} ${a_i} $"),
             sn("Raíz n-ésima", "$ root(${n}, ${x}) $"),

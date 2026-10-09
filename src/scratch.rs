@@ -301,8 +301,12 @@ fn insert_at_cursor(
     snippet: &str,
 ) {
     let len = text.chars().count();
+    // `state.cursor` y no `cursor_range`: este solo se rellena con foco, y
+    // el clic en el botón ya lo quitó.
     let c = out
-        .cursor_range
+        .state
+        .cursor
+        .char_range()
         .map(|r| r.primary.index.0)
         .unwrap_or(len)
         .min(len);
@@ -328,7 +332,9 @@ fn apply_snippet(
 ) {
     let len = text.chars().count();
     let (a, b) = out
-        .cursor_range
+        .state
+        .cursor
+        .char_range()
         .map(|r| (r.primary.index.0.min(len), r.secondary.index.0.min(len)))
         .unwrap_or((len, len));
     let (sa, sb) = (a.min(b), a.max(b));

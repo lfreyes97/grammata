@@ -209,22 +209,29 @@ impl Article {
         } else {
             self.title.trim()
         };
-        src.push_str("#align(center)[\n");
-        src.push_str(&format!(
-            "  #text(size: 20pt, weight: \"bold\")[{}]\n",
+        // Los textos van como cadenas (`"…"`), no como markup: `$`, `@`,
+        // `//`, `*`… se muestran tal cual. Una línea en blanco entre piezas
+        // para que no se junten en un solo párrafo.
+        let mut cover = vec![format!(
+            "  #text(size: 20pt, weight: \"bold\", \"{}\")",
             esc(title)
-        ));
+        )];
         if !self.author.trim().is_empty() {
-            src.push_str(&format!("  #text(size: 12pt)[{}]\n", esc(self.author.trim())));
+            cover.push(format!(
+                "  #text(size: 12pt, \"{}\")",
+                esc(self.author.trim())
+            ));
         }
         match self.date {
-            DateMode::Today => src.push_str("  #datetime.today().display()\n"),
+            DateMode::Today => cover.push("  #datetime.today().display()".into()),
             DateMode::Custom if !self.custom_date.trim().is_empty() => {
-                src.push_str(&format!("  [{}]\n", esc(self.custom_date.trim())));
+                cover.push(format!("  #\"{}\"", esc(self.custom_date.trim())));
             }
             _ => {}
         }
-        src.push_str("]\n");
+        src.push_str("#align(center)[\n");
+        src.push_str(&cover.join("\n\n"));
+        src.push_str("\n]\n");
         // Resumen (vacío = se omite).
         if !self.abstract_text.trim().is_empty() {
             let tag = if es { "Resumen" } else { "Abstract" };
@@ -479,6 +486,33 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn markup_en_portada_es_literal_y_compila() {
+        let a = Article {
+            title: "Costo $5 * _x_ // nota ] #f".into(),
+            author: "ana@uni.edu <etq>".into(),
+            date: DateMode::Custom,
+            custom_date: "9 de octubre".into(),
+            ..Article::default()
+        };
+        let src = a.build();
+        assert!(src.contains("#\"9 de octubre\""), "fecha sin corchetes:\n{src}");
+        assert!(compiles(&a), "no compila:\n{src}");
+    }
+
+    #[test]
+    fn portada_en_lineas_separadas() {
+        let a = Article {
+            author: "Ana".into(),
+            date: DateMode::Today,
+            ..Article::default()
+        };
+        let src = a.build();
+        let body = &src[src.find("#align(center)[").unwrap()..];
+        let body = &body[..body.find("\n]").unwrap()];
+        assert_eq!(body.matches("\n\n").count(), 2, "título, autor y fecha separados:\n{src}");
     }
 
     #[test]
