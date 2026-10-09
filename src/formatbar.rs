@@ -3,7 +3,8 @@
 //!   subrayado, tachado, enlace, código) más comentar e ir al PDF. La
 //!   chincheta la manda a la fila fija (`Prefs::inline_pinned`).
 //! - Fila fija bajo la topbar (se muestra/oculta y se recuerda en `Prefs`):
-//!   estilo de párrafo, familia, tamaño, color, alineación, listas e imagen.
+//!   estilo de párrafo, familia, tamaño, color, alineación, listas, imagen,
+//!   tabla, ecuación, nota/referencia y página.
 //!
 //! Las acciones reutilizan
 //! `Action::InsertSnippet` (envuelve la selección vía `${sel}`) y
@@ -413,8 +414,9 @@ fn inline_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Actio
     act
 }
 
-/// Tipografía y párrafo (fija): estilo de párrafo, familia, tamaño, color,
-/// alineación, listas e imagen.
+/// Tipografía, párrafo e inserción (fija): estilo de párrafo, familia,
+/// tamaño, color, alineación, listas, imagen, tabla, ecuación, nota y
+/// referencia, y página.
 fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
     let pal = theme::palette(ui.ctx());
     let mut act: Option<Action> = None;
@@ -598,15 +600,126 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
         if widgets::icon_button(ui, icon::IMAGE, "Imagen…").clicked()
             && let Some(body) = pick_image(st)
         {
-            // Colapsa al final para no sustituir lo seleccionado.
-            if let Some((_, b)) = st.editor.selection {
-                st.editor.selection = Some((b, b));
-                st.editor.cursor = Some(b);
-            }
+            collapse_to_end(st);
             act = Some(Action::InsertSnippet(body));
         }
+        widgets::vsep(ui, &pal);
+        // Tabla: N columnas × 2 filas; la selección va a la primera celda.
+        ui.menu_button(RichText::new(icon::TABLE).size(16.0), |ui| {
+            ui.set_min_width(160.0);
+            for n in 2..=5 {
+                if ui.button(format!("{n} columnas")).clicked() {
+                    act = Some(Action::InsertSnippet(table_snippet(n)));
+                    ui.close();
+                }
+            }
+        })
+        .response
+        .on_hover_text("Tabla");
+        // Ecuación (envuelve la selección).
+        ui.menu_button(RichText::new(icon::SIGMA).size(16.0), |ui| {
+            ui.set_min_width(180.0);
+            if ui.button("En línea   $x$").clicked() {
+                act = Some(Action::InsertSnippet("$${sel:x}$".into()));
+                ui.close();
+            }
+            if ui.button("En bloque   $ x $").clicked() {
+                act = Some(Action::InsertSnippet("$ ${sel:x} $".into()));
+                ui.close();
+            }
+        })
+        .response
+        .on_hover_text("Ecuación");
+        // Nota al pie y referencias a etiquetas del documento.
+        ui.menu_button(RichText::new(icon::AT).size(16.0), |ui| {
+            ui.set_min_width(200.0);
+            if ui.button("Nota al pie").clicked() {
+                collapse_to_end(st);
+                act = Some(Action::InsertSnippet("#footnote[${nota}]".into()));
+                ui.close();
+            }
+            if ui.button("Etiqueta  <…>").clicked() {
+                collapse_to_end(st);
+                act = Some(Action::InsertSnippet(" <${etiqueta}>".into()));
+                ui.close();
+            }
+            ui.separator();
+            let labels = doc_labels(&st.docs.cur().text);
+            if labels.is_empty() {
+                ui.label(RichText::new("Sin etiquetas que referenciar").small());
+            }
+            egui::ScrollArea::vertical()
+                .max_height(220.0)
+                .show(ui, |ui| {
+                    for l in labels {
+                        if ui.button(format!("@{l}")).clicked() {
+                            collapse_to_end(st);
+                            act = Some(Action::InsertSnippet(format!("@{l}")));
+                            ui.close();
+                        }
+                    }
+                });
+        })
+        .response
+        .on_hover_text("Nota y referencia");
+        // Página.
+        ui.menu_button(RichText::new(icon::FILE_TEXT).size(16.0), |ui| {
+            ui.set_min_width(200.0);
+            for (label, body) in [
+                ("Salto de página", "#pagebreak()\n"),
+                ("Salto de columna", "#colbreak()\n"),
+                ("Dos columnas", "#columns(2)[${sel}]"),
+                ("Espacio vertical", "#v(${1em})"),
+            ] {
+                if ui.button(label).clicked() {
+                    act = Some(Action::InsertSnippet(body.into()));
+                    ui.close();
+                }
+            }
+        })
+        .response
+        .on_hover_text("Página");
     });
     act
+}
+
+/// Colapsa la selección a su final: lo que se inserta va detrás, sin
+/// sustituir el texto seleccionado (imagen, nota, referencia).
+fn collapse_to_end(st: &mut State) {
+    if let Some((_, b)) = st.editor.selection {
+        st.editor.selection = Some((b, b));
+        st.editor.cursor = Some(b);
+    }
+}
+
+/// `#table` de `n` columnas y dos filas; la selección (o el cursor) en la
+/// primera celda.
+fn table_snippet(n: usize) -> String {
+    let row = |first: &str| {
+        let mut cells = vec![first.to_string()];
+        cells.extend(std::iter::repeat_n("[]".to_string(), n - 1));
+        format!("  {},\n", cells.join(", "))
+    };
+    format!(
+        "#table(\n  columns: {n},\n{}{})\n",
+        row("[${sel}]"),
+        row("[]")
+    )
+}
+
+/// Etiquetas `<nombre>` del documento, sin repetir y en orden de aparición.
+fn doc_labels(text: &str) -> Vec<String> {
+    let valid = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | ':' | '.');
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = text;
+    while let Some(i) = rest.find('<') {
+        rest = &rest[i + 1..];
+        let name: String = rest.chars().take_while(|&c| valid(c)).collect();
+        if !name.is_empty() && rest[name.len()..].starts_with('>') && !out.contains(&name) {
+            out.push(name);
+        }
+    }
+    out
 }
 
 /// Diálogo de imagen → cuerpo `image(…)` con ruta relativa al documento.
@@ -727,6 +840,44 @@ mod tests {
         assert_eq!(heading_level(t, 14), 2);
         assert_eq!(heading_level(t, 22), 0);
         assert_eq!(heading_level("", 0), 0);
+    }
+
+    #[test]
+    fn tabla_y_etiquetas() {
+        assert_eq!(
+            table_snippet(3),
+            "#table(\n  columns: 3,\n  [${sel}], [], [],\n  [], [], [],\n)\n"
+        );
+        let t = "= Intro <intro>\n$ x < y > z $ <eq:1>\nVer @intro <intro>.";
+        assert_eq!(doc_labels(t), ["intro", "eq:1"]);
+    }
+
+    #[test]
+    fn insertables_compilan() {
+        let dir = std::env::temp_dir();
+        let mut bodies: Vec<String> = (2..=5).map(table_snippet).collect();
+        bodies.extend(
+            [
+                "$${sel:x}$",
+                "$ ${sel:x} $",
+                "#footnote[${nota}]",
+                // @ a un encabezado exige numeración (regla de typst).
+                "#set heading(numbering: \"1.\")\n= T <intro>\nVer @intro.",
+                "Texto <${etiqueta}>",
+                "#pagebreak()\n",
+                "#colbreak()\n",
+                "#columns(2)[${sel}]",
+                "#v(${1em})",
+            ]
+            .map(String::from),
+        );
+        for body in bodies {
+            for sel in ["", "x"] {
+                let (src, _, _) = crate::snippets::expand(&body, sel);
+                let out = crate::engine::compile_pdf(&src, &dir, "main.typ");
+                assert!(out.pdf.is_some(), "no compila:\n{src}\n{:?}", out.diags);
+            }
+        }
     }
 
     #[test]
