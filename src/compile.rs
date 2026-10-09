@@ -43,7 +43,8 @@ pub struct Built {
     pub diagnostics: Vec<Diagnostic>,
     pub ms: u128,
     /// Synctex del último PDF válido (como `pdf`: de la rev anterior si falla).
-    pub sync: Vec<SyncEntry>,
+    /// En `Arc`: la UI lo comparte cada frame sin copiarlo.
+    pub sync: Arc<Vec<SyncEntry>>,
 }
 
 pub struct Compiler {
@@ -120,7 +121,11 @@ impl Compiler {
                 Some(p) => Some((out.key, p)),
                 None => prev_pdf,
             };
-            let sync = if has_pdf { out.sync } else { prev_sync };
+            let sync = if has_pdf {
+                Arc::new(out.sync)
+            } else {
+                prev_sync
+            };
             self.built.insert(
                 out.key.doc,
                 Built {

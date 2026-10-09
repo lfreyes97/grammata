@@ -7,16 +7,16 @@
 //! - Las fuentes se cargan una vez por proceso (`shared_fonts`) y se calientan
 //!   en el hilo de precarga de la barra de formato.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use typst::diag::FileError;
-use typst::foundations::{Bytes, Datetime, Duration, NativeElement, Selector};
-use typst::introspection::{Introspector, PagedPosition};
-use typst::model::HeadingElem;
-use typst::syntax::{FileId, RootedPath, Source, Span, VirtualPath, VirtualRoot};
-use typst::text::{Font, FontBook};
+use typst::foundations::{Bytes, Datetime, Duration};
+use typst::layout::{Frame, FrameItem, Point, Transform};
+use typst::syntax::{FileId, LinkedNode, RootedPath, Source, Span, VirtualPath, VirtualRoot};
+use typst::text::{Font, FontBook, TextItem};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt as _, World, compile};
 use typst_kit::datetime::Time;
@@ -78,7 +78,9 @@ pub fn warm_fonts(ctx: egui::Context) {
 /// proceso CLI fresco); lo caro (fuentes, librería) se comparte.
 pub(crate) struct EngineWorld {
     main_id: FileId,
-    main_text: String,
+    /// Fuente principal parseada una vez: `source()` se llama por cada
+    /// consulta de span (diagnósticos, synctex) y re-parsear costaba O(n).
+    main: Source,
     files: FileStore<SystemFiles>,
     fonts: Arc<FontStore>,
     library: LazyHash<Library>,
@@ -97,7 +99,7 @@ impl EngineWorld {
         ));
         Self {
             main_id,
-            main_text: text,
+            main: Source::new(main_id, text),
             files,
             fonts: shared_fonts(),
             library: LazyHash::new(Library::default()),
@@ -130,7 +132,7 @@ impl World for EngineWorld {
 
     fn source(&self, id: FileId) -> Result<Source, FileError> {
         if id == self.main_id {
-            Ok(Source::new(id, self.main_text.clone()))
+            Ok(self.main.clone())
         } else {
             self.files.source(id)
         }
@@ -138,7 +140,7 @@ impl World for EngineWorld {
 
     fn file(&self, id: FileId) -> Result<Bytes, FileError> {
         if id == self.main_id {
-            Ok(Bytes::from_string(self.main_text.clone()))
+            Ok(Bytes::from_string(self.main.text().to_string()))
         } else {
             self.files.file(id)
         }
@@ -160,12 +162,13 @@ pub struct Compiled {
     pub pdf: Option<Vec<u8>>,
     pub diags: Vec<Diagnostic>,
     pub ms: u128,
-    /// Encabezados con su página (0-based) e y en puntos: base del synctex.
+    /// Texto del documento con su página y posición: base del synctex.
     pub sync: Vec<SyncEntry>,
 }
 
-/// Un encabezado localizado: de aquí salen el scroll de la preview (forward)
-/// y el salto al código desde un clic (inverso).
+/// Un tramo de texto colocado: una línea fuente en un renglón de una página.
+/// De aquí salen el scroll de la preview (forward) y el salto al código
+/// desde un clic (inverso).
 #[derive(Clone, Debug)]
 pub struct SyncEntry {
     /// `None` = documento actual; `Some` = incluido (relativo a la raíz).
@@ -173,7 +176,9 @@ pub struct SyncEntry {
     pub line: usize,
     pub col: usize,
     pub page: usize,
-    /// Y en puntos dentro de la página (coords de frame).
+    /// Inicio del tramo en puntos dentro de la página (coords de frame).
+    pub x: f32,
+    /// Línea base del renglón, en puntos.
     pub y: f32,
 }
 
@@ -205,83 +210,129 @@ pub fn compile_pdf(text: &str, root: &Path, filename: &str) -> Compiled {
     }
 }
 
-/// Encabezados del documento con página y posición, vía el introspector del
-/// propio documento compilado (spans exactos, sin re-compilar ni regex).
+/// Cada tramo de texto de cada página con su línea fuente, recorriendo los
+/// frames (con sus transformaciones) como hace `typst-ide`. Los tramos
+/// contiguos de una misma línea fuente en un mismo renglón se funden.
 fn extract_sync(world: &EngineWorld, main: FileId, doc: &PagedDocument) -> Vec<SyncEntry> {
-    let intro = doc.introspector();
-    let mut out = Vec::new();
-    let mut last: Option<(Option<String>, usize, usize)> = None;
-    for content in intro.query(&Selector::Elem(HeadingElem::ELEM, None)) {
-        let (file, line, col) = locate_span(world, main, content.span());
-        let (Some(line), Some(col)) = (line, col) else {
-            continue;
-        };
-        let key = (file.clone(), line, col);
-        // Un encabezado puede etiquetarse varias veces (cabeceras repetidas):
-        // conserva la primera aparición.
-        if last.as_ref() == Some(&key) {
-            continue;
-        }
-        last = Some(key);
-        let page_y = content
-            .location()
-            .and_then(|loc| intro.position(loc))
-            .map(|p: PagedPosition| (p.page.get() - 1, p.point.y.to_pt() as f32));
-        let Some((page, y)) = page_y else { continue };
-        out.push(SyncEntry {
-            file,
-            line,
-            col,
-            page,
-            y,
+    let mut out: Vec<SyncEntry> = Vec::new();
+    // Span → offset del fichero principal en una pasada: `World::range` busca
+    // desde la raíz en cada llamada (~30 µs; miles de spans por documento).
+    let mut offsets = HashMap::new();
+    index_spans(LinkedNode::new(world.main.root()), &mut offsets);
+    // El mismo nodo de texto produce muchos tramos (y cabeceras repetidas).
+    let mut located: HashMap<Span, Option<(Option<String>, usize, usize)>> = HashMap::new();
+    for (page, p) in doc.pages().iter().enumerate() {
+        walk_text(&p.frame, Transform::identity(), &mut |pos, text| {
+            let Some(span) = text
+                .glyphs
+                .iter()
+                .map(|g| g.span.0)
+                .find(|s| !s.is_detached())
+            else {
+                return;
+            };
+            let loc = located
+                .entry(span)
+                .or_insert_with(|| match offsets.get(&span) {
+                    Some(&b) => {
+                        let (l, c) = world.main.lines().byte_to_line_column(b)?;
+                        Some((None, l + 1, c + 1))
+                    }
+                    None => {
+                        let (file, line, col) = locate_span(world, main, span);
+                        Some((file, line?, col?))
+                    }
+                });
+            let Some((file, line, col)) = loc.clone() else {
+                return;
+            };
+            let (x, y) = (pos.x.to_pt() as f32, pos.y.to_pt() as f32);
+            if let Some(last) = out.last_mut()
+                && last.page == page
+                && last.line == line
+                && last.file == file
+                && (last.y - y).abs() < 0.5
+            {
+                last.x = last.x.min(x);
+                return;
+            }
+            out.push(SyncEntry {
+                file,
+                line,
+                col,
+                page,
+                x,
+                y,
+            });
         });
     }
     out
 }
 
-/// Línea → (página, y): la última entrada del mismo fichero con
-/// `line` anterior o igual. `None` si no hay entradas de ese fichero.
-pub fn page_for_line(sync: &[SyncEntry], file: Option<&str>, line: usize) -> Option<(usize, f32)> {
-    let mut best: Option<(usize, f32)> = None;
-    let mut first: Option<(usize, f32)> = None;
-    for e in sync {
-        if e.file.as_deref() != file {
-            continue;
-        }
-        let py = (e.page, e.y);
-        if first.is_none() {
-            first = Some(py);
-        }
-        if e.line <= line {
-            best = Some(py);
-        } else {
-            break;
-        }
+fn index_spans(node: LinkedNode, out: &mut HashMap<Span, usize>) {
+    out.insert(node.span(), node.offset());
+    for child in node.children() {
+        index_spans(child, out);
     }
-    best.or(first)
 }
 
-/// (Página, y) → entrada: la última de esa página con `y` anterior o igual;
-/// si no, la primera de la página; si no, la última de páginas anteriores.
-pub fn line_for_pos(sync: &[SyncEntry], page: usize, y: f32) -> Option<&SyncEntry> {
-    let mut best: Option<&SyncEntry> = None;
-    let mut first_in_page: Option<&SyncEntry> = None;
-    for e in sync {
-        if e.page > page {
-            break;
-        }
-        if e.page == page {
-            if first_in_page.is_none() {
-                first_in_page = Some(e);
+/// Visita los `TextItem` del frame con su posición en coords de página.
+fn walk_text<F: FnMut(Point, &TextItem)>(frame: &Frame, ts: Transform, f: &mut F) {
+    for (pos, item) in frame.items() {
+        match item {
+            FrameItem::Group(g) => {
+                let ts = ts
+                    .pre_concat(Transform::translate(pos.x, pos.y))
+                    .pre_concat(g.transform);
+                walk_text(&g.frame, ts, f);
             }
-            if e.y <= y {
-                best = Some(e);
-            }
-        } else {
-            best = Some(e);
+            FrameItem::Text(t) => f(pos.transform(ts), t),
+            _ => {}
         }
     }
-    best.or(first_in_page)
+}
+
+/// Línea → (página, y): la primera aparición de esa línea; si no produce
+/// texto (código, línea vacía), la de la línea anterior más cercana que sí;
+/// si no hay, la siguiente. No supone orden: las cabeceras repetidas de cada
+/// página apuntan a líneas del principio.
+pub fn page_for_line(sync: &[SyncEntry], file: Option<&str>, line: usize) -> Option<(usize, f32)> {
+    let mut before: Option<&SyncEntry> = None;
+    let mut after: Option<&SyncEntry> = None;
+    for e in sync.iter().filter(|e| e.file.as_deref() == file) {
+        if e.line == line {
+            return Some((e.page, e.y));
+        }
+        if e.line < line && before.is_none_or(|b| e.line > b.line) {
+            before = Some(e);
+        }
+        if e.line > line && after.is_none_or(|b| e.line < b.line) {
+            after = Some(e);
+        }
+    }
+    before.or(after).map(|e| (e.page, e.y))
+}
+
+/// (Página, x, y) → tramo bajo el punto: el renglón cuya línea base es la
+/// primera por debajo de `y` (o el último de la página), y en él el tramo
+/// que empieza más a la derecha sin pasar de `x`. Sin texto en la página,
+/// el último tramo de las anteriores.
+pub fn line_for_pos(sync: &[SyncEntry], page: usize, x: f32, y: f32) -> Option<&SyncEntry> {
+    let on_page = || sync.iter().filter(move |e| e.page == page);
+    // Tolerancia: un clic sobre los descendentes queda bajo la línea base.
+    let row_y = on_page()
+        .map(|e| e.y)
+        .filter(|&ey| ey >= y - 3.0)
+        .min_by(f32::total_cmp)
+        .or_else(|| on_page().map(|e| e.y).max_by(f32::total_cmp));
+    let Some(row_y) = row_y else {
+        return sync.iter().rfind(|e| e.page < page);
+    };
+    let row = || on_page().filter(move |e| (e.y - row_y).abs() < 1.0);
+    row()
+        .filter(|e| e.x <= x + 1.0)
+        .max_by(|a, b| a.x.total_cmp(&b.x))
+        .or_else(|| row().min_by(|a, b| a.x.total_cmp(&b.x)))
 }
 /// Atajo local al `locate_span` de diagnósticos.
 fn locate_span(
@@ -395,25 +446,47 @@ mod tests {
         let s = extract_sync(&w, w.main_id, &doc);
         assert!(!s.is_empty(), "ejemplo.typ debería dar entradas");
         for e in &s {
-            println!("sync: {:?} L{} p{} y={:.1}", e.file, e.line, e.page, e.y);
+            println!(
+                "sync: {:?} L{} p{} x={:.1} y={:.1}",
+                e.file, e.line, e.page, e.x, e.y
+            );
         }
     }
 
     #[test]
-    fn synctex_encabezados_paginas() {
+    fn synctex_por_linea() {
         let s = sync_of("= Uno\nTexto\n#pagebreak()\n== Dos\nFin\n");
-        assert_eq!(s.len(), 2);
-        assert_eq!((s[0].line, s[0].page), (1, 0));
-        assert_eq!((s[1].line, s[1].page), (4, 1));
+        let lines: Vec<(usize, usize)> = s.iter().map(|e| (e.line, e.page)).collect();
+        assert_eq!(lines, [(1, 0), (2, 0), (4, 1), (5, 1)]);
         assert!(s.iter().all(|e| e.file.is_none()));
-        // Forward: línea 5 (Fin) cae en la página del último encabezado.
-        assert_eq!(page_for_line(&s, None, 5), Some((1, s[1].y)));
-        assert_eq!(page_for_line(&s, None, 1).map(|p| p.0), Some(0));
-        // Inverso: clic en página 1 por encima del encabezado → el anterior.
-        let e = line_for_pos(&s, 1, 0.0).unwrap();
-        assert_eq!((e.line, e.page), (1, 0));
-        let e = line_for_pos(&s, 1, s[1].y + 1.0).unwrap();
+        // Forward exacto por línea; sin texto (#pagebreak), la anterior.
+        assert_eq!(page_for_line(&s, None, 5), Some((1, s[3].y)));
+        assert_eq!(page_for_line(&s, None, 2), Some((0, s[1].y)));
+        assert_eq!(page_for_line(&s, None, 3), Some((0, s[1].y)));
+        // Inverso: el renglón bajo el clic, no el encabezado de la sección.
+        let e = line_for_pos(&s, 1, 0.0, s[3].y - 4.0).unwrap();
+        assert_eq!(e.line, 5);
+        let e = line_for_pos(&s, 1, 0.0, s[2].y - 4.0).unwrap();
         assert_eq!(e.line, 4);
+        // Bajo el último renglón: el último de la página.
+        let e = line_for_pos(&s, 0, 0.0, 9999.0).unwrap();
+        assert_eq!(e.line, 2);
+    }
+
+    #[test]
+    fn synctex_cabecera_y_columnas() {
+        // La cabecera de cada página apunta a la línea 1: el forward de la
+        // línea 4 no debe quedarse en la página 0 por ella.
+        let s = sync_of("#set page(header: [Cabecera])\nA\n#pagebreak()\nB\n");
+        assert_eq!(page_for_line(&s, None, 4).map(|p| p.0), Some(1));
+        // Dos tramos en el mismo renglón: decide la x del clic.
+        let s = sync_of("#grid(columns: (1fr, 1fr),\n  [Izquierda],\n  [Derecha])\n");
+        let izq = s.iter().find(|e| e.line == 2).unwrap();
+        let der = s.iter().find(|e| e.line == 3).unwrap();
+        assert!((izq.y - der.y).abs() < 1.0 && der.x > izq.x);
+        let y = izq.y - 4.0;
+        assert_eq!(line_for_pos(&s, 0, der.x + 5.0, y).unwrap().line, 3);
+        assert_eq!(line_for_pos(&s, 0, izq.x + 5.0, y).unwrap().line, 2);
     }
 
     #[test]

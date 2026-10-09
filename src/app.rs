@@ -544,7 +544,7 @@ impl App {
                         self.st.preview.goto_position(page, y);
                     }
                     None => self.st.set_status(
-                        "Sin posición en el PDF: compila un documento con encabezados",
+                        "Sin posición en el PDF: compila el documento primero",
                         StatusKind::Info,
                     ),
                 }

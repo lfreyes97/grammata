@@ -45,8 +45,8 @@ pub enum Action {
         page: usize,
         y: f32,
     },
-    /// Forward synctex desde el cursor: lleva la vista previa a la sección
-    /// de la línea actual (mostrando el panel si está oculto).
+    /// Forward synctex desde el cursor: lleva la vista previa a la línea
+    /// actual (mostrando el panel si está oculto).
     SyncToPdf,
     /// Selecciona el rango de chars `[start, end)` del documento actual.
     Select {

@@ -153,7 +153,7 @@ pub fn problems(st: &mut State, ui: &mut egui::Ui) {
 
     let mut act = None;
     let mut go = None;
-    // Owned para no prestar `st` dentro de los closures (abajo se usa &mut).
+    // Owned (Arc) para no prestar `st` dentro de los closures (abajo &mut).
     let root = doc.root_dir();
     let sync = built.map(|b| b.sync.clone()).unwrap_or_default();
     egui::ScrollArea::vertical()

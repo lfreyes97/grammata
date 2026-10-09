@@ -45,7 +45,7 @@ pub struct Info {
     pub stale: bool,
     pub has_build: bool,
     /// Entradas synctex del built cargado (para el clic inverso).
-    pub sync: Vec<SyncEntry>,
+    pub sync: Arc<Vec<SyncEntry>>,
     /// Carpeta del documento (para abrir incluidos desde el clic).
     pub root: PathBuf,
 }
@@ -899,9 +899,9 @@ impl Preview {
             // Inverso synctex: clic en una página → salto al código.
             if canvas.clicked()
                 && let Some(up) = canvas.interact_pointer_pos()
-                && let Some((page, _, y)) =
+                && let Some((page, x, y)) =
                     page_pos(origin, &tops, &self.sizes, zoom, content_w, up)
-                && let Some(e) = crate::engine::line_for_pos(&info.sync, page, y)
+                && let Some(e) = crate::engine::line_for_pos(&info.sync, page, x, y)
             {
                 actions.push(match &e.file {
                     None => Action::JumpTo {
