@@ -58,6 +58,7 @@ pub enum Action {
     FontReset,
     ToggleWrap,
     ToggleAuto,
+    ToggleFormatBar,
     About,
     /// Inserta un símbolo o estructura matemática (envuelve en `$…$` si el
     /// cursor no está en una ecuación).

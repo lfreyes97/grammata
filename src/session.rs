@@ -41,6 +41,8 @@ pub struct Prefs {
     pub auto_compile: bool,
     pub zoom: f32,
     pub fit: FitMode,
+    /// Fila de formato (tipografía, párrafo) bajo la barra superior.
+    pub format_bar: bool,
 }
 
 impl Default for Prefs {
@@ -52,6 +54,7 @@ impl Default for Prefs {
             auto_compile: true,
             zoom: 1.0,
             fit: FitMode::Width,
+            format_bar: true,
         }
     }
 }

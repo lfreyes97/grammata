@@ -105,6 +105,9 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                 }
             });
             ui.separator();
+            if menu_check(ui, st.prefs.format_bar, "Barra de formato", "") {
+                a.push(Action::ToggleFormatBar)
+            }
             if menu_check(ui, st.prefs.auto_compile, "Compilar al escribir", "") {
                 a.push(Action::ToggleAuto)
             }
@@ -197,10 +200,16 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                     a.push(Action::TogglePanel(p));
                 }
             }
+            widgets::vsep(ui, &pal);
+            if widgets::icon_toggle(ui, st.prefs.format_bar, icon::TEXT_AA, "Barra de formato")
+                .clicked()
+            {
+                a.push(Action::ToggleFormatBar);
+            }
         });
     });
-    // Barra de formato fijada: segunda fila (ver `formatbar::docked`).
-    if st.fmt.pinned {
+    // Fila de formato fija: tipografía y párrafo (ver `formatbar::docked`).
+    if st.prefs.format_bar {
         ui.separator();
         crate::formatbar::docked(st, ui);
     }

@@ -187,6 +187,12 @@ pub fn expand(body: &str, selection: &str) -> (String, usize, usize) {
         rest = &rest[i + 3 + j..];
         let fill = match inner {
             "sel" => {
+                // Sin selección, el cursor queda donde iría (dentro de
+                // `#text(...)[]`, entre `**`…) para seguir escribiendo.
+                if selection.is_empty() && target.is_none() {
+                    let at = out.chars().count();
+                    target = Some((at, at));
+                }
                 out.push_str(selection);
                 continue;
             }
@@ -446,6 +452,12 @@ mod tests {
         );
         assert_eq!(expand("#v(${}1em)", ""), ("#v(1em)".into(), 3, 3));
         assert_eq!(expand("sin marcas", ""), ("sin marcas".into(), 10, 10));
+        // `${sel}` vacío: el cursor queda en su sitio; con selección, al final.
+        assert_eq!(
+            expand("#text(size: 9pt)[${sel}]", ""),
+            ("#text(size: 9pt)[]".into(), 17, 17)
+        );
+        assert_eq!(expand("*${sel}*", "x"), ("*x*".into(), 3, 3));
         assert_eq!(expand("$${sel:x}$", ""), ("$x$".into(), 1, 2));
         // Offsets en chars, no en bytes.
         assert_eq!(expand("ñ${á}", ""), ("ñá".into(), 1, 2));

@@ -560,6 +560,10 @@ impl App {
                 self.st.prefs.auto_compile = !self.st.prefs.auto_compile;
                 self.st.needs_persist = true;
             }
+            Action::ToggleFormatBar => {
+                self.st.prefs.format_bar = !self.st.prefs.format_bar;
+                self.st.needs_persist = true;
+            }
             Action::About => self.st.modal = Some(Modal::About),
             Action::InsertMath(insert) => {
                 self.insert(&insert, true);

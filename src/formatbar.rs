@@ -1,8 +1,10 @@
-//! Barra flotante de formato sobre la selección: negrita, tamaño y familia de
-//! fuente, color, alineación, enlace, imagen, listas y encabezados.
+//! Barras de formato, en dos niveles:
+//! - Flotante sobre la selección: formato en línea rápido (negrita, cursiva,
+//!   subrayado, tachado, enlace, código).
+//! - Fila fija bajo la topbar (se muestra/oculta y se recuerda en `Prefs`):
+//!   estilo de párrafo, familia, tamaño, color, alineación, listas e imagen.
 //!
-//! No es un clon de ninguna barra concreta: pill compacta con desplegables,
-//! anclada sobre el final de la selección. Las acciones reutilizan
+//! Las acciones reutilizan
 //! `Action::InsertSnippet` (envuelve la selección vía `${sel}`) y
 //! `Action::PrefixLines` (prefijos de línea con toggle).
 
@@ -19,6 +21,13 @@ const SWATCHES: &[&str] = &[
     "#ffffff", "#1e1e1e", "#808000", "#ffa500", "#008080", "#0066cc", "#800080", "#e03131",
     "#f06595",
 ];
+/// Estilos de párrafo: etiqueta y prefijo de línea (`""` = texto normal).
+const STYLES: &[(&str, &str)] = &[
+    ("Texto normal", ""),
+    ("Título", "= "),
+    ("Subtítulo", "== "),
+    ("Sección", "=== "),
+];
 const SIZES_PT: &[f32] = &[8.0, 9.0, 10.0, 11.0, 12.0, 14.0, 18.0, 24.0, 32.0];
 
 /// Estado persistente de la barra (últimos valores usados + cachés).
@@ -33,8 +42,6 @@ pub struct FormatBar {
     pub link_open: bool,
     pub fonts: Option<Vec<String>>,
     pub font_filter: String,
-    /// Fija la barra como fila de la topbar en vez de flotante.
-    pub pinned: bool,
     fonts_rx: Option<std::sync::mpsc::Receiver<Vec<String>>>,
 }
 
@@ -49,7 +56,6 @@ impl Default for FormatBar {
             link_open: false,
             fonts: None,
             font_filter: String::new(),
-            pinned: false,
             fonts_rx: None,
         }
     }
@@ -215,6 +221,21 @@ pub fn toggle_prefix(text: &str, a: usize, b: usize, prefix: &str) -> (String, u
     (out, new_start, new_end)
 }
 
+/// Nivel de encabezado (nº de `=`) de la línea que contiene el char `cursor`;
+/// 0 si no es encabezado.
+fn heading_level(text: &str, cursor: usize) -> usize {
+    let b = crate::text::char_to_byte(text, cursor);
+    let start = text[..b].rfind('\n').map_or(0, |i| i + 1);
+    let line = text[start..].lines().next().unwrap_or("");
+    let rest = &line[indent_len(line)..];
+    let n = rest.chars().take_while(|&c| c == '=').count();
+    if n > 0 && rest[n..].starts_with(' ') {
+        n
+    } else {
+        0
+    }
+}
+
 fn hex_to_color(hex: &str) -> Option<egui::Color32> {
     let h = hex.strip_prefix('#')?;
     if h.len() != 6 {
@@ -243,14 +264,10 @@ fn fmt_pt(s: f32) -> String {
 
 // ---------- UI ----------
 
-/// Dibuja la barra si hay selección no vacía con ancla vigente.
+/// Barra flotante: formato en línea rápido sobre una selección no vacía con
+/// ancla vigente.
 /// Se llama tras el dock en `App::ui` (el ancla la guardó `doc_tab`).
 pub fn show(st: &mut State, ctx: &egui::Context) {
-    st.fmt.poll_fonts();
-    // Fija: se dibuja como fila de la topbar (ver `docked`), no flotante.
-    if st.fmt.pinned {
-        return;
-    }
     let Some((a, b)) = st.editor.selection else {
         return;
     };
@@ -264,18 +281,20 @@ pub fn show(st: &mut State, ctx: &egui::Context) {
         return;
     }
     let vp = ctx.viewport_rect();
-    // Sobre la selección; si no cabe, debajo (flip).
-    let above = anchor.y - 60.0;
-    let y = if above < vp.min.y + 28.0 {
-        anchor.y + 24.0
+    // Centrada sobre la selección, creciendo hacia arriba (la fila del enlace
+    // no tapa el texto); si no cabe arriba, debajo. `constrain` la mantiene
+    // dentro de la ventana sin suponer su tamaño.
+    let (pivot, y) = if anchor.y - 60.0 < vp.min.y + 28.0 {
+        (egui::Align2::CENTER_TOP, anchor.y + 14.0)
     } else {
-        above
+        (egui::Align2::CENTER_BOTTOM, anchor.y - 14.0)
     };
-    let x = (anchor.x - 200.0).clamp(vp.min.x + 8.0, (vp.max.x - 430.0).max(vp.min.x + 8.0));
     let pal0 = theme::palette(ctx);
     egui::Area::new(egui::Id::new("formatbar"))
         .order(egui::Order::Foreground)
-        .fixed_pos(egui::pos2(x, y))
+        .pivot(pivot)
+        .fixed_pos(egui::pos2(anchor.x, y))
+        .constrain(true)
         .show(ctx, |ui| {
             egui::Frame::new()
                 .fill(pal0.surface)
@@ -283,35 +302,29 @@ pub fn show(st: &mut State, ctx: &egui::Context) {
                 .corner_radius(egui::CornerRadius::same(14))
                 .inner_margin(Margin::symmetric(8, 6))
                 .show(ui, |ui| {
-                    if let Some(a) = bar_row(st, ui, true) {
+                    if let Some(a) = inline_row(st, ui) {
                         st.actions.push(a);
                     }
                 });
         });
 }
 
-/// Fila fija para la topbar: siempre visible cuando está fijada (actúa sobre
-/// la selección o, sin ella, sobre el cursor).
+/// Fila fija bajo la topbar: tipografía y párrafo. Actúa sobre la selección
+/// o, sin ella, sobre el cursor.
 pub fn docked(st: &mut State, ui: &mut egui::Ui) {
     st.fmt.poll_fonts();
-    if let Some(a) = bar_row(st, ui, false) {
+    if let Some(a) = block_row(st, ui) {
         st.actions.push(a);
     }
 }
 
-/// Contenido compartido (flotante y fija). Fija muestra para desfijar al
-/// inicio; flotante muestra la chincheta al final.
-fn bar_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Action> {
+/// Formato en línea (flotante): negrita, cursiva, subrayado, tachado, enlace
+/// y código. La URL del enlace abre una segunda fila.
+fn inline_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
     let pal = theme::palette(ui.ctx());
     let mut act: Option<Action> = None;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
-        if !floating {
-            if widgets::icon_button(ui, icon::PUSH_PIN_SLASH, "Desfijar (flotante)").clicked() {
-                st.fmt.pinned = false;
-            }
-            widgets::vsep(ui, &pal);
-        }
         if widgets::icon_button(ui, icon::TEXT_BOLDER, "Negrita").clicked() {
             act = Some(Action::InsertSnippet("*${sel}*".into()));
         }
@@ -324,6 +337,78 @@ fn bar_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Action> 
         if widgets::icon_button(ui, icon::TEXT_STRIKETHROUGH, "Tachado").clicked() {
             act = Some(Action::InsertSnippet("#strike[${sel}]".into()));
         }
+        widgets::vsep(ui, &pal);
+        // Enlace (despliega campo URL).
+        if widgets::icon_button(ui, icon::LINK, "Enlace").clicked() {
+            st.fmt.link_open = !st.fmt.link_open;
+        }
+        // Código en línea.
+        if widgets::icon_button(ui, icon::CODE_SIMPLE, "Código").clicked() {
+            act = Some(Action::InsertSnippet("`${sel:código}`".into()));
+        }
+    });
+    // Segunda fila: URL del enlace.
+    if st.fmt.link_open {
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(icon::LINK).small());
+            let r = ui.add(
+                egui::TextEdit::singleline(&mut st.fmt.url)
+                    .hint_text("https://…")
+                    .desired_width(220.0),
+            );
+            let go = ui.small_button("Aplicar").clicked()
+                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+            if go && !st.fmt.url.trim().is_empty() {
+                let u = st.fmt.url.trim().replace('\\', "\\\\").replace('"', "\\\"");
+                act = Some(Action::InsertSnippet(format!(
+                    "#link(\"{u}\")[${{sel:enlace}}]"
+                )));
+                st.fmt.link_open = false;
+            }
+            if ui.small_button("✕").clicked()
+                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)))
+            {
+                st.fmt.link_open = false;
+            }
+        });
+    }
+    act
+}
+
+/// Tipografía y párrafo (fija): estilo de párrafo, familia, tamaño, color,
+/// alineación, listas e imagen.
+fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
+    let pal = theme::palette(ui.ctx());
+    let mut act: Option<Action> = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        // Estilo de párrafo: muestra el de la línea del cursor.
+        let level = {
+            let doc = st.docs.cur();
+            heading_level(&doc.text, st.editor.cursor.unwrap_or(0))
+        };
+        let current = STYLES
+            .iter()
+            .find(|(_, mark)| mark.trim_end().len() == level)
+            .map_or("Encabezado", |(label, _)| *label);
+        ui.menu_button(
+            RichText::new(format!("{}  {current}", icon::PARAGRAPH)).small(),
+            |ui| {
+                ui.set_min_width(180.0);
+                for (label, mark) in STYLES {
+                    let text = if mark.is_empty() {
+                        label.to_string()
+                    } else {
+                        format!("{label}  ({})", mark.trim_end())
+                    };
+                    if ui.selectable_label(*label == current, text).clicked() {
+                        act = Some(Action::PrefixLines(mark.to_string()));
+                        ui.close();
+                    }
+                }
+            },
+        );
         widgets::vsep(ui, &pal);
         // Tamaño de fuente.
         ui.menu_button(RichText::new(fmt_pt(st.fmt.size_pt)).small(), |ui| {
@@ -456,21 +541,6 @@ fn bar_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Action> 
                 }
             }
         });
-        // Enlace (despliega campo URL).
-        if widgets::icon_button(ui, icon::LINK, "Enlace").clicked() {
-            st.fmt.link_open = !st.fmt.link_open;
-        }
-        // Imagen (diálogo; se inserta tras la selección sin borrarla).
-        if widgets::icon_button(ui, icon::IMAGE, "Imagen…").clicked()
-            && let Some(body) = pick_image(st)
-        {
-            // Colapsa al final para no sustituir lo seleccionado.
-            if let Some((_, b)) = st.editor.selection {
-                st.editor.selection = Some((b, b));
-                st.editor.cursor = Some(b);
-            }
-            act = Some(Action::InsertSnippet(body));
-        }
         // Listas.
         ui.menu_button(RichText::new(icon::LIST_BULLETS).size(16.0), |ui| {
             ui.set_min_width(180.0);
@@ -487,61 +557,18 @@ fn bar_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Action> 
                 ui.close();
             }
         });
-        // Encabezados.
-        ui.menu_button(RichText::new(icon::TEXT_H).size(16.0), |ui| {
-            ui.set_min_width(180.0);
-            if ui.button("Texto normal").clicked() {
-                act = Some(Action::PrefixLines(String::new()));
-                ui.close();
+        // Imagen (diálogo; se inserta tras la selección sin borrarla).
+        if widgets::icon_button(ui, icon::IMAGE, "Imagen…").clicked()
+            && let Some(body) = pick_image(st)
+        {
+            // Colapsa al final para no sustituir lo seleccionado.
+            if let Some((_, b)) = st.editor.selection {
+                st.editor.selection = Some((b, b));
+                st.editor.cursor = Some(b);
             }
-            for (label, mark) in [
-                ("Título (= )", "= "),
-                ("Subtítulo (== )", "== "),
-                ("Sección (=== )", "=== "),
-            ] {
-                if ui.button(label).clicked() {
-                    act = Some(Action::PrefixLines(mark.into()));
-                    ui.close();
-                }
-            }
-        });
-        // Código en línea.
-        if widgets::icon_button(ui, icon::CODE_SIMPLE, "Código").clicked() {
-            act = Some(Action::InsertSnippet("`${sel:código}`".into()));
-        }
-        if floating {
-            widgets::vsep(ui, &pal);
-            if widgets::icon_button(ui, icon::PUSH_PIN, "Fijar en la barra superior").clicked() {
-                st.fmt.pinned = true;
-            }
+            act = Some(Action::InsertSnippet(body));
         }
     });
-    // Segunda fila: URL del enlace.
-    if st.fmt.link_open {
-        ui.separator();
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(icon::LINK).small());
-            let r = ui.add(
-                egui::TextEdit::singleline(&mut st.fmt.url)
-                    .hint_text("https://…")
-                    .desired_width(220.0),
-            );
-            let go = ui.small_button("Aplicar").clicked()
-                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
-            if go && !st.fmt.url.trim().is_empty() {
-                let u = st.fmt.url.trim().replace('\\', "\\\\").replace('"', "\\\"");
-                act = Some(Action::InsertSnippet(format!(
-                    "#link(\"{u}\")[${{sel:enlace}}]"
-                )));
-                st.fmt.link_open = false;
-            }
-            if ui.small_button("✕").clicked()
-                || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Escape)))
-            {
-                st.fmt.link_open = false;
-            }
-        });
-    }
     act
 }
 
@@ -641,6 +668,17 @@ mod tests {
             Some("a\\\"b.png")
         );
         assert_eq!(image_path(root, Path::new("/otra/foto.png")), None);
+    }
+
+    #[test]
+    fn nivel_de_encabezado() {
+        let t = "= Uno\ntexto\n  == Dos\n=sin espacio\n";
+        assert_eq!(heading_level(t, 0), 1);
+        assert_eq!(heading_level(t, 5), 1);
+        assert_eq!(heading_level(t, 6), 0);
+        assert_eq!(heading_level(t, 14), 2);
+        assert_eq!(heading_level(t, 22), 0);
+        assert_eq!(heading_level("", 0), 0);
     }
 
     #[test]
