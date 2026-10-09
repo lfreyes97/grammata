@@ -17,13 +17,15 @@ pub enum Panel {
     Problems,
     Symbols,
     Snippets,
+    Templates,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 5] = [
+    pub const ALL: [Panel; 6] = [
         Panel::Outline,
         Panel::Symbols,
         Panel::Snippets,
+        Panel::Templates,
         Panel::Preview,
         Panel::Problems,
     ];
@@ -35,6 +37,7 @@ impl Panel {
             Panel::Problems => "Problemas",
             Panel::Symbols => "Símbolos",
             Panel::Snippets => "Snippets",
+            Panel::Templates => "Plantillas",
         }
     }
 
@@ -45,6 +48,7 @@ impl Panel {
             Panel::Problems => "Ctrl+Mayús+M",
             Panel::Symbols => "Ctrl+Mayús+Y",
             Panel::Snippets => "Ctrl+Mayús+I",
+            Panel::Templates => "Ctrl+Mayús+T",
         }
     }
 
@@ -56,12 +60,13 @@ impl Panel {
             Panel::Problems => i::WARNING_CIRCLE,
             Panel::Symbols => i::SIGMA,
             Panel::Snippets => i::BRACKETS_CURLY,
+            Panel::Templates => i::ARTICLE,
         }
     }
 
     /// Paneles de la columna lateral: se apilan como pestañas en un mismo nodo.
     fn is_side(self) -> bool {
-        matches!(self, Panel::Outline | Panel::Symbols | Panel::Snippets)
+        matches!(self, Panel::Outline | Panel::Symbols | Panel::Snippets | Panel::Templates)
     }
 }
 
@@ -198,7 +203,7 @@ pub fn show_panel(dock: &mut DockState<Tab>, p: Panel, cur_doc: DocId) {
     // es el panel nuevo, aunque la doc de egui_dock diga lo contrario).
     let (split, frac) = match p {
         Panel::Preview => (Split::Right, 0.55),
-        Panel::Outline | Panel::Symbols | Panel::Snippets => (Split::Left, 0.3),
+        Panel::Outline | Panel::Symbols | Panel::Snippets | Panel::Templates => (Split::Left, 0.3),
         Panel::Problems => (Split::Below, 0.74),
     };
     dock.split(at, split, frac, Node::leaf(tab));

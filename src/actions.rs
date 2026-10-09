@@ -9,6 +9,8 @@ use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub enum Action {
     NewDoc,
+    /// Nuevo documento con el texto ya puesto (builder de plantillas).
+    NewFromTemplate { text: String },
     Open,
     OpenPath(PathBuf),
     /// Abre (o enfoca) un archivo y salta a L:C — errores en `#include`.

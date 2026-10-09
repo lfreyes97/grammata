@@ -17,6 +17,7 @@ mod preview;
 mod session;
 mod snippets;
 mod symbols;
+mod templates;
 mod syntax;
 mod text;
 mod theme;

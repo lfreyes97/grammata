@@ -13,6 +13,7 @@ use crate::preview::{self, Preview};
 use crate::session::{self, Prefs, Session, SessionTab};
 use crate::snippets::{self, UserSnippet};
 use crate::symbols;
+use crate::templates;
 use crate::text;
 use crate::theme;
 use egui::{Key as K, Modifiers as M};
@@ -98,6 +99,7 @@ pub struct State {
     pub symbol_query: String,
     pub recent_symbols: Vec<String>,
     pub snippet_query: String,
+    pub template: templates::Article,
     pub user_snippets: Vec<UserSnippet>,
     pub fmt: FormatBar,
     force_compile: bool,
@@ -197,6 +199,7 @@ impl App {
             recent_symbols: session.recent_symbols,
             snippet_query: String::new(),
             user_snippets: snippets::load_user(),
+            template: templates::Article::default(),
             fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
         };
@@ -278,6 +281,9 @@ impl App {
             }
             if k(cs, K::I) {
                 a.push(Action::TogglePanel(Panel::Snippets))
+            }
+            if k(cs, K::T) {
+                a.push(Action::TogglePanel(Panel::Templates))
             }
             if k(M::SHIFT, K::F3) {
                 self.st.editor.pending_step = Some(-1)
@@ -442,6 +448,12 @@ impl App {
         match action {
             Action::NewDoc => {
                 let id = self.st.docs.push(None, String::new());
+                layout::add_doc(&mut self.dock, id, cur);
+                self.switch_to_id(id);
+                self.st.needs_persist = true;
+            }
+            Action::NewFromTemplate { text } => {
+                let id = self.st.docs.push(None, text);
                 layout::add_doc(&mut self.dock, id, cur);
                 self.switch_to_id(id);
                 self.st.needs_persist = true;
@@ -1167,6 +1179,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Panel(Panel::Problems) => panels::problems(st, ui),
             Tab::Panel(Panel::Symbols) => symbols::panel(st, ui),
             Tab::Panel(Panel::Snippets) => snippets::panel(st, ui),
+            Tab::Panel(Panel::Templates) => templates::panel(st, ui),
         }
     }
 

@@ -18,8 +18,8 @@ guardar, `Ctrl+W` cerrar, `Ctrl+Tab` / `Ctrl+RePág/AvPág` / `Ctrl+1..9` cambia
 pestaña, `F5` compilar, `Ctrl+E` exportar PDF, `Ctrl+F` buscar (`Enter`/`F3` siguiente,
 `Mayús+Enter`/`Mayús+F3` anterior), `Ctrl+G` ir a línea, `Ctrl+Espacio` completar
 (`Tab`/`Enter` acepta), `Ctrl+= / - / 0` fuente, `Alt+Z` ajuste de línea,
-`Ctrl+Mayús+O / V / M` esquema · vista previa · problemas, `Ctrl+Mayús+Y / I` símbolos ·
-snippets, `Ctrl+rueda` zoom del PDF.
+`Ctrl+Mayús+O / V / M` esquema · vista previa · problemas, `Ctrl+Mayús+Y / I / T` símbolos ·
+snippets · plantillas, `Ctrl+rueda` zoom del PDF.
 
 Sesión (pestañas, preferencias y diseño del dock) en
 `~/.config/typst-editor/session.json`. Las sesiones del formato anterior se migran solas.
@@ -48,6 +48,9 @@ Sesión (pestañas, preferencias y diseño del dock) en
   `~/.config/typst-editor/snippets.json` (botón + crea uno desde la selección).
   Marcadores: `${sel}` selección · `${sel:x}` selección o `x` · `${x}` relleno que queda
   seleccionado para escribir encima · `${}` cursor.
+- **Plantillas**: builder de Artículo en el panel lateral (título, autor, fecha,
+  idioma, papel, márgenes, fuente, numeración, índice, resumen) que abre el
+  documento en una pestaña nueva; todo lo generado compila (`Ctrl+Mayús+T`).
 - **Problemas**: diagnósticos del compilador embebido con ubicación exacta
   (errores, advertencias, pistas); clic salta a la línea, también en archivos incluidos. Con errores se conserva
   la última vista previa válida y se avisa con un banner.
@@ -78,6 +81,7 @@ Sesión (pestañas, preferencias y diseño del dock) en
 | `panels.rs` | paneles Esquema y Problemas |
 | `symbols.rs` | panel de símbolos (tabla validada contra typst) |
 | `snippets.rs` | panel de snippets, marcadores `${…}`, snippets del usuario |
+| `templates.rs` | builders de plantillas (Artículo): opciones → `.typ` que compila |
 | `layout.rs` | pestañas del dock, paneles, diseños predefinidos |
 | `session.rs` | sesión persistente |
 | `theme.rs` | paleta, estilos de egui/dock/editor, fuentes |

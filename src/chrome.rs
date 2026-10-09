@@ -37,6 +37,9 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             if menu_item(ui, icon::FILE_PLUS, "Nuevo", "Ctrl+N") {
                 a.push(Action::NewDoc)
             }
+            if menu_item(ui, icon::ARTICLE, "Nuevo desde plantilla…", "Ctrl+Mayús+T") {
+                a.push(Action::ShowPanel(Panel::Templates))
+            }
             if menu_item(ui, icon::FOLDER_OPEN, "Abrir…", "Ctrl+O") {
                 a.push(Action::Open)
             }
@@ -192,6 +195,7 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                 Panel::Problems,
                 Panel::Preview,
                 Panel::Snippets,
+                Panel::Templates,
                 Panel::Symbols,
                 Panel::Outline,
             ] {
