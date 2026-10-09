@@ -22,7 +22,7 @@ use typst::{Library, LibraryExt as _, World, compile};
 use typst_kit::datetime::Time;
 use typst_kit::downloader::SystemDownloader;
 use typst_kit::files::{FileStore, FsRoot, SystemFiles};
-use typst_kit::fonts::FontSource as _;
+use typst_kit::fonts::FontStore;
 use typst_kit::packages::SystemPackages;
 use typst_layout::PagedDocument;
 
@@ -30,21 +30,17 @@ use crate::diagnostics::{self, Diagnostic};
 
 // ---------- Fuentes compartidas ----------
 
-struct SharedFonts {
-    book: FontBook,
-    fonts: Vec<Font>,
-}
+static SHARED_FONTS: OnceLock<Arc<FontStore>> = OnceLock::new();
 
-static SHARED_FONTS: OnceLock<Arc<SharedFonts>> = OnceLock::new();
-
-fn shared_fonts() -> Arc<SharedFonts> {
+/// Catálogo de fuentes del sistema. Solo se escanean los metadatos; cada
+/// fuente se lee del disco la primera vez que un documento la usa (cargarlas
+/// todas de entrada eran GB de RAM con colecciones .ttc grandes).
+fn shared_fonts() -> Arc<FontStore> {
     SHARED_FONTS
         .get_or_init(|| {
-            let fonts: Vec<Font> = typst_kit::fonts::system()
-                .filter_map(|(p, _)| p.load())
-                .collect();
-            let book = FontBook::from_infos(fonts.iter().map(|f| f.info().clone()));
-            Arc::new(SharedFonts { book, fonts })
+            let mut store = FontStore::new();
+            store.extend(typst_kit::fonts::system());
+            Arc::new(store)
         })
         .clone()
 }
@@ -53,7 +49,7 @@ fn shared_fonts() -> Arc<SharedFonts> {
 pub fn font_families() -> Vec<String> {
     let shared = shared_fonts();
     let mut v: Vec<String> = shared
-        .book
+        .book()
         .families()
         .map(|(name, _)| name.to_string())
         .collect();
@@ -84,8 +80,7 @@ pub(crate) struct EngineWorld {
     main_id: FileId,
     main_text: String,
     files: FileStore<SystemFiles>,
-    book: LazyHash<FontBook>,
-    fonts: Vec<Font>,
+    fonts: Arc<FontStore>,
     library: LazyHash<Library>,
     time: Time,
 }
@@ -95,7 +90,6 @@ impl EngineWorld {
         let vpath = VirtualPath::new(filename)
             .unwrap_or_else(|_| VirtualPath::new("main.typ").expect("vpath"));
         let main_id = RootedPath::new(VirtualRoot::Project, vpath).intern();
-        let shared = shared_fonts();
         let downloader = SystemDownloader::new(concat!("typst-editor/", env!("CARGO_PKG_VERSION")));
         let files = FileStore::new(SystemFiles::new(
             FsRoot::new(root),
@@ -105,8 +99,7 @@ impl EngineWorld {
             main_id,
             main_text: text,
             files,
-            book: LazyHash::new(shared.book.clone()),
-            fonts: shared.fonts.clone(),
+            fonts: shared_fonts(),
             library: LazyHash::new(Library::default()),
             time: Time::system(),
         }
@@ -128,7 +121,7 @@ impl World for EngineWorld {
     }
 
     fn book(&self) -> &LazyHash<FontBook> {
-        &self.book
+        self.fonts.book()
     }
 
     fn main(&self) -> FileId {
@@ -152,7 +145,7 @@ impl World for EngineWorld {
     }
 
     fn font(&self, index: usize) -> Option<Font> {
-        self.fonts.get(index).cloned()
+        self.fonts.font(index)
     }
 
     fn today(&self, offset: Option<Duration>) -> Option<Datetime> {
