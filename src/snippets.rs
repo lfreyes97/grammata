@@ -23,6 +23,9 @@ pub struct Snippet {
 pub struct Group {
     pub name: &'static str,
     pub icon: &'static str,
+    /// Útil dentro de una ecuación: el borrador en modo ecuación solo
+    /// ofrece estos grupos.
+    pub math: bool,
     pub items: &'static [Snippet],
 }
 
@@ -34,6 +37,7 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Documento",
         icon: icon::FILE_TEXT,
+        math: false,
         items: &[
             sn(
                 "Configuración básica",
@@ -41,7 +45,7 @@ pub const BUILTIN: &[Group] = &[
             ),
             sn(
                 "Título y autor",
-                "#align(center)[\n  #text(size: 20pt, weight: \"bold\")[${Título}]\n\n  Autor · #datetime.today().display()\n]\n",
+                "#align(center)[\n  #text(size: 20pt, weight: \"bold\")[${Título}]\n\n  Autor · #datetime.today().display(\"[day]/[month]/[year]\")\n]\n",
             ),
             sn("Índice", "#outline(title: [${Índice}])\n"),
             sn(
@@ -57,6 +61,7 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Texto",
         icon: icon::TEXT_T,
+        math: false,
         items: &[
             sn("Negrita", "*${sel:texto}*"),
             sn("Cursiva", "_${sel:texto}_"),
@@ -75,6 +80,7 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Listas",
         icon: icon::LIST_NUMBERS,
+        math: false,
         items: &[
             sn("Viñetas", "- ${Elemento}\n- Elemento\n- Elemento\n"),
             sn("Numerada", "+ ${Paso}\n+ Paso\n+ Paso\n"),
@@ -85,6 +91,7 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Figuras y tablas",
         icon: icon::TABLE,
+        math: false,
         items: &[
             sn(
                 "Imagen con pie",
@@ -100,52 +107,89 @@ pub const BUILTIN: &[Group] = &[
             ),
         ],
     },
+    // Matemáticas: solo expresiones completas. Las piezas sueltas (frac,
+    // raíz, matriz, casos…) están en Símbolos › Estructuras, que además
+    // funcionan dentro de una ecuación.
     Group {
-        name: "Matemáticas",
+        name: "Ecuaciones",
         icon: icon::SIGMA,
+        math: true,
         items: &[
             sn("Ecuación en línea", "$${sel:x}$"),
             sn("Ecuación en bloque", "$ ${sel:x} $"),
             sn(
-                "Numerar ecuaciones",
-                "#set math.equation(numbering: \"(1)\")\n${}",
-            ),
-            sn(
                 "Ecuaciones alineadas",
                 "$ ${f(x)} &= (x + 1)^2 \\\n  &= x^2 + 2x + 1 $",
             ),
+            sn("Ecuación etiquetada", "$ ${x} $ <${eq}>"),
             sn(
-                "Sistema de casos",
-                "$ f(x) = cases(\n  ${1} &\"si\" x > 0,\n  0 &\"si no\",\n) $",
+                "Numerar ecuaciones",
+                "#set math.equation(numbering: \"(1)\")\n${}",
             ),
-            sn("Matriz", "$ A = mat(\n  ${1}, 2;\n  3, 4;\n) $"),
-            sn("Matriz 3×3", "$ mat(${1}, 2, 3;\n  4, 5, 6;\n  7, 8, 9) $"),
-            sn("Vector columna", "$ vec(${x}, ${y}, ${z}) $"),
+            sn("Cancelar término", "$ cancel(${x + y}) $"),
+            sn("Llave inferior", "$ underbrace(${x + y}, \"${suma}\") $"),
+        ],
+    },
+    Group {
+        name: "Álgebra y cálculo",
+        icon: icon::FUNCTION,
+        math: true,
+        items: &[
             sn(
                 "Sistema de ecuaciones",
                 "$ cases(x + y &= ${7},\n  x - y &= ${1}) $",
             ),
-            sn("Fracción", "$ frac(${a}, ${b}) $"),
+            sn("Matriz 3×3", "$ mat(${1}, 2, 3;\n  4, 5, 6;\n  7, 8, 9) $"),
             sn("Límite", "$ lim_(${x} -> ${0}) ${f(x)} $"),
             sn("Derivada", "$ (dif ${f}) / (dif ${x}) $"),
             sn("Integral", "$ integral_${a}^${b} ${f(x)} dif x $"),
             sn("Sumatorio", "$ sum_(${i} = 1)^${n} ${a_i} $"),
             sn("Productorio", "$ product_(${i} = 1)^${n} ${a_i} $"),
-            sn("Raíz n-ésima", "$ root(${n}, ${x}) $"),
-            sn("Valor absoluto", "$ abs(${x}) $"),
-            sn("Norma", "$ norm(${v}) $"),
-            sn("Cancelar término", "$ cancel(${x + y}) $"),
-            sn("Llave inferior", "$ underbrace(${x + y}, \"${suma}\") $"),
-            sn("Texto en ecuación", "$ ${x} \"donde\" ${x > 0} $"),
-            sn("Ecuación etiquetada", "$ ${x} $ <${eq}>"),
+        ],
+    },
+    Group {
+        name: "Fórmulas",
+        icon: icon::MATH_OPERATIONS,
+        math: true,
+        items: &[
             sn(
                 "Fórmula cuadrática",
                 "$ x = (-b plus.minus sqrt(b^2 - 4 a c)) / (2 a) $",
             ),
             sn(
-                "Raíces por promedio",
+                "Raíces por promedio (Po-Shen Loh)",
                 "$ u = -(${B}) / 2 = ${u} $\n$ d = sqrt((${u})^2 - ${C}) = ${d} $\n$ x = ${u} plus.minus ${d} $",
             ),
+        ],
+    },
+    // Calculan el resultado con `calc` (no es cálculo infinitesimal: eso
+    // va en «Álgebra y cálculo»).
+    Group {
+        name: "Calcular con typst",
+        icon: icon::CALCULATOR,
+        math: true,
+        items: &[
+            sn("Redondear", "#calc.round(${3.14159}, digits: ${2})"),
+            sn("Potencia", "#calc.pow(${2}, ${10})"),
+            sn(
+                "Calcular discriminante",
+                "#let a = ${2}\n#let b = ${8}\n#let c = ${6}\n#let D = calc.pow(b, 2) - 4 * a * c\n$Delta = #D$",
+            ),
+            sn(
+                "Calcular raíces (fórmula)",
+                "#let a = ${2}\n#let b = ${8}\n#let c = ${6}\n#let D = calc.pow(b, 2) - 4 * a * c\n#let r = calc.sqrt(D)\n$x = (#(-b) plus.minus #r) / #(2 * a)$",
+            ),
+            sn(
+                "Calcular raíces (promedio)",
+                "#let B = ${4}\n#let C = ${3}\n#let u = -B / 2\n#let d = calc.sqrt(calc.pow(u, 2) - C)\n$u = #u, quad d = #d, quad x = #u plus.minus #d$",
+            ),
+        ],
+    },
+    Group {
+        name: "Bloques",
+        icon: icon::QUOTES,
+        math: false,
+        items: &[
             sn(
                 "Teorema",
                 "#block(stroke: (left: 2pt + gray), inset: (left: 1em, y: 4pt))[\n  *Teorema.* ${sel:Enunciado.}\n]\n",
@@ -161,28 +205,9 @@ pub const BUILTIN: &[Group] = &[
         ],
     },
     Group {
-        name: "Cálculo",
-        icon: icon::CALCULATOR,
-        items: &[
-            sn("Redondear", "#calc.round(${3.14159}, digits: ${2})"),
-            sn("Potencia", "#calc.pow(${2}, ${10})"),
-            sn(
-                "Discriminante",
-                "#let a = ${2}\n#let b = ${8}\n#let c = ${6}\n#let D = calc.pow(b, 2) - 4 * a * c\n$Delta = #D$",
-            ),
-            sn(
-                "Raíces cuadrática",
-                "#let a = ${2}\n#let b = ${8}\n#let c = ${6}\n#let D = calc.pow(b, 2) - 4 * a * c\n#let r = calc.sqrt(D)\n$x = (#(-b) plus.minus #r) / #(2 * a)$",
-            ),
-            sn(
-                "Po-Shen Loh",
-                "#let B = ${4}\n#let C = ${3}\n#let u = -B / 2\n#let d = calc.sqrt(calc.pow(u, 2) - C)\n$u = #u, quad d = #d, quad x = #u plus.minus #d$",
-            ),
-        ],
-    },
-    Group {
         name: "Código",
         icon: icon::CODE,
+        math: false,
         items: &[
             sn("Bloque de código", "```${rust}\n${sel}\n```\n"),
             sn("Variable", "#let ${nombre} = 1\n"),
@@ -194,6 +219,7 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Diseño",
         icon: icon::LAYOUT,
+        math: false,
         items: &[
             sn(
                 "Dos columnas",
@@ -215,6 +241,7 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Referencias",
         icon: icon::BOOKMARK_SIMPLE,
+        math: false,
         items: &[
             sn("Etiqueta", "<${etiqueta}>"),
             sn("Referencia", "@${etiqueta}"),

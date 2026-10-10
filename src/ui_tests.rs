@@ -457,7 +457,11 @@ fn nuevo_proyecto_vacio_y_articulo() {
         Some(dir.join("main.typ").as_path())
     );
 
-    crear(&mut h, "art", crate::project::Kind::Template(crate::templates::Kind::Article));
+    crear(
+        &mut h,
+        "art",
+        crate::project::Kind::Template(crate::templates::Kind::Article),
+    );
     assert_eq!(
         h.state().st.template_dir.as_deref(),
         Some(tmp.join("art").as_path())
@@ -498,18 +502,18 @@ fn borrador_inserta_snippet() {
         .actions
         .push(Action::ShowPanel(Panel::Scratch));
     h.run_steps(5);
-    h.get_by_label_contains("Añadir snippet").click();
-    h.run_steps(5);
-    h.get_by_label_contains("Matemáticas").click();
-    h.run_steps(5);
-    h.get_by_label_contains("Fracción").click();
+    // Estructura de Símbolos (botón «a⁄b»): llega sin `$`.
+    h.get_by_label("a⁄b").click();
     h.run_steps(5);
     let t = h.state().st.scratch.text.clone();
-    assert!(t.contains("frac"), "el snippet no llegó al borrador: {t:?}");
-    // Un snippet con sus propios `$…$` no se duplica en modo ecuación.
+    assert_eq!(t, "frac(a, b)", "la estructura no llegó al borrador");
+    shot(&mut h, "borrador-estructuras");
+    // En modo ecuación el menú solo ofrece grupos de matemáticas.
     h.get_by_label_contains("Añadir snippet").click();
     h.run_steps(5);
-    h.get_by_label_contains("Matemáticas").click();
+    assert!(h.query_by_label_contains("Listas").is_none());
+    // Un snippet con sus propios `$…$` no se duplica en modo ecuación.
+    h.get_by_label_contains("Álgebra y cálculo").click();
     h.run_steps(5);
     h.get_by_label_contains("Sumatorio").click();
     h.run_steps(5);
@@ -539,9 +543,9 @@ fn borrador_snippet_calc() {
     h.run_steps(5);
     h.get_by_label_contains("Añadir snippet").click();
     h.run_steps(5);
-    h.get_by_label_contains("Cálculo").click();
+    h.get_by_label_contains("Calcular con typst").click();
     h.run_steps(5);
-    h.get_by_label_contains("Discriminante").click();
+    h.get_by_label_contains("Calcular discriminante").click();
     h.run_steps(4);
     std::thread::sleep(std::time::Duration::from_millis(600));
     h.run_steps(6);

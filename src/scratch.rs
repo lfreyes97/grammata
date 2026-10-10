@@ -18,16 +18,6 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 /// Resolución del render (px por punto).
 const SCALE: f32 = 2.0;
 
-/// Estructuras rápidas para el constructor de ecuaciones: etiqueta e
-/// inserto (se coloca en el cursor del borrador).
-const QUICK: &[(&str, &str)] = &[
-    ("frac", "frac(a, b)"),
-    ("∑", "sum_(i=1)^n "),
-    ("mat", "mat(a, b; c, d)"),
-    ("√", "sqrt(x)"),
-    ("casos", "cases(1 &\"si\" x > 0, 0 &\"si no\")"),
-];
-
 pub struct Scratch {
     pub text: String,
     pub equation: bool,
@@ -97,7 +87,13 @@ impl Worker {
                         crate::engine::render_preview(&job.src, &job.root, SCALE)
                     }))
                     .unwrap_or_else(|_| Err("error interno del compilador (panic)".into()));
-                    if tx_out.send(Done { key: job.key, result }).is_err() {
+                    if tx_out
+                        .send(Done {
+                            key: job.key,
+                            result,
+                        })
+                        .is_err()
+                    {
                         break;
                     }
                     ctx.request_repaint();
@@ -175,18 +171,6 @@ fn strip_math(s: &str) -> &str {
         .unwrap_or(t)
 }
 
-/// Inserta `snippet` en `cursor` (índices de char). Devuelve el texto nuevo
-/// y el cursor tras lo insertado.
-pub fn splice_at(text: &str, cursor: usize, snippet: &str) -> (String, usize) {
-    let n = text.chars().count();
-    let c = cursor.min(n);
-    let mut out = String::new();
-    out.extend(text.chars().take(c));
-    out.push_str(snippet);
-    out.extend(text.chars().skip(c));
-    (out, c + snippet.chars().count())
-}
-
 // ---------- Panel ----------
 
 pub fn panel(st: &mut State, ui: &mut egui::Ui) {
@@ -212,14 +196,13 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     // el layout de lo que viene debajo).
                     let font_size = st.prefs.font_size;
                     let font = egui::FontId::monospace(font_size);
-                    let mut layouter = |ui: &egui::Ui,
-                                        buf: &dyn egui::TextBuffer,
-                                        wrap_width: f32| {
-                        let mut job =
-                            crate::highlight::layout_job(buf.as_str(), font.clone(), &pal);
-                        job.wrap.max_width = wrap_width;
-                        ui.fonts_mut(|f| f.layout_job(job))
-                    };
+                    let mut layouter =
+                        |ui: &egui::Ui, buf: &dyn egui::TextBuffer, wrap_width: f32| {
+                            let mut job =
+                                crate::highlight::layout_job(buf.as_str(), font.clone(), &pal);
+                            job.wrap.max_width = wrap_width;
+                            ui.fonts_mut(|f| f.layout_job(job))
+                        };
                     let out = egui::TextEdit::multiline(&mut s.text)
                         .font(font.clone())
                         .code_editor()
@@ -227,37 +210,35 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                         .desired_width(f32::INFINITY)
                         .layouter(&mut layouter)
                         .show(ui);
-                    // Inserción rápida en el cursor del borrador + biblioteca.
+                    // Biblioteca (en modo ecuación, solo los grupos de
+                    // matemáticas) + estructuras de Símbolos en el cursor.
                     let mut picked: Option<&'static str> = None;
+                    let eq = s.equation;
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         ui.menu_button(format!("{}  Añadir snippet", icon::BRACKETS_CURLY), |ui| {
-                            for g in crate::snippets::BUILTIN {
-                                ui.menu_button(
-                                    format!("{}  {}", g.icon, g.name),
-                                    |ui| {
-                                        for s in g.items {
-                                            if ui.button(s.name).clicked() {
-                                                picked = Some(s.body);
-                                                ui.close();
-                                            }
+                            for g in crate::snippets::BUILTIN.iter().filter(|g| g.math || !eq) {
+                                ui.menu_button(format!("{}  {}", g.icon, g.name), |ui| {
+                                    for s in g.items {
+                                        if ui.button(s.name).clicked() {
+                                            picked = Some(s.body);
+                                            ui.close();
                                         }
-                                    },
-                                );
+                                    }
+                                });
                             }
                         });
-                        for (label, snippet) in QUICK {
-                            if ui
-                                .small_button(RichText::new(*label).monospace())
-                                .on_hover_text(*snippet)
-                                .clicked()
-                            {
-                                insert_at_cursor(ui, &out, &mut s.text, snippet);
+                        if eq {
+                            for sym in crate::symbols::STRUCTURES.items {
+                                let label = RichText::new(sym.label)
+                                    .family(egui::FontFamily::Name("ui-math".into()));
+                                if ui.small_button(label).on_hover_text(sym.name).clicked() {
+                                    picked = Some(sym.insert);
+                                }
                             }
                         }
                     });
                     if let Some(body) = picked {
-                        let eq = s.equation;
                         apply_snippet(ui, &out, &mut s.text, body, eq);
                     }
                     // Vista previa en vivo (con debounce).
@@ -330,9 +311,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                                 size *= max_w / size.x;
                             }
                             ui.horizontal(|ui| {
-                                ui.add_space(
-                                    ((ui.available_width() - size.x) / 2.0).max(0.0),
-                                );
+                                ui.add_space(((ui.available_width() - size.x) / 2.0).max(0.0));
                                 ui.add(
                                     egui::Image::new(tex)
                                         .fit_to_exact_size(size)
@@ -348,7 +327,10 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                             let go = widgets::accent_button(
                                 ui,
                                 &pal,
-                                &format!("{}  Insertar en el documento", icon::ARROW_BEND_DOWN_RIGHT),
+                                &format!(
+                                    "{}  Insertar en el documento",
+                                    icon::ARROW_BEND_DOWN_RIGHT
+                                ),
                             )
                             .on_hover_text("Inserta en el cursor del editor")
                             .clicked();
@@ -367,33 +349,6 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     });
                 });
         });
-}
-
-/// Inserta `snippet` en el cursor del editor del borrador (o al final).
-fn insert_at_cursor(
-    ui: &egui::Ui,
-    out: &egui::text_edit::TextEditOutput,
-    text: &mut String,
-    snippet: &str,
-) {
-    let len = text.chars().count();
-    // `state.cursor` y no `cursor_range`: este solo se rellena con foco, y
-    // el clic en el botón ya lo quitó.
-    let c = out
-        .state
-        .cursor
-        .char_range()
-        .map(|r| r.primary.index.0)
-        .unwrap_or(len)
-        .min(len);
-    let (t, nc) = splice_at(text, c, snippet);
-    *text = t;
-    let mut state = out.state.clone();
-    state
-        .cursor
-        .set_char_range(Some(CCursorRange::two(CCursor::new(nc), CCursor::new(nc))));
-    state.store(ui.ctx(), out.response.id);
-    out.response.request_focus();
 }
 
 /// Aplica un snippet de la biblioteca en la selección del borrador (como
@@ -417,8 +372,9 @@ fn apply_snippet(
     let sel: String = text.chars().skip(sa).take(sb - sa).collect();
     let (expanded, na, nb) = crate::snippets::expand(body, &sel);
     // En modo ecuación pela los `$…$` del snippet y el cursor va al final
-    // (los marcadores ya se resolvieron al pelar).
-    let (expanded, (oa, ob)) = if equation {
+    // (los marcadores ya se resolvieron al pelar). Sin `$` (estructuras),
+    // el relleno queda seleccionado como en el editor.
+    let (expanded, (oa, ob)) = if equation && expanded.trim_start().starts_with('$') {
         let e = strip_math(&expanded).to_string();
         let n = e.chars().count();
         (e, (n, n))
@@ -458,10 +414,7 @@ mod tests {
     #[test]
     fn inserto() {
         assert_eq!(insert_source("  x^2  ", true).as_deref(), Some("$x^2$"));
-        assert_eq!(
-            insert_source("hola", false).as_deref(),
-            Some("hola")
-        );
+        assert_eq!(insert_source("hola", false).as_deref(), Some("hola"));
         assert!(insert_source("  ", true).is_none());
     }
 
@@ -493,14 +446,6 @@ mod tests {
         assert_eq!(strip_math("  $$x$$  "), "$x$");
         assert_eq!(strip_math("x^2"), "x^2");
         assert!(insert_source("$  $", true).is_none());
-    }
-
-    #[test]
-    fn empalma_en_cursor() {
-        assert_eq!(splice_at("ab", 1, "X"), ("aXb".to_string(), 2));
-        assert_eq!(splice_at("ab", 0, "X"), ("Xab".to_string(), 1));
-        assert_eq!(splice_at("ab", 99, "X"), ("abX".to_string(), 3));
-        assert_eq!(splice_at("", 0, "frac(a, b)"), ("frac(a, b)".to_string(), 10));
     }
 
     #[test]
