@@ -103,7 +103,9 @@ pub struct State {
     pub symbol_query: String,
     pub recent_symbols: Vec<String>,
     pub snippet_query: String,
-    pub template: templates::Article,
+    pub template: templates::Options,
+    /// Filtro del desplegable de fuentes del builder.
+    pub template_font_filter: String,
     /// Carpeta del proyecto donde escribe el builder (sin ella, pregunta).
     pub template_dir: Option<PathBuf>,
     pub files: files::FileMgr,
@@ -211,7 +213,8 @@ impl App {
             recent_symbols: session.recent_symbols,
             snippet_query: String::new(),
             user_snippets: snippets::load_user(),
-            template: templates::Article::default(),
+            template: templates::Options::default(),
+            template_font_filter: String::new(),
             template_dir: None,
             files: files::FileMgr::default(),
             scratch: scratch::Scratch::from_session(scratch_text, scratch_equation),
@@ -489,16 +492,18 @@ impl App {
                         self.open_path(dir.join(templates::MAIN_FILE));
                         self.st.actions.push(Action::ShowPanel(Panel::Files));
                     }
-                    crate::project::Kind::Article => {
+                    crate::project::Kind::Template(k) => {
+                        self.st.template.set_kind(k);
                         self.st.template_dir = Some(dir);
                         self.st.actions.push(Action::ShowPanel(Panel::Templates));
                     }
                 }
             }
-            Action::NewFromTemplate(article) => {
+            Action::NewFromTemplate(opts) => {
                 // Con proyecto vinculado escribe ahí; si no, pide carpeta.
                 let dir = self.st.template_dir.clone().or_else(|| {
-                    let mut dlg = rfd::FileDialog::new().set_title("Carpeta del artículo");
+                    let mut dlg = rfd::FileDialog::new()
+                        .set_title(format!("Carpeta del documento ({})", opts.kind.name()));
                     let start = self.st.prefs.files_root.clone().or_else(|| {
                         self.st
                             .docs
@@ -514,15 +519,14 @@ impl App {
                     dlg.pick_folder()
                 });
                 if let Some(dir) = dir {
-                    match article.write_project(&dir) {
+                    match opts.write_project(&dir) {
                         Ok(main) => {
                             self.st.template_dir = None;
                             if self.open_path(main) {
                                 self.st.set_status(
                                     format!(
-                                        "Creados {} y {} en {}",
-                                        templates::TEMPLATE_FILE,
-                                        templates::MAIN_FILE,
+                                        "Creados {} en {}",
+                                        opts.files().join(", "),
                                         dir.display()
                                     ),
                                     StatusKind::Ok,

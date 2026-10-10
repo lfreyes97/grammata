@@ -19,7 +19,7 @@ pub enum Action {
     },
     /// Builder de plantillas: elige carpeta, escribe `template.typ` y
     /// `main.typ`, y abre este último.
-    NewFromTemplate(Box<crate::templates::Article>),
+    NewFromTemplate(Box<crate::templates::Options>),
     /// Elige la carpeta raíz del gestor de archivos y lo muestra.
     PickFolder,
     Open,

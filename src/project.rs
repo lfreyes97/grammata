@@ -13,9 +13,28 @@ use std::path::{Path, PathBuf};
 pub enum Kind {
     /// Carpeta con un `main.typ` vacío.
     Empty,
-    /// Carpeta vacía + builder de artículo (escribe `template.typ` y
-    /// `main.typ` al pulsar Crear en el panel).
-    Article,
+    /// Carpeta vacía + builder de plantillas con ese tipo (escribe
+    /// `template.typ` y `main.typ` al pulsar Crear en el panel).
+    Template(crate::templates::Kind),
+}
+
+impl Kind {
+    /// Icono, nombre y descripción corta de la tarjeta.
+    fn card(self) -> (&'static str, &'static str, &'static str) {
+        use crate::templates::Kind as T;
+        let desc = match self {
+            Kind::Empty => "Solo main.typ, para empezar desde cero.",
+            Kind::Template(T::Article) => "Portada, resumen e índice en la primera página.",
+            Kind::Template(T::Report) => "Portada a página completa y capítulos.",
+            Kind::Template(T::Book) => "Capítulos en página impar, doble cara.",
+            Kind::Template(T::Notes) => "Apuntes o ejercicios con cajas y soluciones.",
+            Kind::Template(T::Slides) => "Diapositivas 16:9.",
+        };
+        match self {
+            Kind::Empty => (icon::FILE, "Vacío", desc),
+            Kind::Template(k) => (k.icon(), k.name(), desc),
+        }
+    }
 }
 
 /// Estado del diálogo.
@@ -162,28 +181,18 @@ fn dialog(
     });
     ui.add_space(8.0);
 
-    // Tipo: dos tarjetas.
+    // Tipo: vacío o una de las plantillas, en tarjetas de dos en dos.
     widgets::section_label(ui, pal, "Tipo");
-    ui.columns(2, |c| {
-        kind_card(
-            &mut c[0],
-            pal,
-            np,
-            Kind::Empty,
-            icon::FILE,
-            "Vacío",
-            "Solo main.typ, para empezar desde cero.",
-        );
-        kind_card(
-            &mut c[1],
-            pal,
-            np,
-            Kind::Article,
-            icon::ARTICLE,
-            "Artículo",
-            "Abre el builder: portada, resumen e índice.",
-        );
-    });
+    let kinds: Vec<Kind> = std::iter::once(Kind::Empty)
+        .chain(crate::templates::Kind::ALL.map(Kind::Template))
+        .collect();
+    for pair in kinds.chunks(2) {
+        ui.columns(2, |c| {
+            for (ui, &k) in c.iter_mut().zip(pair) {
+                kind_card(ui, pal, np, k);
+            }
+        });
+    }
 
     // Destino o error.
     ui.add_space(6.0);
@@ -228,15 +237,8 @@ fn dialog(
 }
 
 /// Tarjeta seleccionable de tipo de proyecto.
-fn kind_card(
-    ui: &mut egui::Ui,
-    pal: &theme::Palette,
-    np: &mut NewProject,
-    kind: Kind,
-    ic: &str,
-    title: &str,
-    desc: &str,
-) {
+fn kind_card(ui: &mut egui::Ui, pal: &theme::Palette, np: &mut NewProject, kind: Kind) {
+    let (ic, title, desc) = kind.card();
     let on = np.kind == kind;
     let mut p = egui::Frame::new()
         .corner_radius(CornerRadius::same(8))
@@ -245,6 +247,8 @@ fn kind_card(
     {
         let ui = &mut p.content_ui;
         ui.set_width(ui.available_width());
+        // Misma altura en cada fila aunque la descripción ocupe menos.
+        ui.set_min_height(56.0);
         ui.horizontal(|ui| {
             let c = if on { pal.accent } else { pal.text_dim };
             ui.label(RichText::new(ic).size(20.0).color(c));
@@ -317,7 +321,9 @@ mod tests {
     #[test]
     fn articulo_crea_carpeta_vacia() {
         let d = sandbox("art");
-        let dir = np(&d, "paper", Kind::Article).create().unwrap();
+        let dir = np(&d, "paper", Kind::Template(crate::templates::Kind::Article))
+            .create()
+            .unwrap();
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         let _ = std::fs::remove_dir_all(&d);
     }

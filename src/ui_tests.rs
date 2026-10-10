@@ -457,11 +457,15 @@ fn nuevo_proyecto_vacio_y_articulo() {
         Some(dir.join("main.typ").as_path())
     );
 
-    crear(&mut h, "art", crate::project::Kind::Article);
+    crear(&mut h, "art", crate::project::Kind::Template(crate::templates::Kind::Article));
     assert_eq!(
         h.state().st.template_dir.as_deref(),
         Some(tmp.join("art").as_path())
     );
+    // El formulario es largo: el botón queda bajo el pliegue.
+    h.get_by_label_contains("Crear documento").scroll_to_me();
+    h.run_steps(3);
+    shot(&mut h, "plantillas-panel");
     h.get_by_label_contains("Crear documento").click();
     h.run_steps(5);
     let art = std::fs::canonicalize(tmp.join("art")).unwrap();

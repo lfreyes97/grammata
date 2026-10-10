@@ -1,9 +1,12 @@
 //! Builders de plantillas: a partir de opciones, en un panel lateral, crean
 //! en una carpeta `template.typ` (el formato) y `main.typ` (los datos, que
-//! importa la plantilla). v1: solo Artículo (tipos futuros cuelgan de `Kind`).
+//! importa la plantilla), más `refs.bib` si hay bibliografía. Tipos:
+//! artículo, informe, libro, apuntes y presentación (ver `Kind`).
 //!
-//! Todo lo generado debe compilar: los tests construyen la matriz de
-//! opciones y la pasan por el motor embebido.
+//! Todo lo generado debe compilar: los tests de `codegen` construyen
+//! combinaciones de opciones para cada tipo y las pasan por el motor.
+
+mod codegen;
 
 use crate::actions::Action;
 use crate::app::State;
@@ -12,26 +15,150 @@ use crate::widgets;
 use egui::RichText;
 use egui_phosphor::regular as icon;
 
-/// Tipos de plantilla (v1: solo artículo).
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// Tipos de plantilla.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum Kind {
+    #[default]
     Article,
+    Report,
+    Book,
+    Notes,
+    Slides,
+}
+
+/// Partes del formulario que dependen del tipo.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Field {
+    Subtitle,
+    Institution,
+    Course,
+    Abstract,
+    Solutions,
+    /// Papel y márgenes (la presentación es 16:9 fija).
+    Page,
+    Columns,
+    Justify,
+    Numbering,
+    Header,
+    /// Encabezado con el capítulo en curso.
+    Chapter,
+    Toc,
+    Bib,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 1] = [Kind::Article];
+    pub const ALL: [Kind; 5] = [
+        Kind::Article,
+        Kind::Report,
+        Kind::Book,
+        Kind::Notes,
+        Kind::Slides,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
             Kind::Article => "Artículo",
+            Kind::Report => "Informe",
+            Kind::Book => "Libro",
+            Kind::Notes => "Apuntes",
+            Kind::Slides => "Presentación",
         }
     }
 
     pub fn desc(self) -> &'static str {
         match self {
-            Kind::Article => "Título, autor, fecha, resumen e índice opcionales.",
+            Kind::Article => "Portada en la primera página; resumen e índice opcionales.",
+            Kind::Report => {
+                "Informe o monografía: portada a página completa, resumen, índice y capítulos en página nueva."
+            }
+            Kind::Book => {
+                "Portada, índice en romanos, capítulos en página impar y márgenes a doble cara."
+            }
+            Kind::Notes => {
+                "Apuntes u hoja de ejercicios: cajas de definición, teorema, ejemplo, ejercicio y solución."
+            }
+            Kind::Slides => "Diapositivas 16:9: «=» abre una sección y «==» una diapositiva.",
         }
     }
+
+    pub fn icon(self) -> &'static str {
+        match self {
+            Kind::Article => icon::ARTICLE,
+            Kind::Report => icon::FILE_TEXT,
+            Kind::Book => icon::BOOK_OPEN,
+            Kind::Notes => icon::EXAM,
+            Kind::Slides => icon::PRESENTATION,
+        }
+    }
+
+    /// Nombre de la función de la plantilla (`#show: articulo.with(...)`).
+    fn func(self) -> &'static str {
+        match self {
+            Kind::Article => "articulo",
+            Kind::Report => "informe",
+            Kind::Book => "libro",
+            Kind::Notes => "apuntes",
+            Kind::Slides => "presentacion",
+        }
+    }
+
+    pub fn has(self, f: Field) -> bool {
+        use Field::*;
+        match self {
+            Kind::Article => !matches!(f, Subtitle | Course | Solutions | Chapter),
+            Kind::Report => !matches!(f, Course | Solutions),
+            Kind::Book => !matches!(f, Course | Solutions | Abstract | Columns),
+            Kind::Notes => !matches!(f, Subtitle | Abstract | Chapter),
+            Kind::Slides => matches!(f, Subtitle | Institution | Toc),
+        }
+    }
+
+    pub fn font_sizes(self) -> &'static [f32] {
+        match self {
+            Kind::Slides => &[18.0, 20.0, 24.0],
+            _ => &[10.0, 11.0, 12.0],
+        }
+    }
+
+    fn default_size(self) -> f32 {
+        match self {
+            Kind::Slides => 20.0,
+            _ => 11.0,
+        }
+    }
+
+    fn default_header(self) -> HeaderMode {
+        match self {
+            Kind::Report | Kind::Book => HeaderMode::Chapter,
+            Kind::Notes => HeaderMode::Title,
+            Kind::Article | Kind::Slides => HeaderMode::None,
+        }
+    }
+
+    fn default_page_num(self) -> PageNum {
+        match self {
+            Kind::Book => PageNum::Outside,
+            Kind::Slides => PageNum::Right,
+            _ => PageNum::Center,
+        }
+    }
+}
+
+/// Enumerados del formulario: lista y etiqueta para los desplegables.
+pub trait Choice: Copy + PartialEq + 'static {
+    const ALL: &'static [Self];
+    fn label(self) -> &'static str;
+}
+
+macro_rules! choice {
+    ($t:ident { $($v:ident => $l:expr),+ $(,)? }) => {
+        impl Choice for $t {
+            const ALL: &'static [Self] = &[$($t::$v),+];
+            fn label(self) -> &'static str {
+                match self { $($t::$v => $l),+ }
+            }
+        }
+    };
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -40,19 +167,13 @@ pub enum Lang {
     Es,
     En,
 }
+choice!(Lang { Es => "Español", En => "English" });
 
 impl Lang {
     fn code(self) -> &'static str {
         match self {
             Lang::Es => "es",
             Lang::En => "en",
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Lang::Es => "Español",
-            Lang::En => "English",
         }
     }
 }
@@ -64,6 +185,7 @@ pub enum Paper {
     A5,
     Letter,
 }
+choice!(Paper { A4 => "A4", A5 => "A5", Letter => "Carta" });
 
 impl Paper {
     fn code(self) -> &'static str {
@@ -71,14 +193,6 @@ impl Paper {
             Paper::A4 => "a4",
             Paper::A5 => "a5",
             Paper::Letter => "us-letter",
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Paper::A4 => "A4",
-            Paper::A5 => "A5",
-            Paper::Letter => "Carta",
         }
     }
 }
@@ -90,23 +204,15 @@ pub enum Margins {
     Normal,
     Amplio,
 }
+choice!(Margins { Estrecho => "Estrechos", Normal => "Normales", Amplio => "Amplios" });
 
 impl Margins {
-    pub const ALL: [Margins; 3] = [Margins::Estrecho, Margins::Normal, Margins::Amplio];
-
-    fn code(self) -> &'static str {
+    /// Margen en cm (en el libro, interior +0,5 y exterior −0,5).
+    fn cm(self) -> f32 {
         match self {
-            Margins::Estrecho => "2cm",
-            Margins::Normal => "2.5cm",
-            Margins::Amplio => "3cm",
-        }
-    }
-
-    fn label(self) -> &'static str {
-        match self {
-            Margins::Estrecho => "Estrechos",
-            Margins::Normal => "Normales",
-            Margins::Amplio => "Amplios",
+            Margins::Estrecho => 2.0,
+            Margins::Normal => 2.5,
+            Margins::Amplio => 3.0,
         }
     }
 }
@@ -118,58 +224,235 @@ pub enum DateMode {
     Custom,
     None,
 }
+choice!(DateMode { Today => "Hoy", Custom => "Personalizada", None => "Sin fecha" });
 
-impl DateMode {
-    pub const ALL: [DateMode; 3] = [DateMode::Today, DateMode::Custom, DateMode::None];
+/// Interlineado (el `leading` de typst; el espacio entre párrafos crece con él).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Leading {
+    #[default]
+    Normal,
+    OneHalf,
+    Double,
+}
+choice!(Leading { Normal => "Normal", OneHalf => "1,5", Double => "Doble" });
 
-    fn label(self) -> &'static str {
+impl Leading {
+    /// `(leading, spacing)` o `None` para dejar los de typst.
+    fn code(self) -> Option<(&'static str, &'static str)> {
         match self {
-            DateMode::Today => "Hoy",
-            DateMode::Custom => "Personalizada",
-            DateMode::None => "Sin fecha",
+            Leading::Normal => None,
+            Leading::OneHalf => Some(("1.1em", "1.6em")),
+            Leading::Double => Some(("1.7em", "2.2em")),
         }
     }
 }
 
-/// Opciones del builder de artículo (también estado del formulario).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum HeaderMode {
+    #[default]
+    None,
+    Title,
+    Chapter,
+    Custom,
+}
+choice!(HeaderMode {
+    None => "Ninguno",
+    Title => "Título",
+    Chapter => "Capítulo actual",
+    Custom => "Texto propio",
+});
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum PageNum {
+    None,
+    #[default]
+    Center,
+    Right,
+    Outside,
+}
+choice!(PageNum {
+    None => "Sin número",
+    Center => "Centro",
+    Right => "Derecha",
+    Outside => "Exterior",
+});
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum PageFmt {
+    #[default]
+    Plain,
+    OfTotal,
+    Word,
+}
+choice!(PageFmt { Plain => "1", OfTotal => "1 / 12", Word => "Página 1" });
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum BibStyle {
+    #[default]
+    None,
+    Apa,
+    Ieee,
+    Chicago,
+    Mla,
+}
+choice!(BibStyle {
+    None => "Sin bibliografía",
+    Apa => "APA",
+    Ieee => "IEEE",
+    Chicago => "Chicago (autor-fecha)",
+    Mla => "MLA",
+});
+
+impl BibStyle {
+    fn code(self) -> Option<&'static str> {
+        match self {
+            BibStyle::None => None,
+            BibStyle::Apa => Some("apa"),
+            BibStyle::Ieee => Some("ieee"),
+            BibStyle::Chicago => Some("chicago-author-date"),
+            BibStyle::Mla => Some("mla"),
+        }
+    }
+}
+
+/// Opciones del builder (también estado del formulario). Los campos que el
+/// tipo no usa (`Kind::has`) se ignoran al generar.
 #[derive(Clone, Debug)]
-pub struct Article {
+pub struct Options {
+    pub kind: Kind,
     pub title: String,
+    pub subtitle: String,
     pub author: String,
+    pub institution: String,
+    pub course: String,
     pub date: DateMode,
     pub custom_date: String,
+    pub abstract_text: String,
     pub lang: Lang,
     pub paper: Paper,
     pub margins: Margins,
+    pub columns: u8,
+    /// Familia; vacío = la de typst (Libertinus Serif).
+    pub font: String,
     pub font_size: f32,
+    pub leading: Leading,
     pub justify: bool,
     pub numbering: bool,
+    pub header: HeaderMode,
+    pub header_text: String,
+    pub page_num: PageNum,
+    pub page_fmt: PageFmt,
     pub toc: bool,
-    pub abstract_text: String,
+    pub bib: BibStyle,
+    pub solutions: bool,
 }
 
-impl Default for Article {
+impl Default for Options {
     fn default() -> Self {
         Self {
+            kind: Kind::Article,
             title: "Título".to_string(),
+            subtitle: String::new(),
             author: "Autor".to_string(),
+            institution: String::new(),
+            course: String::new(),
             date: DateMode::Today,
             custom_date: String::new(),
+            abstract_text: String::new(),
             lang: Lang::Es,
             paper: Paper::A4,
             margins: Margins::Normal,
+            columns: 1,
+            font: String::new(),
             font_size: 11.0,
+            leading: Leading::Normal,
             justify: true,
             numbering: true,
+            header: HeaderMode::None,
+            header_text: String::new(),
+            page_num: PageNum::Center,
+            page_fmt: PageFmt::Plain,
             toc: true,
-            abstract_text: String::new(),
+            bib: BibStyle::None,
+            solutions: true,
         }
+    }
+}
+
+impl Options {
+    /// Opciones por defecto de un tipo.
+    #[cfg(test)]
+    pub fn of(kind: Kind) -> Self {
+        let mut o = Self::default();
+        o.set_kind(kind);
+        o
+    }
+
+    /// Cambia de tipo conservando los datos; encabezado, pie y tamaño
+    /// pasan a los del tipo nuevo.
+    pub fn set_kind(&mut self, kind: Kind) {
+        self.kind = kind;
+        self.header = kind.default_header();
+        self.page_num = kind.default_page_num();
+        if !kind.font_sizes().contains(&self.font_size) {
+            self.font_size = kind.default_size();
+        }
+    }
+
+    /// Ficheros que escribe `write_project`, en orden.
+    pub fn files(&self) -> Vec<&'static str> {
+        let mut v = vec![TEMPLATE_FILE, MAIN_FILE];
+        if self.uses_bib() {
+            v.push(BIB_FILE);
+        }
+        v
+    }
+
+    fn uses_bib(&self) -> bool {
+        self.kind.has(Field::Bib) && self.bib.code().is_some()
+    }
+
+    /// Escribe la plantilla, `main.typ` y, si hace falta, `refs.bib` en
+    /// `dir`. No sobrescribe: si alguno existe, no toca nada. Devuelve la
+    /// ruta de `main.typ`.
+    pub fn write_project(&self, dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+        let names = self.files();
+        let taken: Vec<_> = names
+            .iter()
+            .filter(|n| dir.join(n).exists())
+            .copied()
+            .collect();
+        if !taken.is_empty() {
+            return Err(format!(
+                "Ya existe {} en {}",
+                taken.join(" y "),
+                dir.display()
+            ));
+        }
+        let mut written = Vec::new();
+        for name in names {
+            let text = match name {
+                TEMPLATE_FILE => self.build_template(),
+                MAIN_FILE => self.build_main(),
+                _ => codegen::SAMPLE_BIB.to_string(),
+            };
+            let p = dir.join(name);
+            if let Err(e) = std::fs::write(&p, text) {
+                for w in written {
+                    let _ = std::fs::remove_file(w);
+                }
+                return Err(format!("No se pudo escribir {}: {e}", p.display()));
+            }
+            written.push(p);
+        }
+        Ok(dir.join(MAIN_FILE))
     }
 }
 
 /// Nombres de los ficheros que crea el builder.
 pub const TEMPLATE_FILE: &str = "template.typ";
 pub const MAIN_FILE: &str = "main.typ";
+pub const BIB_FILE: &str = "refs.bib";
 
 /// Escapa un texto para interpolarlo en un string typst entre comillas.
 fn esc(s: &str) -> String {
@@ -187,144 +470,10 @@ fn fmt_pt(s: f32) -> String {
     }
 }
 
-const MESES: &str = "(\"enero\", \"febrero\", \"marzo\", \"abril\", \"mayo\", \"junio\",\n  \"julio\", \"agosto\", \"septiembre\", \"octubre\", \"noviembre\", \"diciembre\")";
-
-impl Article {
-    /// `template.typ`: la función `articulo` con el formato elegido (página,
-    /// texto, portada, resumen, índice). Los datos van en `main.typ`.
-    pub fn build_template(&self) -> String {
-        let es = self.lang == Lang::Es;
-        let mut src = String::from(
-            "// Plantilla de artículo generada por el editor. Se aplica desde main.typ\n\
-             // con `#show: articulo.with(...)`; el formato se cambia aquí.\n\n",
-        );
-        if es {
-            src.push_str(&format!("#let _meses = {MESES}\n\n"));
-        }
-        src.push_str(
-            "// `fecha`: auto = hoy, none = sin fecha, o un texto.\n\
-             #let articulo(\n",
-        );
-        src.push_str(&format!(
-            "  titulo: \"{}\",\n",
-            if es { "Título" } else { "Title" }
-        ));
-        src.push_str(
-            "  autor: none,\n  fecha: auto,\n  resumen: none,\n  indice: true,\n  body,\n) = {\n  set document(title: titulo)\n",
-        );
-        src.push_str(&format!(
-            "  set page(paper: \"{}\", margin: {})\n",
-            self.paper.code(),
-            self.margins.code()
-        ));
-        src.push_str(&format!(
-            "  set text(size: {}pt, lang: \"{}\")\n",
-            fmt_pt(self.font_size),
-            self.lang.code()
-        ));
-        if self.justify {
-            src.push_str("  set par(justify: true)\n");
-        }
-        if self.numbering {
-            src.push_str("  set heading(numbering: \"1.1\")\n");
-        }
-        // Fecha de hoy: typst no traduce los meses, en español van a mano.
-        src.push_str("\n  let fecha = if fecha == auto {\n    let hoy = datetime.today()\n");
-        src.push_str(if es {
-            "    [#hoy.day() de #_meses.at(hoy.month() - 1) de #hoy.year()]\n"
-        } else {
-            "    hoy.display(\"[month repr:long] [day padding:none], [year]\")\n"
-        });
-        src.push_str("  } else { fecha }\n\n");
-        src.push_str(
-            "  align(center)[\n\
-             \x20   #text(size: 20pt, weight: \"bold\", titulo)\n\
-             \x20   #if autor != none [ \\ #text(size: 12pt, autor)]\n\
-             \x20   #if fecha != none [ \\ #fecha]\n\
-             \x20 ]\n\n",
-        );
-        src.push_str(&format!(
-            "  if resumen != none {{\n    block(inset: (x: 2em))[*{}.* #resumen]\n  }}\n",
-            if es { "Resumen" } else { "Abstract" }
-        ));
-        src.push_str(&format!(
-            "  if indice {{\n    outline(title: [{}])\n  }}\n  body\n}}\n",
-            if es { "Índice" } else { "Contents" }
-        ));
-        src
-    }
-
-    /// `main.typ`: importa la plantilla y le pasa los datos. Los textos van
-    /// como cadenas (`"…"`): `$`, `@`, `]`, `*`… se muestran tal cual. Un
-    /// campo en blanco queda en `none` (o en el valor por defecto).
-    pub fn build_main(&self) -> String {
-        let es = self.lang == Lang::Es;
-        let opt = |s: &str| {
-            let t = s.trim();
-            if t.is_empty() {
-                "none".to_string()
-            } else {
-                format!("\"{}\"", esc(t))
-            }
-        };
-        let mut src = format!("#import \"{TEMPLATE_FILE}\": articulo\n\n#show: articulo.with(\n");
-        if !self.title.trim().is_empty() {
-            src.push_str(&format!("  titulo: \"{}\",\n", esc(self.title.trim())));
-        }
-        src.push_str(&format!("  autor: {},\n", opt(&self.author)));
-        let fecha = match self.date {
-            DateMode::Today => "auto".to_string(),
-            DateMode::Custom => opt(&self.custom_date),
-            DateMode::None => "none".to_string(),
-        };
-        src.push_str(&format!("  fecha: {fecha},\n"));
-        src.push_str(&format!("  resumen: {},\n", opt(&self.abstract_text)));
-        src.push_str(&format!("  indice: {},\n)\n\n", self.toc));
-        src.push_str(if es {
-            "= Introducción\n"
-        } else {
-            "= Introduction\n"
-        });
-        src
-    }
-
-    /// Escribe `template.typ` y `main.typ` en `dir`. No sobrescribe: si
-    /// alguno existe, no toca nada. Devuelve la ruta de `main.typ`.
-    pub fn write_project(&self, dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
-        let (tpl, main) = (dir.join(TEMPLATE_FILE), dir.join(MAIN_FILE));
-        let taken: Vec<_> = [&tpl, &main]
-            .into_iter()
-            .filter(|p| p.exists())
-            .map(|p| {
-                p.file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned()
-            })
-            .collect();
-        if !taken.is_empty() {
-            return Err(format!(
-                "Ya existe {} en {}",
-                taken.join(" y "),
-                dir.display()
-            ));
-        }
-        let write = |p: &std::path::Path, text: String| {
-            std::fs::write(p, text).map_err(|e| format!("No se pudo escribir {}: {e}", p.display()))
-        };
-        write(&tpl, self.build_template())?;
-        if let Err(e) = write(&main, self.build_main()) {
-            let _ = std::fs::remove_file(&tpl);
-            return Err(e);
-        }
-        Ok(main)
-    }
-}
-
 // ---------- Panel ----------
 
-/// Panel lateral: tipo + formulario + crear. El documento se abre en una
-/// pestaña nueva sin título (se guarda con Ctrl+S como cualquier otro).
+/// Panel lateral: tipo + formulario + crear. Crear escribe los ficheros en
+/// la carpeta del proyecto vinculado (o en la que se elija) y abre `main.typ`.
 pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
     widgets::toolbar_frame(&pal).show(ui, |ui| {
@@ -340,153 +489,297 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.spacing_mut().item_spacing.y = 8.0;
-                    // Tipo (v1: uno solo, listo para crecer).
-                    widgets::combo(
-                        ui,
-                        &pal,
-                        RichText::new(format!("{}  {}", icon::ARTICLE, Kind::Article.name()))
-                            .small(),
-                        160.0,
-                        "Tipo de plantilla",
-                        |ui| {
-                            ui.set_min_width(220.0);
-                            for k in Kind::ALL {
-                                ui.selectable_label(true, format!("{}  {}", icon::ARTICLE, k.name()))
-                                    .on_hover_text(k.desc());
-                            }
-                        },
-                    );
-                    ui.label(
-                        RichText::new(Kind::Article.desc())
-                            .small()
-                            .color(pal.text_faint),
-                    );
-                    // Proyecto vinculado (desde «Nuevo proyecto»): Crear
-                    // escribe ahí sin preguntar.
-                    let mut unlink = false;
-                    if let Some(dir) = &st.template_dir {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new(format!(
-                                    "{}  {}",
-                                    icon::FOLDER,
-                                    dir.file_name().unwrap_or_default().to_string_lossy()
-                                ))
-                                .small()
-                                .color(pal.accent),
-                            )
-                            .on_hover_text(dir.display().to_string());
-                            unlink = ui
-                                .small_button(icon::X)
-                                .on_hover_text("Desvincular: Crear preguntará la carpeta")
-                                .clicked();
-                        });
-                    }
-                    if unlink {
-                        st.template_dir = None;
-                    }
-                    ui.separator();
-                    let linked = st.template_dir.is_some();
-                    let f = &mut st.template;
-                    field(ui, &pal, "Título", &mut f.title, "Título del trabajo");
-                    field(ui, &pal, "Autor", &mut f.author, "Nombre del autor");
-                    // Fecha: modo + campo si es personalizada.
-                    ui.label(RichText::new("Fecha").small().color(pal.text_dim));
-                    let mut date_pick: Option<DateMode> = None;
-                    widgets::combo(
-                        ui,
-                        &pal,
-                        RichText::new(f.date.label()).small(),
-                        160.0,
-                        "Modo de fecha",
-                        |ui| {
-                            ui.set_min_width(160.0);
-                            for m in DateMode::ALL {
-                                if ui.selectable_label(f.date == m, m.label()).clicked() {
-                                    date_pick = Some(m);
-                                    ui.close();
-                                }
-                            }
-                        },
-                    );
-                    if let Some(m) = date_pick {
-                        f.date = m;
-                    }
-                    if f.date == DateMode::Custom {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut f.custom_date)
-                                .hint_text("9 de octubre de 2026")
-                                .desired_width(f32::INFINITY),
-                        );
-                    }
-                    // Página: idioma, papel, márgenes, fuente.
-                    ui.columns(2, |c| {
-                        combo_row(&mut c[0], &pal, "Idioma", f.lang.label(), 110.0, |ui| {
-                            for l in [Lang::Es, Lang::En] {
-                                if ui.selectable_label(f.lang == l, l.label()).clicked() {
-                                    f.lang = l;
-                                    ui.close();
-                                }
-                            }
-                        });
-                        combo_row(&mut c[1], &pal, "Papel", f.paper.label(), 110.0, |ui| {
-                            for p in [Paper::A4, Paper::A5, Paper::Letter] {
-                                if ui.selectable_label(f.paper == p, p.label()).clicked() {
-                                    f.paper = p;
-                                    ui.close();
-                                }
-                            }
-                        });
-                    });
-                    ui.columns(2, |c| {
-                        combo_row(&mut c[0], &pal, "Márgenes", f.margins.label(), 110.0, |ui| {
-                            for m in Margins::ALL {
-                                if ui.selectable_label(f.margins == m, m.label()).clicked() {
-                                    f.margins = m;
-                                    ui.close();
-                                }
-                            }
-                        });
-                        let size = format!("{} pt", fmt_pt(f.font_size));
-                        combo_row(&mut c[1], &pal, "Fuente", &size, 110.0, |ui| {
-                            for s in [10.0, 11.0, 12.0] {
-                                if ui
-                                    .selectable_label(f.font_size == s, format!("{} pt", fmt_pt(s)))
-                                    .clicked()
-                                {
-                                    f.font_size = s;
-                                    ui.close();
-                                }
-                            }
-                        });
-                    });
-                    // Interruptores.
-                    ui.columns(2, |c| {
-                        c[0].checkbox(&mut f.justify, "Justificar");
-                        c[1].checkbox(&mut f.numbering, "Numerar apartados");
-                    });
-                    ui.checkbox(&mut f.toc, "Índice al inicio");
-                    // Resumen (vacío = no se incluye).
-                    ui.label(RichText::new("Resumen").small().color(pal.text_dim));
-                    ui.add(
-                        egui::TextEdit::multiline(&mut f.abstract_text)
-                            .hint_text("Vacío = sin resumen")
-                            .desired_rows(3)
-                            .desired_width(f32::INFINITY),
-                    );
-                    ui.separator();
-                    if widgets::accent_button(ui, &pal, &format!("{}  Crear documento", icon::FILE_PLUS))
-                        .on_hover_text(if linked {
-                            format!("Crea {TEMPLATE_FILE} y {MAIN_FILE} en el proyecto y abre {MAIN_FILE}")
-                        } else {
-                            format!("Elige una carpeta: crea {TEMPLATE_FILE} y {MAIN_FILE}, y abre {MAIN_FILE}")
-                        })
-                        .clicked()
-                    {
-                        st.actions.push(Action::NewFromTemplate(Box::new(f.clone())));
-                    }
+                    form(st, ui, &pal);
                 });
         });
+}
+
+fn form(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
+    // Tipo.
+    let kind = st.template.kind;
+    let mut kind_pick = None;
+    widgets::combo(
+        ui,
+        pal,
+        RichText::new(format!("{}  {}", kind.icon(), kind.name())).small(),
+        160.0,
+        "Tipo de plantilla",
+        |ui| {
+            ui.set_min_width(220.0);
+            for k in Kind::ALL {
+                if ui
+                    .selectable_label(k == kind, format!("{}  {}", k.icon(), k.name()))
+                    .on_hover_text(k.desc())
+                    .clicked()
+                {
+                    kind_pick = Some(k);
+                    ui.close();
+                }
+            }
+        },
+    );
+    if let Some(k) = kind_pick {
+        st.template.set_kind(k);
+    }
+    let kind = st.template.kind;
+    ui.label(RichText::new(kind.desc()).small().color(pal.text_faint));
+
+    // Proyecto vinculado (desde «Nuevo proyecto»): Crear escribe ahí sin
+    // preguntar.
+    let mut unlink = false;
+    if let Some(dir) = &st.template_dir {
+        ui.horizontal(|ui| {
+            ui.label(
+                RichText::new(format!(
+                    "{}  {}",
+                    icon::FOLDER,
+                    dir.file_name().unwrap_or_default().to_string_lossy()
+                ))
+                .small()
+                .color(pal.accent),
+            )
+            .on_hover_text(dir.display().to_string());
+            unlink = ui
+                .small_button(icon::X)
+                .on_hover_text("Desvincular: Crear preguntará la carpeta")
+                .clicked();
+        });
+    }
+    if unlink {
+        st.template_dir = None;
+    }
+    let linked = st.template_dir.is_some();
+    let fonts = st.fmt.fonts.as_deref();
+    let font_filter = &mut st.template_font_filter;
+    let f = &mut st.template;
+    let has = |x| kind.has(x);
+
+    // Datos.
+    ui.separator();
+    widgets::section_label(ui, pal, "Datos");
+    field(ui, pal, "Título", &mut f.title, "Título del trabajo");
+    if has(Field::Subtitle) {
+        field(
+            ui,
+            pal,
+            "Subtítulo",
+            &mut f.subtitle,
+            "Vacío = sin subtítulo",
+        );
+    }
+    if has(Field::Course) {
+        field(ui, pal, "Asignatura", &mut f.course, "Cálculo I, tema 3…");
+    }
+    let who = if kind == Kind::Notes {
+        "Profesor"
+    } else {
+        "Autor"
+    };
+    field(ui, pal, who, &mut f.author, "Nombre");
+    if has(Field::Institution) {
+        let hint = if kind == Kind::Book {
+            "Editorial o institución"
+        } else {
+            "Universidad, colegio, iglesia…"
+        };
+        field(ui, pal, "Institución", &mut f.institution, hint);
+    }
+    ui.columns(2, |c| {
+        pick(&mut c[0], pal, "Fecha", &mut f.date);
+        pick(&mut c[1], pal, "Idioma", &mut f.lang);
+    });
+    if f.date == DateMode::Custom {
+        ui.add(
+            egui::TextEdit::singleline(&mut f.custom_date)
+                .hint_text("9 de octubre de 2026")
+                .desired_width(f32::INFINITY),
+        );
+    }
+    if has(Field::Abstract) {
+        ui.label(RichText::new("Resumen").small().color(pal.text_dim));
+        ui.add(
+            egui::TextEdit::multiline(&mut f.abstract_text)
+                .hint_text("Vacío = sin resumen")
+                .desired_rows(3)
+                .desired_width(f32::INFINITY),
+        );
+    }
+
+    // Página.
+    if has(Field::Page) || has(Field::Columns) {
+        ui.separator();
+        widgets::section_label(ui, pal, "Página");
+        if has(Field::Page) {
+            ui.columns(2, |c| {
+                pick(&mut c[0], pal, "Papel", &mut f.paper);
+                pick(&mut c[1], pal, "Márgenes", &mut f.margins);
+            });
+        }
+        if has(Field::Columns) {
+            ui.label(RichText::new("Columnas").small().color(pal.text_dim));
+            ui.horizontal(|ui| {
+                for n in [1u8, 2] {
+                    ui.selectable_value(&mut f.columns, n, n.to_string());
+                }
+            });
+        }
+    }
+
+    // Texto.
+    ui.separator();
+    widgets::section_label(ui, pal, "Texto");
+    ui.label(RichText::new("Fuente").small().color(pal.text_dim));
+    font_combo(ui, pal, fonts, font_filter, &mut f.font);
+    ui.columns(2, |c| {
+        let size = format!("{} pt", fmt_pt(f.font_size));
+        combo_row(&mut c[0], pal, "Tamaño", &size, 110.0, |ui| {
+            for &s in kind.font_sizes() {
+                if ui
+                    .selectable_label(f.font_size == s, format!("{} pt", fmt_pt(s)))
+                    .clicked()
+                {
+                    f.font_size = s;
+                    ui.close();
+                }
+            }
+        });
+        pick(&mut c[1], pal, "Interlineado", &mut f.leading);
+    });
+    if has(Field::Justify) || has(Field::Numbering) {
+        ui.columns(2, |c| {
+            if has(Field::Justify) {
+                c[0].checkbox(&mut f.justify, "Justificar");
+            }
+            if has(Field::Numbering) {
+                c[1].checkbox(&mut f.numbering, "Numerar apartados");
+            }
+        });
+    }
+
+    // Encabezado y pie.
+    ui.separator();
+    widgets::section_label(ui, pal, "Encabezado y pie");
+    if has(Field::Header) {
+        let modes: Vec<HeaderMode> = HeaderMode::ALL
+            .iter()
+            .copied()
+            .filter(|m| *m != HeaderMode::Chapter || has(Field::Chapter))
+            .collect();
+        ui.label(RichText::new("Encabezado").small().color(pal.text_dim));
+        pick_from(ui, pal, "Encabezado", &mut f.header, &modes);
+        if f.header == HeaderMode::Custom {
+            ui.add(
+                egui::TextEdit::singleline(&mut f.header_text)
+                    .hint_text("Texto del encabezado")
+                    .desired_width(f32::INFINITY),
+            );
+        }
+    }
+    ui.columns(2, |c| {
+        pick(&mut c[0], pal, "Nº de página", &mut f.page_num);
+        if f.page_num != PageNum::None {
+            pick(&mut c[1], pal, "Formato", &mut f.page_fmt);
+        }
+    });
+
+    // Estructura.
+    ui.separator();
+    widgets::section_label(ui, pal, "Estructura");
+    if has(Field::Toc) {
+        let label = if kind == Kind::Slides {
+            "Diapositiva de contenido"
+        } else {
+            "Índice"
+        };
+        ui.checkbox(&mut f.toc, label);
+    }
+    if has(Field::Solutions) {
+        ui.checkbox(&mut f.solutions, "Mostrar soluciones")
+            .on_hover_text("Se puede cambiar luego en main.typ (soluciones: true/false)");
+    }
+    if has(Field::Bib) {
+        ui.label(RichText::new("Bibliografía").small().color(pal.text_dim));
+        pick_from(
+            ui,
+            pal,
+            "Estilo de citas; crea refs.bib con una entrada de ejemplo",
+            &mut f.bib,
+            BibStyle::ALL,
+        );
+    }
+
+    ui.separator();
+    let files = f.files().join(", ");
+    if widgets::accent_button(ui, pal, &format!("{}  Crear documento", icon::FILE_PLUS))
+        .on_hover_text(if linked {
+            format!("Crea {files} en el proyecto y abre {MAIN_FILE}")
+        } else {
+            format!("Elige una carpeta: crea {files} y abre {MAIN_FILE}")
+        })
+        .clicked()
+    {
+        st.actions
+            .push(Action::NewFromTemplate(Box::new(st.template.clone())));
+    }
+}
+
+/// Familia de fuente: lista del motor (precargada por la barra de formato)
+/// con filtro; la primera opción deja la de typst.
+fn font_combo(
+    ui: &mut egui::Ui,
+    pal: &theme::Palette,
+    fonts: Option<&[String]>,
+    filter: &mut String,
+    font: &mut String,
+) {
+    let shown = if font.is_empty() {
+        "Predeterminada (Libertinus Serif)"
+    } else {
+        font.as_str()
+    };
+    widgets::combo(
+        ui,
+        pal,
+        RichText::new(format!("{}  {shown}", icon::TEXT_AA)).small(),
+        200.0,
+        "Familia de fuente",
+        |ui| {
+            ui.set_min_width(240.0);
+            let Some(fonts) = fonts else {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new("Cargando fuentes…").small());
+                });
+                return;
+            };
+            ui.add(
+                egui::TextEdit::singleline(filter)
+                    .hint_text("Filtrar…")
+                    .desired_width(f32::INFINITY),
+            );
+            if ui
+                .selectable_label(font.is_empty(), "Predeterminada (Libertinus Serif)")
+                .clicked()
+            {
+                font.clear();
+                ui.close();
+            }
+            let q = filter.to_lowercase();
+            egui::ScrollArea::vertical()
+                .max_height(220.0)
+                .show(ui, |ui| {
+                    for name in fonts
+                        .iter()
+                        .filter(|n| q.is_empty() || n.to_lowercase().contains(&q))
+                    {
+                        if ui.selectable_label(*name == *font, name).clicked() {
+                            *font = name.clone();
+                            ui.close();
+                        }
+                    }
+                });
+        },
+    );
 }
 
 /// Campo de texto con etiqueta.
@@ -499,7 +792,38 @@ fn field(ui: &mut egui::Ui, pal: &theme::Palette, label: &str, value: &mut Strin
     );
 }
 
-/// Desplegable con etiqueta en una columna.
+/// Desplegable con etiqueta para un `Choice`.
+fn pick<T: Choice>(ui: &mut egui::Ui, pal: &theme::Palette, label: &str, value: &mut T) {
+    ui.label(RichText::new(label).small().color(pal.text_dim));
+    pick_from(ui, pal, label, value, T::ALL);
+}
+
+fn pick_from<T: Choice>(
+    ui: &mut egui::Ui,
+    pal: &theme::Palette,
+    tip: &str,
+    value: &mut T,
+    all: &[T],
+) {
+    widgets::combo(
+        ui,
+        pal,
+        RichText::new(value.label()).small(),
+        110.0,
+        tip,
+        |ui| {
+            ui.set_min_width(140.0);
+            for &v in all {
+                if ui.selectable_label(*value == v, v.label()).clicked() {
+                    *value = v;
+                    ui.close();
+                }
+            }
+        },
+    );
+}
+
+/// Desplegable con etiqueta y contenido libre.
 fn combo_row(
     ui: &mut egui::Ui,
     pal: &theme::Palette,
@@ -517,159 +841,4 @@ fn combo_row(
         label,
         content,
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn workdir() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("typst-editor-tmpl-{}", std::process::id()));
-        std::fs::create_dir_all(&d).unwrap();
-        d
-    }
-
-    /// Escribe el proyecto en una carpeta propia y compila `main.typ`.
-    fn compiles(a: &Article) -> bool {
-        use std::sync::atomic::{AtomicUsize, Ordering};
-        static N: AtomicUsize = AtomicUsize::new(0);
-        let dir = workdir().join(N.fetch_add(1, Ordering::Relaxed).to_string());
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let main = a.write_project(&dir).unwrap();
-        let src = std::fs::read_to_string(main).unwrap();
-        let out = crate::engine::compile_pdf(&src, &dir, MAIN_FILE);
-        let ok = out.pdf.is_some();
-        if !ok {
-            eprintln!(
-                "{:?}",
-                out.diags.iter().map(|d| &d.message).collect::<Vec<_>>()
-            );
-        }
-        let _ = std::fs::remove_dir_all(&dir);
-        ok
-    }
-
-    #[test]
-    fn escapa_comillas_y_barras() {
-        assert_eq!(esc("di \"hola\" \\ adiós"), "di \\\"hola\\\" \\\\ adiós");
-        assert_eq!(esc("a\r\nb"), "a\\nb");
-    }
-
-    #[test]
-    fn articulo_por_defecto_compila() {
-        assert!(compiles(&Article::default()));
-    }
-
-    #[test]
-    fn matriz_de_opciones_compila() {
-        let mut cases = Vec::new();
-        for lang in [Lang::Es, Lang::En] {
-            for paper in [Paper::A4, Paper::A5, Paper::Letter] {
-                for margins in Margins::ALL {
-                    for size in [10.0, 11.0, 12.0] {
-                        for date in DateMode::ALL {
-                            cases.push((lang, paper, margins, size, date));
-                        }
-                    }
-                }
-            }
-        }
-        assert_eq!(cases.len(), 2 * 3 * 3 * 3 * 3);
-        for (lang, paper, margins, size, date) in cases {
-            for (justify, numbering, toc) in [
-                (true, true, true),
-                (false, false, false),
-                (true, false, true),
-            ] {
-                let a = Article {
-                    title: "El \"niño\" y la \\barra\\".into(),
-                    author: "Ana \"La\" Autora".into(),
-                    date,
-                    custom_date: "1º de enero de \"2026\"".into(),
-                    lang,
-                    paper,
-                    margins,
-                    font_size: size,
-                    justify,
-                    numbering,
-                    toc,
-                    abstract_text: "Resumen con *énfasis* y números 123.".into(),
-                };
-                assert!(
-                    compiles(&a),
-                    "no compila: {lang:?} {paper:?} {margins:?} {size} {date:?} j={justify} n={numbering} t={toc}\n{}\n{}",
-                    a.build_template(),
-                    a.build_main()
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn markup_es_literal_y_compila() {
-        let a = Article {
-            title: "Costo $5 * _x_ // nota ] #f".into(),
-            author: "ana@uni.edu <etq>".into(),
-            date: DateMode::Custom,
-            custom_date: "9 de octubre".into(),
-            abstract_text: "Ver [1] y $5 ] ana@uni.edu\n\nSegundo párrafo".into(),
-            ..Article::default()
-        };
-        let main = a.build_main();
-        assert!(main.contains("fecha: \"9 de octubre\""), "{main}");
-        assert!(compiles(&a), "no compila:\n{main}");
-    }
-
-    #[test]
-    fn main_importa_la_plantilla() {
-        let main = Article::default().build_main();
-        assert!(
-            main.starts_with("#import \"template.typ\": articulo\n"),
-            "{main}"
-        );
-        assert!(main.contains("#show: articulo.with("), "{main}");
-    }
-
-    #[test]
-    fn no_sobrescribe() {
-        let dir = workdir().join("ocupado");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(MAIN_FILE), "mío").unwrap();
-        let err = Article::default().write_project(&dir).unwrap_err();
-        assert!(err.contains(MAIN_FILE), "{err}");
-        assert_eq!(std::fs::read_to_string(dir.join(MAIN_FILE)).unwrap(), "mío");
-        assert!(!dir.join(TEMPLATE_FILE).exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn vacios_se_omiten_y_compila() {
-        let a = Article {
-            title: "   ".into(),
-            author: String::new(),
-            date: DateMode::None,
-            custom_date: String::new(),
-            abstract_text: "  ".into(),
-            toc: false,
-            ..Article::default()
-        };
-        let main = a.build_main();
-        assert!(
-            !main.contains("titulo:"),
-            "el título vacío usa el de la plantilla:\n{main}"
-        );
-        assert!(
-            main.contains("autor: none") && main.contains("resumen: none"),
-            "{main}"
-        );
-        assert!(a.build_template().contains("titulo: \"Título\""));
-        let en = Article {
-            lang: Lang::En,
-            ..a.clone()
-        };
-        assert!(en.build_template().contains("titulo: \"Title\""));
-        assert!(compiles(&a) && compiles(&en));
-    }
 }
