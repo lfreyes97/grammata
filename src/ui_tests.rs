@@ -512,6 +512,12 @@ fn borrador_inserta_snippet() {
     h.get_by_label_contains("Añadir snippet").click();
     h.run_steps(5);
     assert!(h.query_by_label_contains("Listas").is_none());
+    // Ni, dentro de un grupo, lo que no es ecuación («Numerar ecuaciones»
+    // es un `#set`).
+    h.get_by_label_contains("Ecuaciones").hover();
+    h.run_steps(3);
+    assert!(h.query_by_label_contains("Numerar ecuaciones").is_none());
+    assert!(h.query_by_label_contains("Ecuaciones alineadas").is_some());
     // Un snippet con sus propios `$…$` no se duplica en modo ecuación.
     h.get_by_label_contains("Álgebra y cálculo").click();
     h.run_steps(5);
@@ -652,4 +658,81 @@ fn snippet_de_ecuacion_dentro_de_ecuacion() {
     ));
     h.run_steps(3);
     assert_eq!(cur_text(&h), "$ lim_(x -> 0) f(x) $");
+}
+
+/// Borrador: carga la ecuación del cursor, Reemplazar la sustituye en el
+/// documento y, si el documento cambió entretanto, no pisa nada.
+#[test]
+#[ignore = "necesita GPU"]
+fn borrador_edita_la_ecuacion_del_cursor() {
+    use egui_kittest::kittest::Queryable;
+    let tmp = std::env::temp_dir().join(format!("typst-editor-test-be-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("cfg")).unwrap();
+    // SAFETY: único test que toca el entorno; se fija antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut().st.actions.push(Action::NewDoc);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::InsertSnippet("Sea $x + 1$ fin".into()));
+    h.run_steps(3);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::Select { start: 6, end: 6 });
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Scratch));
+    h.run_steps(5);
+    h.get_by_label_contains("Editar la ecuación del cursor")
+        .click();
+    h.run_steps(3);
+    {
+        let s = &h.state().st.scratch;
+        assert_eq!(s.text, "x + 1");
+        assert!(!s.block, "era en línea");
+        assert!(s.editing.is_some());
+    }
+    shot(&mut h, "borrador-editando");
+    h.state_mut().st.scratch.text = "x + 2".into();
+    h.run_steps(2);
+    h.get_by_label_contains("Reemplazar en el documento")
+        .click();
+    h.run_steps(3);
+    assert_eq!(cur_text(&h), "Sea $x + 2$ fin");
+    // Sigue editando la misma: otro reemplazo también funciona.
+    h.state_mut().st.scratch.block = true;
+    h.run_steps(2);
+    h.get_by_label_contains("Reemplazar en el documento")
+        .click();
+    h.run_steps(3);
+    assert_eq!(cur_text(&h), "Sea $ x + 2 $ fin");
+    // El documento cambia por fuera: la ecuación se busca donde quedó.
+    {
+        let d = h.state_mut().st.docs.cur_mut();
+        d.text.insert_str(0, "Hola. ");
+        d.touch();
+    }
+    h.state_mut().st.scratch.text = "y".into();
+    h.run_steps(2);
+    h.get_by_label_contains("Reemplazar en el documento")
+        .click();
+    h.run_steps(3);
+    assert_eq!(cur_text(&h), "Hola. Sea $ y $ fin");
+    // Si ya no está, no toca nada y deja de editar.
+    {
+        let d = h.state_mut().st.docs.cur_mut();
+        d.text = "Nada".into();
+        d.touch();
+    }
+    h.run_steps(2);
+    h.get_by_label_contains("Reemplazar en el documento")
+        .click();
+    h.run_steps(3);
+    assert_eq!(cur_text(&h), "Nada");
+    assert!(h.state().st.scratch.editing.is_none());
 }

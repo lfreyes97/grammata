@@ -138,9 +138,75 @@ pub fn in_math(text: &str, cursor: usize) -> bool {
     false
 }
 
+/// Ecuación del texto en la que está el cursor (o pegada a él).
+#[derive(Clone, Debug, PartialEq)]
+pub struct EquationAt {
+    /// Rango en chars del `$…$` completo.
+    pub start: usize,
+    pub end: usize,
+    /// Lo que va entre los `$` (sin los espacios de una ecuación en bloque).
+    pub inner: String,
+    /// `$ x $` (en bloque) frente a `$x$` (en línea).
+    pub block: bool,
+}
+
+/// La ecuación que contiene el índice de char `cursor`, incluido justo
+/// antes del `$` de apertura o justo después del de cierre.
+pub fn equation_at(text: &str, cursor: usize) -> Option<EquationAt> {
+    let byte = crate::text::char_to_byte(text, cursor);
+    let root = typst_syntax::parse(text);
+    let root = LinkedNode::new(&root);
+    let eq = [Side::Before, Side::After].into_iter().find_map(|side| {
+        let mut node = root.leaf_at(byte, side);
+        while let Some(n) = node {
+            if n.kind() == SyntaxKind::Equation {
+                return Some(n);
+            }
+            node = n.parent().cloned();
+        }
+        None
+    })?;
+    let block = eq
+        .cast::<typst_syntax::ast::Equation>()
+        .is_some_and(|e| e.block());
+    let inner = eq
+        .children()
+        .find(|c| c.kind() == SyntaxKind::Math)
+        .map(|m| text[m.range()].to_string())
+        .unwrap_or_default();
+    let r = eq.range();
+    let to_char = |b: usize| text[..b].chars().count();
+    Some(EquationAt {
+        start: to_char(r.start),
+        end: to_char(r.end),
+        inner,
+        block,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ecuacion_en_el_cursor() {
+        let t = "Sea $x + 1$ y $ frac(a, b) $ fin";
+        let c = |needle: &str| t[..t.find(needle).unwrap()].chars().count();
+        let e = equation_at(t, c("+ 1")).unwrap();
+        assert_eq!((e.inner.as_str(), e.block), ("x + 1", false));
+        assert_eq!(&t[e.start..e.end], "$x + 1$");
+        let e = equation_at(t, c("b)")).unwrap();
+        assert_eq!((e.inner.as_str(), e.block), ("frac(a, b)", true));
+        // Pegado al `$` de apertura o tras el de cierre también cuenta.
+        assert_eq!(equation_at(t, c("$x")).unwrap().inner, "x + 1");
+        assert_eq!(equation_at(t, c(" y $")).unwrap().inner, "x + 1");
+        assert!(equation_at(t, c("Sea")).is_none());
+        assert!(equation_at(t, c("fin")).is_none());
+        // Con acentos antes: los índices son de chars.
+        let t = "Él dijo $á$";
+        let e = equation_at(t, 9).unwrap();
+        assert_eq!((e.start, e.end, e.inner.as_str()), (8, 11, "á"));
+    }
 
     #[test]
     fn detecta_modo_matematico() {

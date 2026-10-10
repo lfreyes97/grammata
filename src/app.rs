@@ -186,9 +186,10 @@ impl App {
         }
         layout::focus_doc(&mut dock, docs.cur_id());
 
-        let (scratch_text, scratch_equation) = (
+        let (scratch_text, scratch_equation, scratch_block) = (
             session.prefs.scratch_text.clone(),
             session.prefs.scratch_equation,
+            session.prefs.scratch_block,
         );
         let prefs = session.prefs;
         theme::apply(&ctx, prefs.dark);
@@ -217,7 +218,7 @@ impl App {
             template_font_filter: String::new(),
             template_dir: None,
             files: files::FileMgr::default(),
-            scratch: scratch::Scratch::from_session(scratch_text, scratch_equation),
+            scratch: scratch::Scratch::from_session(scratch_text, scratch_equation, scratch_block),
             fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
         };
@@ -253,6 +254,7 @@ impl App {
         let recent = self.st.recent_symbols.clone();
         self.st.prefs.scratch_text = self.st.scratch.text.clone();
         self.st.prefs.scratch_equation = self.st.scratch.equation;
+        self.st.prefs.scratch_block = self.st.scratch.block;
         let s = Session::new(
             tabs,
             self.st.docs.current,
@@ -696,6 +698,12 @@ impl App {
                 self.st.needs_persist = true;
             }
             Action::InsertSnippet(body) => self.insert(&body, false),
+            Action::ReplaceText {
+                doc,
+                start,
+                expect,
+                text,
+            } => self.replace_text(doc, start, &expect, text),
             Action::PrefixLines(prefix) => self.prefix_lines(&prefix),
             Action::NewSnippet => {
                 let body = self.selected_text();
@@ -821,6 +829,53 @@ impl App {
             focus: true,
         });
         layout::focus_doc(&mut self.dock, id);
+        self.st.needs_persist = true;
+    }
+
+    /// Reemplaza el `$…$` que el borrador está editando. Si el documento
+    /// cambió y la ecuación se movió, se busca la aparición más cercana a su
+    /// sitio; si ya no está, no se toca nada y se deja de editar.
+    fn replace_text(&mut self, doc: DocId, start: usize, expect: &str, text: String) {
+        let found = self
+            .st
+            .docs
+            .get(doc)
+            .and_then(|d| text::nearest_occurrence(&d.text, expect, start));
+        let Some(start) = found else {
+            self.st.scratch.editing = None;
+            self.st.set_status(
+                "La ecuación ya no está en el documento: el borrador deja de editarla",
+                StatusKind::Info,
+            );
+            return;
+        };
+        let end = start + expect.chars().count();
+        if doc != self.st.docs.cur_id() {
+            self.switch_to_id(doc);
+        }
+        let Some(d) = self.st.docs.get_mut(doc) else {
+            return;
+        };
+        let (ba, bb) = (
+            text::char_to_byte(&d.text, start),
+            text::char_to_byte(&d.text, end),
+        );
+        d.text.replace_range(ba..bb, &text);
+        d.touch();
+        let new_end = start + text.chars().count();
+        self.st.editor.goto = Some(Goto {
+            doc,
+            start,
+            end: new_end,
+            focus: true,
+        });
+        layout::focus_doc(&mut self.dock, doc);
+        // Sigue editando la misma ecuación, ya con su texto nuevo.
+        self.st.scratch.editing = Some(scratch::Editing {
+            doc,
+            start,
+            original: text,
+        });
         self.st.needs_persist = true;
     }
 

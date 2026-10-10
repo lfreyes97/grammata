@@ -4,6 +4,8 @@
 
 use crate::actions::Action;
 use crate::app::State;
+use crate::doc::DocId;
+use crate::highlight::EquationAt;
 use crate::theme;
 use crate::widgets;
 use egui::RichText;
@@ -21,6 +23,13 @@ const SCALE: f32 = 2.0;
 pub struct Scratch {
     pub text: String,
     pub equation: bool,
+    /// Ecuación en bloque (`$ x $`) o en línea (`$x$`): vista previa e
+    /// inserción usan la misma.
+    pub block: bool,
+    /// Ecuación del documento que se está editando: Insertar la reemplaza.
+    pub editing: Option<Editing>,
+    /// Ecuación bajo el cursor del documento, por (doc, revisión, cursor).
+    at_cursor: Option<(AtKey, Option<EquationAt>)>,
     tex: Option<egui::TextureHandle>,
     /// Clave renderizada y clave actual (fuente + modo): si difieren, hay
     /// cambios pendientes (con debounce).
@@ -38,6 +47,9 @@ impl Default for Scratch {
         Self {
             text: String::new(),
             equation: true,
+            block: true,
+            editing: None,
+            at_cursor: None,
             tex: None,
             rendered: String::new(),
             current: String::new(),
@@ -48,6 +60,18 @@ impl Default for Scratch {
         }
     }
 }
+
+/// Ecuación del documento cargada en el borrador.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Editing {
+    pub doc: DocId,
+    /// Inicio en chars del `$…$` y su texto al cargarla: al reemplazar se
+    /// busca ese texto (por si el documento cambió entretanto).
+    pub start: usize,
+    pub original: String,
+}
+
+type AtKey = (DocId, u64, usize);
 
 // ---------- Render en segundo plano ----------
 
@@ -105,10 +129,11 @@ impl Worker {
 }
 
 impl Scratch {
-    pub fn from_session(text: String, equation: bool) -> Self {
+    pub fn from_session(text: String, equation: bool, block: bool) -> Self {
         Self {
             text,
             equation,
+            block,
             ..Default::default()
         }
     }
@@ -116,59 +141,77 @@ impl Scratch {
 
 // ---------- Lógica pura (testeable) ----------
 
-/// Fuente completo para la vista previa: página ajustada al contenido.
-/// En modo ecuación envuelve en `$…$`, salvo que el texto parezca marcado
-/// (una línea que empieza por `#código`: `#let`, `#set`…), que va tal cual.
-pub fn preview_source(text: &str, equation: bool) -> String {
-    let mut src = String::from("#set page(width: auto, height: auto, margin: 10pt)\n");
-    if equation && !looks_like_markup(text) {
-        src.push_str("$ ");
-        src.push_str(strip_math(text));
-        src.push_str(" $");
+/// Interior de la ecuación del borrador, o `None` si es marcado (según el
+/// parser de typst):
+/// - código al principio de una línea (`#let`, `#set`, `#rect`…): marcado;
+/// - solo ecuaciones `$…$`: su interior (varias, unidas con `\`);
+/// - texto con ecuaciones sueltas (`$a$ y $b$`): marcado;
+/// - sin `$`: el texto es la ecuación.
+pub fn equation_inner(text: &str) -> Option<String> {
+    use typst_syntax::SyntaxKind as K;
+    let t = text.trim();
+    let root = typst_syntax::parse(t);
+    let kids: Vec<_> = root.children().collect();
+    let mut line_start = true;
+    for (i, n) in kids.iter().enumerate() {
+        if n.kind() == K::Hash
+            && line_start
+            && kids.get(i + 1).is_some_and(|next| {
+                !matches!(
+                    next.kind(),
+                    K::Parenthesized | K::CodeBlock | K::ContentBlock
+                )
+            })
+        {
+            return None;
+        }
+        line_start = match n.kind() {
+            K::Space => n.leaf_text().contains('\n'),
+            K::Parbreak => true,
+            _ => false,
+        };
+    }
+    if let Some((inner, _, _)) = crate::snippets::strip_equations(t, 0, 0) {
+        return Some(inner);
+    }
+    if kids.iter().any(|n| n.kind() == K::Equation) {
+        return None;
+    }
+    Some(t.to_string())
+}
+
+/// `$ x $` o `$x$`.
+fn wrap(inner: &str, block: bool) -> String {
+    if block {
+        format!("$ {inner} $")
     } else {
-        src.push_str(text);
+        format!("${inner}$")
+    }
+}
+
+/// Fuente completo para la vista previa: página ajustada al contenido. En
+/// modo ecuación, la ecuación tal como se insertará (en bloque o en línea).
+pub fn preview_source(text: &str, equation: bool, block: bool) -> String {
+    let mut src = String::from("#set page(width: auto, height: auto, margin: 10pt)\n");
+    match equation.then(|| equation_inner(text)).flatten() {
+        Some(inner) => src.push_str(&wrap(&inner, block)),
+        None => src.push_str(text),
     }
     src.push('\n');
     src
 }
 
-/// ¿Parece marcado en vez de mate? Una línea que empieza por `#` + letra
-/// (`#let`, `#set`, `#rect`…) es código de bloque: envolverla en `$…$`
-/// rompería (p. ej. snippets de cálculo en modo ecuación).
-fn looks_like_markup(text: &str) -> bool {
-    text.lines().any(|l| {
-        let t = l.trim_start();
-        t.starts_with('#') && t[1..].starts_with(|c: char| c.is_alphabetic())
-    })
-}
-
-/// Texto a insertar en el documento (`None` si está en blanco). En modo
-/// ecuación se pela un nivel de `$…$` y se envuelve, salvo marcado
-/// (igual que la vista previa).
-pub fn insert_source(text: &str, equation: bool) -> Option<String> {
+/// Texto a insertar en el documento (`None` si está en blanco).
+pub fn insert_source(text: &str, equation: bool, block: bool) -> Option<String> {
     let t = text.trim();
     if t.is_empty() {
         return None;
     }
-    Some(if equation && !looks_like_markup(t) {
-        let inner = strip_math(t);
-        if inner.is_empty() {
-            return None;
-        }
-        format!("${inner}$")
-    } else {
-        t.to_string()
+    Some(match equation.then(|| equation_inner(t)).flatten() {
+        Some(inner) if inner.trim().is_empty() => return None,
+        Some(inner) => wrap(&inner, block),
+        None => t.to_string(),
     })
-}
-
-/// Quita un nivel de `$…$` exterior (con espacios). Si no hay, devuelve el
-/// texto tal cual (puede quedar vacío si solo había dólares).
-fn strip_math(s: &str) -> &str {
-    let t = s.trim();
-    t.strip_prefix('$')
-        .and_then(|r| r.strip_suffix('$'))
-        .map(str::trim)
-        .unwrap_or(t)
 }
 
 // ---------- Panel ----------
@@ -188,9 +231,94 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.spacing_mut().item_spacing.y = 8.0;
+                    // Ecuación bajo el cursor del documento (por revisión).
+                    let at = {
+                        let d = st.docs.cur();
+                        let key = (d.id, d.rev, st.editor.cursor.unwrap_or(usize::MAX));
+                        match &st.scratch.at_cursor {
+                            Some((k, v)) if *k == key => v.clone(),
+                            _ => {
+                                let v = st
+                                    .editor
+                                    .cursor
+                                    .and_then(|c| crate::highlight::equation_at(&d.text, c));
+                                st.scratch.at_cursor = Some((key, v.clone()));
+                                v
+                            }
+                        }
+                    };
                     let s = &mut st.scratch;
-                    ui.checkbox(&mut s.equation, "Como ecuación")
-                        .on_hover_text("La vista previa y la inserción envuelven en $…$");
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut s.equation, "Como ecuación")
+                            .on_hover_text("La vista previa y la inserción envuelven en $…$");
+                        if s.equation {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.selectable_value(&mut s.block, true, "Bloque")
+                                        .on_hover_text("$ x $: centrada, en su propia línea");
+                                    ui.selectable_value(&mut s.block, false, "En línea")
+                                        .on_hover_text("$x$: dentro del párrafo");
+                                },
+                            );
+                        }
+                    });
+                    // Editar una ecuación del documento: se carga aquí e
+                    // Insertar la reemplaza.
+                    if let Some(e) = &s.editing {
+                        let name = st
+                            .docs
+                            .get(e.doc)
+                            .map(|d| d.fname())
+                            .unwrap_or_default();
+                        let mut stop = false;
+                        egui::Frame::new()
+                            .fill(pal.accent_soft)
+                            .corner_radius(6)
+                            .inner_margin(egui::Margin::symmetric(8, 5))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "{}  Editando una ecuación de «{name}»",
+                                            icon::PENCIL_SIMPLE
+                                        ))
+                                        .small()
+                                        .color(pal.text),
+                                    );
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            stop = ui
+                                                .small_button(icon::X)
+                                                .on_hover_text(
+                                                    "Dejar de editar: Insertar volverá a añadir en el cursor",
+                                                )
+                                                .clicked();
+                                        },
+                                    );
+                                });
+                            });
+                        if stop {
+                            s.editing = None;
+                        }
+                    } else if let Some(eq) = &at
+                        && ui
+                            .button(format!("{}  Editar la ecuación del cursor", icon::PENCIL_SIMPLE))
+                            .on_hover_text("La carga en el borrador; Insertar la reemplaza")
+                            .clicked()
+                    {
+                        let d = st.docs.cur();
+                        s.text = eq.inner.clone();
+                        s.equation = true;
+                        s.block = eq.block;
+                        s.editing = Some(Editing {
+                            doc: d.id,
+                            start: eq.start,
+                            original: d.text.chars().skip(eq.start).take(eq.end - eq.start).collect(),
+                        });
+                    }
                     // Editor multilínea con resaltado (sin scroll propio: el
                     // scroll es el del panel; un ScrollArea anidado rompería
                     // el layout de lo que viene debajo).
@@ -229,7 +357,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                                     continue;
                                 }
                                 ui.menu_button(format!("{}  {}", g.icon, g.name), |ui| {
-                                    for s in g.items {
+                                    for s in items {
                                         if ui.button(s.name).clicked() {
                                             picked = Some(s.body);
                                             ui.close();
@@ -253,7 +381,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     }
                     // Vista previa en vivo (con debounce).
                     let root = st.docs.cur().root_dir();
-                    let src = preview_source(&s.text, s.equation);
+                    let src = preview_source(&s.text, s.equation, s.block);
                     let key = format!("{src}|{SCALE:.1}");
                     if key != s.current {
                         s.current = key.clone();
@@ -332,20 +460,35 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     }
                     ui.separator();
                     ui.horizontal(|ui| {
-                        let can = insert_source(&s.text, s.equation).is_some();
+                        let can = insert_source(&s.text, s.equation, s.block).is_some();
+                        let label = if s.editing.is_some() {
+                            "Reemplazar en el documento"
+                        } else {
+                            "Insertar en el documento"
+                        };
                         ui.add_enabled_ui(can, |ui| {
                             let go = widgets::accent_button(
                                 ui,
                                 &pal,
-                                &format!(
-                                    "{}  Insertar en el documento",
-                                    icon::ARROW_BEND_DOWN_RIGHT
-                                ),
+                                &format!("{}  {label}", icon::ARROW_BEND_DOWN_RIGHT),
                             )
-                            .on_hover_text("Inserta en el cursor del editor")
+                            .on_hover_text(if s.editing.is_some() {
+                                "Sustituye la ecuación que se está editando"
+                            } else {
+                                "Inserta en el cursor del editor"
+                            })
                             .clicked();
-                            if go && let Some(body) = insert_source(&s.text, s.equation) {
-                                st.actions.push(Action::InsertSnippet(body));
+                            if go && let Some(body) = insert_source(&s.text, s.equation, s.block)
+                            {
+                                st.actions.push(match &s.editing {
+                                    Some(e) => Action::ReplaceText {
+                                        doc: e.doc,
+                                        start: e.start,
+                                        expect: e.original.clone(),
+                                        text: body,
+                                    },
+                                    None => Action::InsertSnippet(body),
+                                });
                             }
                         });
                         if ui
@@ -355,6 +498,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                         {
                             s.text.clear();
                             s.error = None;
+                            s.editing = None;
                         }
                     });
                 });
@@ -407,63 +551,69 @@ fn apply_snippet(
 mod tests {
     use super::*;
 
+    const PAGE: &str = "#set page(width: auto, height: auto, margin: 10pt)\n";
+
     #[test]
-    fn envuelve_fuente() {
+    fn envuelve_fuente_en_bloque_o_en_linea() {
         assert_eq!(
-            preview_source("x^2", true),
-            "#set page(width: auto, height: auto, margin: 10pt)\n$ x^2 $\n"
+            preview_source("x^2", true, true),
+            format!("{PAGE}$ x^2 $\n")
         );
+        assert_eq!(preview_source("x^2", true, false), format!("{PAGE}$x^2$\n"));
         assert_eq!(
-            preview_source("#rect(width: 2cm)", false),
-            "#set page(width: auto, height: auto, margin: 10pt)\n#rect(width: 2cm)\n"
+            preview_source("#rect(width: 2cm)", false, true),
+            format!("{PAGE}#rect(width: 2cm)\n")
         );
     }
 
     #[test]
-    fn inserto() {
-        assert_eq!(insert_source("  x^2  ", true).as_deref(), Some("$x^2$"));
-        assert_eq!(insert_source("hola", false).as_deref(), Some("hola"));
-        assert!(insert_source("  ", true).is_none());
+    fn inserto_igual_que_la_vista_previa() {
+        assert_eq!(
+            insert_source("  x^2  ", true, false).as_deref(),
+            Some("$x^2$")
+        );
+        assert_eq!(
+            insert_source("  x^2  ", true, true).as_deref(),
+            Some("$ x^2 $")
+        );
+        assert_eq!(insert_source("hola", false, true).as_deref(), Some("hola"));
+        assert!(insert_source("  ", true, true).is_none());
+        assert!(insert_source("$  $", true, true).is_none());
     }
 
     #[test]
-    fn marcado_no_se_envuelve() {
-        assert!(looks_like_markup("#let a = 2\n$x$"));
-        assert!(looks_like_markup("  #set text(12pt)"));
-        assert!(!looks_like_markup("$ x^2 $\n$ y $"));
-        assert!(!looks_like_markup("#(a + b)"));
+    fn decide_con_el_parser() {
+        // Código al principio de línea: marcado tal cual.
+        assert_eq!(equation_inner("#let a = 2\n$x$"), None);
+        assert_eq!(equation_inner("  #set text(12pt)"), None);
+        // `#(…)` es una expresión dentro de la ecuación, no marcado.
+        assert_eq!(equation_inner("#(a + b)").as_deref(), Some("#(a + b)"));
+        // Un `#` en mitad de la línea tampoco.
+        assert_eq!(
+            equation_inner("x = #calc.pow(2, 3)").as_deref(),
+            Some("x = #calc.pow(2, 3)")
+        );
+        // Ecuaciones: su interior; varias, unidas.
+        assert_eq!(
+            equation_inner("$ sum_(i = 1)^n a_i $").as_deref(),
+            Some("sum_(i = 1)^n a_i")
+        );
+        assert_eq!(equation_inner("$ a $\n$ b $").as_deref(), Some("a \\\nb"));
+        // Texto con ecuaciones sueltas: marcado (antes salía `a$ + $b`).
+        assert_eq!(equation_inner("$a$ + $b$"), None);
         let calc = "#let a = 2\n$Delta = #a$";
-        assert_eq!(
-            preview_source(calc, true),
-            "#set page(width: auto, height: auto, margin: 10pt)\n#let a = 2\n$Delta = #a$\n"
-        );
-        assert_eq!(insert_source(calc, true).as_deref(), Some(calc));
-    }
-
-    #[test]
-    fn pela_dolares_una_vez() {
-        // Snippets con sus propios `$…$` en modo ecuación: sin duplicar.
-        assert_eq!(
-            insert_source("$ sum_(i = 1)^n a_i $", true).as_deref(),
-            Some("$sum_(i = 1)^n a_i$")
-        );
-        assert_eq!(
-            preview_source("$ sum_(i = 1)^n a_i $", true),
-            "#set page(width: auto, height: auto, margin: 10pt)\n$ sum_(i = 1)^n a_i $\n"
-        );
-        assert_eq!(strip_math("  $$x$$  "), "$x$");
-        assert_eq!(strip_math("x^2"), "x^2");
-        assert!(insert_source("$  $", true).is_none());
+        assert_eq!(preview_source(calc, true, true), format!("{PAGE}{calc}\n"));
+        assert_eq!(insert_source(calc, true, true).as_deref(), Some(calc));
     }
 
     #[test]
     fn renderiza_ecuacion_y_falla_con_error() {
         let dir = std::env::temp_dir();
-        let src = preview_source("x^2 + frac(a, b)", true);
+        let src = preview_source("x^2 + frac(a, b)", true, true);
         let img = crate::engine::render_preview(&src, &dir, 2.0).expect("debería renderizar");
         assert!(!img.pixels.is_empty());
         assert!(img.size[0] > 0 && img.size[1] > 0);
-        let bad = preview_source("#funcion_inexistente(1)", false);
+        let bad = preview_source("#funcion_inexistente(1)", false, true);
         let err = crate::engine::render_preview(&bad, &dir, 2.0).expect_err("debería fallar");
         assert!(!err.is_empty(), "el error no debe venir vacío");
     }

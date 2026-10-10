@@ -9,6 +9,15 @@ use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub enum Action {
     NewDoc,
+    /// Reemplaza en `doc` el texto `expect` que empezaba en `start` (chars;
+    /// si se movió, la aparición más cercana). El borrador lo usa al editar
+    /// una ecuación del documento.
+    ReplaceText {
+        doc: DocId,
+        start: usize,
+        expect: String,
+        text: String,
+    },
     /// Abre el diálogo «Nuevo proyecto».
     NewProject,
     /// Proyecto recién creado en `dir`: lo fija como raíz y abre `main.typ`

@@ -84,6 +84,15 @@ pub fn find_all(text: &str, query: &str, match_case: bool) -> Vec<(usize, usize)
     out
 }
 
+/// Inicio (en chars) de la aparición exacta de `needle` más cercana a
+/// `near`, o `None` si no aparece.
+pub fn nearest_occurrence(text: &str, needle: &str, near: usize) -> Option<usize> {
+    find_all(text, needle, true)
+        .into_iter()
+        .map(|(a, _)| a)
+        .min_by_key(|a| a.abs_diff(near))
+}
+
 pub fn content_stats(text: &str) -> (usize, usize) {
     (text.lines().count().max(1), text.split_whitespace().count())
 }
@@ -91,6 +100,14 @@ pub fn content_stats(text: &str) -> (usize, usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aparicion_mas_cercana() {
+        let t = "$x$ a $x$ b $x$";
+        assert_eq!(nearest_occurrence(t, "$x$", 7), Some(6));
+        assert_eq!(nearest_occurrence(t, "$x$", 100), Some(12));
+        assert_eq!(nearest_occurrence(t, "$y$", 0), None);
+    }
 
     #[test]
     fn line_col_roundtrip() {
