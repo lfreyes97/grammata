@@ -353,7 +353,9 @@ impl App {
                 let on = !self.st.preview.presentation;
                 self.st.preview.set_presentation(ctx, on);
             }
-            if k(M::NONE, K::Escape) && self.st.preview.presentation {
+            // La condición primero: `k` consume la tecla y Esc la necesitan
+            // la búsqueda, el autocompletado y los campos de los paneles.
+            if self.st.preview.presentation && k(M::NONE, K::Escape) {
                 self.st.preview.set_presentation(ctx, false);
             }
             if k(M::NONE, K::F3) {
