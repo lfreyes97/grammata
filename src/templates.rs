@@ -1,6 +1,6 @@
-//! Builders de plantillas: generan un documento typst completo a partir de
-//! opciones, en un panel lateral. v1: solo Artículo (tipos futuros cuelgan
-//! de `Kind`).
+//! Builders de plantillas: a partir de opciones, en un panel lateral, crean
+//! en una carpeta `template.typ` (el formato) y `main.typ` (los datos, que
+//! importa la plantilla). v1: solo Artículo (tipos futuros cuelgan de `Kind`).
 //!
 //! Todo lo generado debe compilar: los tests construyen la matriz de
 //! opciones y la pasan por el motor embebido.
@@ -132,7 +132,7 @@ impl DateMode {
 }
 
 /// Opciones del builder de artículo (también estado del formulario).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Article {
     pub title: String,
     pub author: String,
@@ -167,9 +167,16 @@ impl Default for Article {
     }
 }
 
+/// Nombres de los ficheros que crea el builder.
+pub const TEMPLATE_FILE: &str = "template.typ";
+pub const MAIN_FILE: &str = "main.typ";
+
 /// Escapa un texto para interpolarlo en un string typst entre comillas.
 fn esc(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\r', "")
+        .replace('\n', "\\n")
 }
 
 fn fmt_pt(s: f32) -> String {
@@ -180,78 +187,137 @@ fn fmt_pt(s: f32) -> String {
     }
 }
 
+const MESES: &str = "(\"enero\", \"febrero\", \"marzo\", \"abril\", \"mayo\", \"junio\",\n  \"julio\", \"agosto\", \"septiembre\", \"octubre\", \"noviembre\", \"diciembre\")";
+
 impl Article {
-    /// Genera el fuente `.typ` completo. Siempre compila (ver tests).
-    pub fn build(&self) -> String {
+    /// `template.typ`: la función `articulo` con el formato elegido (página,
+    /// texto, portada, resumen, índice). Los datos van en `main.typ`.
+    pub fn build_template(&self) -> String {
         let es = self.lang == Lang::Es;
-        let mut src = String::new();
+        let mut src = String::from(
+            "// Plantilla de artículo generada por el editor. Se aplica desde main.typ\n\
+             // con `#show: articulo.with(...)`; el formato se cambia aquí.\n\n",
+        );
+        if es {
+            src.push_str(&format!("#let _meses = {MESES}\n\n"));
+        }
+        src.push_str(
+            "// `fecha`: auto = hoy, none = sin fecha, o un texto.\n\
+             #let articulo(\n",
+        );
         src.push_str(&format!(
-            "#set page(paper: \"{}\", margin: {})\n",
+            "  titulo: \"{}\",\n",
+            if es { "Título" } else { "Title" }
+        ));
+        src.push_str(
+            "  autor: none,\n  fecha: auto,\n  resumen: none,\n  indice: true,\n  body,\n) = {\n  set document(title: titulo)\n",
+        );
+        src.push_str(&format!(
+            "  set page(paper: \"{}\", margin: {})\n",
             self.paper.code(),
             self.margins.code()
         ));
         src.push_str(&format!(
-            "#set text(size: {}pt, lang: \"{}\")\n",
+            "  set text(size: {}pt, lang: \"{}\")\n",
             fmt_pt(self.font_size),
             self.lang.code()
         ));
         if self.justify {
-            src.push_str("#set par(justify: true)\n");
+            src.push_str("  set par(justify: true)\n");
         }
         if self.numbering {
-            src.push_str("#set heading(numbering: \"1.1\")\n");
+            src.push_str("  set heading(numbering: \"1.1\")\n");
         }
-        src.push('\n');
-        // Portada centrada (título con suplente si se vacía; autor y fecha
-        // se omiten en blanco para no dejar huecos raros).
-        let title = if self.title.trim().is_empty() {
-            "Título"
-        } else {
-            self.title.trim()
-        };
-        // Los textos van como cadenas (`"…"`), no como markup: `$`, `@`,
-        // `//`, `*`… se muestran tal cual. Una línea en blanco entre piezas
-        // para que no se junten en un solo párrafo.
-        let mut cover = vec![format!(
-            "  #text(size: 20pt, weight: \"bold\", \"{}\")",
-            esc(title)
-        )];
-        if !self.author.trim().is_empty() {
-            cover.push(format!(
-                "  #text(size: 12pt, \"{}\")",
-                esc(self.author.trim())
-            ));
-        }
-        match self.date {
-            DateMode::Today => cover.push("  #datetime.today().display()".into()),
-            DateMode::Custom if !self.custom_date.trim().is_empty() => {
-                cover.push(format!("  #\"{}\"", esc(self.custom_date.trim())));
-            }
-            _ => {}
-        }
-        src.push_str("#align(center)[\n");
-        src.push_str(&cover.join("\n\n"));
-        src.push_str("\n]\n");
-        // Resumen (vacío = se omite).
-        if !self.abstract_text.trim().is_empty() {
-            let tag = if es { "Resumen" } else { "Abstract" };
-            src.push_str(&format!(
-                "\n#block(inset: (x: 2em))[\n  *{tag}.* {}\n]\n",
-                self.abstract_text.trim()
-            ));
-        }
-        // Índice (título explícito por idioma).
-        if self.toc {
-            let t = if es { "Índice" } else { "Contents" };
-            src.push_str(&format!("\n#outline(title: [{t}])\n"));
-        }
-        // Primera sección para empezar a escribir.
+        // Fecha de hoy: typst no traduce los meses, en español van a mano.
+        src.push_str("\n  let fecha = if fecha == auto {\n    let hoy = datetime.today()\n");
         src.push_str(if es {
-            "\n= Introducción\n"
+            "    [#hoy.day() de #_meses.at(hoy.month() - 1) de #hoy.year()]\n"
         } else {
-            "\n= Introduction\n"
+            "    hoy.display(\"[month repr:long] [day padding:none], [year]\")\n"
+        });
+        src.push_str("  } else { fecha }\n\n");
+        src.push_str(
+            "  align(center)[\n\
+             \x20   #text(size: 20pt, weight: \"bold\", titulo)\n\
+             \x20   #if autor != none [ \\ #text(size: 12pt, autor)]\n\
+             \x20   #if fecha != none [ \\ #fecha]\n\
+             \x20 ]\n\n",
+        );
+        src.push_str(&format!(
+            "  if resumen != none {{\n    block(inset: (x: 2em))[*{}.* #resumen]\n  }}\n",
+            if es { "Resumen" } else { "Abstract" }
+        ));
+        src.push_str(&format!(
+            "  if indice {{\n    outline(title: [{}])\n  }}\n  body\n}}\n",
+            if es { "Índice" } else { "Contents" }
+        ));
+        src
+    }
+
+    /// `main.typ`: importa la plantilla y le pasa los datos. Los textos van
+    /// como cadenas (`"…"`): `$`, `@`, `]`, `*`… se muestran tal cual. Un
+    /// campo en blanco queda en `none` (o en el valor por defecto).
+    pub fn build_main(&self) -> String {
+        let es = self.lang == Lang::Es;
+        let opt = |s: &str| {
+            let t = s.trim();
+            if t.is_empty() {
+                "none".to_string()
+            } else {
+                format!("\"{}\"", esc(t))
+            }
+        };
+        let mut src = format!("#import \"{TEMPLATE_FILE}\": articulo\n\n#show: articulo.with(\n");
+        if !self.title.trim().is_empty() {
+            src.push_str(&format!("  titulo: \"{}\",\n", esc(self.title.trim())));
+        }
+        src.push_str(&format!("  autor: {},\n", opt(&self.author)));
+        let fecha = match self.date {
+            DateMode::Today => "auto".to_string(),
+            DateMode::Custom => opt(&self.custom_date),
+            DateMode::None => "none".to_string(),
+        };
+        src.push_str(&format!("  fecha: {fecha},\n"));
+        src.push_str(&format!("  resumen: {},\n", opt(&self.abstract_text)));
+        src.push_str(&format!("  indice: {},\n)\n\n", self.toc));
+        src.push_str(if es {
+            "= Introducción\n"
+        } else {
+            "= Introduction\n"
         });
         src
+    }
+
+    /// Escribe `template.typ` y `main.typ` en `dir`. No sobrescribe: si
+    /// alguno existe, no toca nada. Devuelve la ruta de `main.typ`.
+    pub fn write_project(&self, dir: &std::path::Path) -> Result<std::path::PathBuf, String> {
+        let (tpl, main) = (dir.join(TEMPLATE_FILE), dir.join(MAIN_FILE));
+        let taken: Vec<_> = [&tpl, &main]
+            .into_iter()
+            .filter(|p| p.exists())
+            .map(|p| {
+                p.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        if !taken.is_empty() {
+            return Err(format!(
+                "Ya existe {} en {}",
+                taken.join(" y "),
+                dir.display()
+            ));
+        }
+        let write = |p: &std::path::Path, text: String| {
+            std::fs::write(p, text).map_err(|e| format!("No se pudo escribir {}: {e}", p.display()))
+        };
+        write(&tpl, self.build_template())?;
+        if let Err(e) = write(&main, self.build_main()) {
+            let _ = std::fs::remove_file(&tpl);
+            return Err(e);
+        }
+        Ok(main)
     }
 }
 
@@ -295,7 +361,32 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                             .small()
                             .color(pal.text_faint),
                     );
+                    // Proyecto vinculado (desde «Nuevo proyecto»): Crear
+                    // escribe ahí sin preguntar.
+                    let mut unlink = false;
+                    if let Some(dir) = &st.template_dir {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{}  {}",
+                                    icon::FOLDER,
+                                    dir.file_name().unwrap_or_default().to_string_lossy()
+                                ))
+                                .small()
+                                .color(pal.accent),
+                            )
+                            .on_hover_text(dir.display().to_string());
+                            unlink = ui
+                                .small_button(icon::X)
+                                .on_hover_text("Desvincular: Crear preguntará la carpeta")
+                                .clicked();
+                        });
+                    }
+                    if unlink {
+                        st.template_dir = None;
+                    }
                     ui.separator();
+                    let linked = st.template_dir.is_some();
                     let f = &mut st.template;
                     field(ui, &pal, "Título", &mut f.title, "Título del trabajo");
                     field(ui, &pal, "Autor", &mut f.author, "Nombre del autor");
@@ -385,10 +476,14 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     );
                     ui.separator();
                     if widgets::accent_button(ui, &pal, &format!("{}  Crear documento", icon::FILE_PLUS))
-                        .on_hover_text("Abre el artículo en una pestaña nueva")
+                        .on_hover_text(if linked {
+                            format!("Crea {TEMPLATE_FILE} y {MAIN_FILE} en el proyecto y abre {MAIN_FILE}")
+                        } else {
+                            format!("Elige una carpeta: crea {TEMPLATE_FILE} y {MAIN_FILE}, y abre {MAIN_FILE}")
+                        })
                         .clicked()
                     {
-                        st.actions.push(Action::NewFromTemplate { text: f.build() });
+                        st.actions.push(Action::NewFromTemplate(Box::new(f.clone())));
                     }
                 });
         });
@@ -414,7 +509,14 @@ fn combo_row(
     content: impl FnOnce(&mut egui::Ui),
 ) {
     ui.label(RichText::new(label).small().color(pal.text_dim));
-    widgets::combo(ui, pal, RichText::new(current).small(), min_w, label, content);
+    widgets::combo(
+        ui,
+        pal,
+        RichText::new(current).small(),
+        min_w,
+        label,
+        content,
+    );
 }
 
 #[cfg(test)]
@@ -422,23 +524,36 @@ mod tests {
     use super::*;
 
     fn workdir() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "typst-editor-tmpl-{}",
-            std::process::id()
-        ));
+        let d = std::env::temp_dir().join(format!("typst-editor-tmpl-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }
 
+    /// Escribe el proyecto en una carpeta propia y compila `main.typ`.
     fn compiles(a: &Article) -> bool {
-        let src = a.build();
-        let out = crate::engine::compile_pdf(&src, &workdir(), "main.typ");
-        out.pdf.is_some()
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static N: AtomicUsize = AtomicUsize::new(0);
+        let dir = workdir().join(N.fetch_add(1, Ordering::Relaxed).to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let main = a.write_project(&dir).unwrap();
+        let src = std::fs::read_to_string(main).unwrap();
+        let out = crate::engine::compile_pdf(&src, &dir, MAIN_FILE);
+        let ok = out.pdf.is_some();
+        if !ok {
+            eprintln!(
+                "{:?}",
+                out.diags.iter().map(|d| &d.message).collect::<Vec<_>>()
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+        ok
     }
 
     #[test]
     fn escapa_comillas_y_barras() {
         assert_eq!(esc("di \"hola\" \\ adiós"), "di \\\"hola\\\" \\\\ adiós");
+        assert_eq!(esc("a\r\nb"), "a\\nb");
     }
 
     #[test]
@@ -462,9 +577,11 @@ mod tests {
         }
         assert_eq!(cases.len(), 2 * 3 * 3 * 3 * 3);
         for (lang, paper, margins, size, date) in cases {
-            for (justify, numbering, toc) in
-                [(true, true, true), (false, false, false), (true, false, true)]
-            {
+            for (justify, numbering, toc) in [
+                (true, true, true),
+                (false, false, false),
+                (true, false, true),
+            ] {
                 let a = Article {
                     title: "El \"niño\" y la \\barra\\".into(),
                     author: "Ana \"La\" Autora".into(),
@@ -481,38 +598,50 @@ mod tests {
                 };
                 assert!(
                     compiles(&a),
-                    "no compila: {lang:?} {paper:?} {margins:?} {size} {date:?} j={justify} n={numbering} t={toc}\n{}",
-                    a.build()
+                    "no compila: {lang:?} {paper:?} {margins:?} {size} {date:?} j={justify} n={numbering} t={toc}\n{}\n{}",
+                    a.build_template(),
+                    a.build_main()
                 );
             }
         }
     }
 
     #[test]
-    fn markup_en_portada_es_literal_y_compila() {
+    fn markup_es_literal_y_compila() {
         let a = Article {
             title: "Costo $5 * _x_ // nota ] #f".into(),
             author: "ana@uni.edu <etq>".into(),
             date: DateMode::Custom,
             custom_date: "9 de octubre".into(),
+            abstract_text: "Ver [1] y $5 ] ana@uni.edu\n\nSegundo párrafo".into(),
             ..Article::default()
         };
-        let src = a.build();
-        assert!(src.contains("#\"9 de octubre\""), "fecha sin corchetes:\n{src}");
-        assert!(compiles(&a), "no compila:\n{src}");
+        let main = a.build_main();
+        assert!(main.contains("fecha: \"9 de octubre\""), "{main}");
+        assert!(compiles(&a), "no compila:\n{main}");
     }
 
     #[test]
-    fn portada_en_lineas_separadas() {
-        let a = Article {
-            author: "Ana".into(),
-            date: DateMode::Today,
-            ..Article::default()
-        };
-        let src = a.build();
-        let body = &src[src.find("#align(center)[").unwrap()..];
-        let body = &body[..body.find("\n]").unwrap()];
-        assert_eq!(body.matches("\n\n").count(), 2, "título, autor y fecha separados:\n{src}");
+    fn main_importa_la_plantilla() {
+        let main = Article::default().build_main();
+        assert!(
+            main.starts_with("#import \"template.typ\": articulo\n"),
+            "{main}"
+        );
+        assert!(main.contains("#show: articulo.with("), "{main}");
+    }
+
+    #[test]
+    fn no_sobrescribe() {
+        let dir = workdir().join("ocupado");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(MAIN_FILE), "mío").unwrap();
+        let err = Article::default().write_project(&dir).unwrap_err();
+        assert!(err.contains(MAIN_FILE), "{err}");
+        assert_eq!(std::fs::read_to_string(dir.join(MAIN_FILE)).unwrap(), "mío");
+        assert!(!dir.join(TEMPLATE_FILE).exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -526,8 +655,21 @@ mod tests {
             toc: false,
             ..Article::default()
         };
-        let src = a.build();
-        assert!(src.contains("Título"), "el título vacío lleva suplente:\n{src}");
-        assert!(compiles(&a));
+        let main = a.build_main();
+        assert!(
+            !main.contains("titulo:"),
+            "el título vacío usa el de la plantilla:\n{main}"
+        );
+        assert!(
+            main.contains("autor: none") && main.contains("resumen: none"),
+            "{main}"
+        );
+        assert!(a.build_template().contains("titulo: \"Título\""));
+        let en = Article {
+            lang: Lang::En,
+            ..a.clone()
+        };
+        assert!(en.build_template().contains("titulo: \"Title\""));
+        assert!(compiles(&a) && compiles(&en));
     }
 }

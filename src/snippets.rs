@@ -121,7 +121,10 @@ pub const BUILTIN: &[Group] = &[
             sn("Matriz", "$ A = mat(\n  ${1}, 2;\n  3, 4;\n) $"),
             sn("Matriz 3×3", "$ mat(${1}, 2, 3;\n  4, 5, 6;\n  7, 8, 9) $"),
             sn("Vector columna", "$ vec(${x}, ${y}, ${z}) $"),
-            sn("Sistema de ecuaciones", "$ cases(x + y &= ${7},\n  x - y &= ${1}) $"),
+            sn(
+                "Sistema de ecuaciones",
+                "$ cases(x + y &= ${7},\n  x - y &= ${1}) $",
+            ),
             sn("Fracción", "$ frac(${a}, ${b}) $"),
             sn("Límite", "$ lim_(${x} -> ${0}) ${f(x)} $"),
             sn("Derivada", "$ (dif ${f}) / (dif ${x}) $"),
@@ -151,7 +154,10 @@ pub const BUILTIN: &[Group] = &[
                 "Definición",
                 "#block(stroke: (left: 2pt + gray), inset: (left: 1em, y: 4pt))[\n  *Definición.* ${sel:Término.}\n]\n",
             ),
-            sn("Demostración", "_Demostración._ ${sel:Razonamiento.} $square$"),
+            sn(
+                "Demostración",
+                "_Demostración._ ${sel:Razonamiento.} $square$",
+            ),
         ],
     },
     Group {
@@ -429,19 +435,24 @@ fn row(
 pub fn edit_modal(ctx: &egui::Context, e: &mut Editing) -> Option<bool> {
     let pal = theme::palette(ctx);
     let mut done = None;
-    egui::Modal::new(egui::Id::new("edit-snippet")).show(ctx, |ui| {
-        ui.set_width(460.0);
+    widgets::modal(ctx, "edit-snippet", 480.0, |ui| {
         let title = if e.index.is_some() {
             "Editar snippet"
         } else {
             "Nuevo snippet"
         };
-        ui.label(RichText::new(title).size(15.0).color(pal.text));
-        ui.add_space(8.0);
+        widgets::modal_header(
+            ui,
+            &pal,
+            icon::BRACKETS_CURLY,
+            title,
+            Some("Se inserta desde el panel de snippets o el autocompletado."),
+        );
         widgets::section_label(ui, &pal, "Nombre");
         ui.add(
             egui::TextEdit::singleline(&mut e.name)
                 .hint_text("Mi snippet")
+                .margin(widgets::FIELD_MARGIN)
                 .desired_width(f32::INFINITY),
         );
         ui.add_space(6.0);
@@ -452,6 +463,7 @@ pub fn edit_modal(ctx: &egui::Context, e: &mut Editing) -> Option<bool> {
                 ui.add(
                     egui::TextEdit::multiline(&mut e.body)
                         .code_editor()
+                        .margin(widgets::FIELD_MARGIN)
                         .desired_rows(8)
                         .desired_width(f32::INFINITY),
                 );
@@ -462,20 +474,14 @@ pub fn edit_modal(ctx: &egui::Context, e: &mut Editing) -> Option<bool> {
                 .monospace()
                 .color(pal.text_dim),
         );
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
+        widgets::modal_footer(ui, |ui| {
             let ok = !e.name.trim().is_empty() && !e.body.is_empty();
-            if ui
-                .add_enabled(
-                    ok,
-                    egui::Button::new(RichText::new("Guardar").color(pal.on_accent))
-                        .fill(pal.accent),
-                )
-                .clicked()
-            {
+            if widgets::primary_button(ui, &pal, "Guardar", ok).clicked() {
                 done = Some(true);
             }
-            if ui.button("Cancelar").clicked() || ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            if widgets::secondary_button(ui, &pal, "Cancelar").clicked()
+                || ui.input(|i| i.key_pressed(egui::Key::Escape))
+            {
                 done = Some(false);
             }
         });

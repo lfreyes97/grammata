@@ -333,7 +333,8 @@ fn recorrido_de_la_ui() {
 #[ignore = "necesita GPU"]
 fn esquema_navega_al_buffer() {
     use egui_kittest::kittest::Queryable;
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-outline-{}", std::process::id()));
+    let tmp =
+        std::env::temp_dir().join(format!("typst-editor-test-outline-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
     unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
@@ -347,11 +348,10 @@ fn esquema_navega_al_buffer() {
     let pages_before = h.state().st.preview.page_count();
     let (l, _) = {
         let a = h.state();
-        let c = a
-            .st
-            .editor
-            .cursor
-            .expect("el clic en el esquema no movió el cursor");
+        let c =
+            a.st.editor
+                .cursor
+                .expect("el clic en el esquema no movió el cursor");
         text::char_to_line_col(&a.st.docs.cur().text, c)
     };
     let esperado = {
@@ -364,7 +364,10 @@ fn esquema_navega_al_buffer() {
             .unwrap()
             + 1
     };
-    assert_eq!(l, esperado, "el clic en el esquema no llevó al cursor a su línea");
+    assert_eq!(
+        l, esperado,
+        "el clic en el esquema no llevó al cursor a su línea"
+    );
     assert_eq!(
         h.state().st.preview.page_count(),
         pages_before,
@@ -412,6 +415,66 @@ fn archivos_pliegan_y_abren() {
         "el clic no abrió uno.typ: {opened:?}"
     );
     assert_eq!(cur_text(&h), "= Uno\n");
+}
+
+/// Nuevo proyecto: vacío abre `main.typ`; artículo vincula el builder, que
+/// escribe en la carpeta sin preguntar.
+#[test]
+#[ignore = "necesita GPU"]
+fn nuevo_proyecto_vacio_y_articulo() {
+    use egui_kittest::kittest::Queryable;
+    let tmp = std::env::temp_dir().join(format!("typst-editor-test-np-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("cfg")).unwrap();
+    // SAFETY: único test que toca el entorno; se fija antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    let crear = |h: &mut Harness<'_, App>, name: &str, kind: crate::project::Kind| {
+        h.state_mut().st.actions.push(Action::NewProject);
+        h.run_steps(3);
+        if let Some(Modal::NewProject(np)) = &mut h.state_mut().st.modal {
+            np.name = name.into();
+            np.parent = tmp.clone();
+            np.kind = kind;
+        } else {
+            panic!("no se abrió el diálogo");
+        }
+        h.run_steps(2);
+        shot(h, &format!("nuevo-proyecto-{name}"));
+        h.get_by_label("Crear").click();
+        h.run_steps(5);
+        assert!(h.state().st.modal.is_none(), "el diálogo sigue abierto");
+    };
+    crear(&mut h, "vacio", crate::project::Kind::Empty);
+    let dir = std::fs::canonicalize(tmp.join("vacio")).unwrap();
+    assert_eq!(
+        h.state().st.prefs.files_root.as_deref(),
+        Some(tmp.join("vacio").as_path())
+    );
+    assert_eq!(
+        h.state().st.docs.cur().path.as_deref(),
+        Some(dir.join("main.typ").as_path())
+    );
+
+    crear(&mut h, "art", crate::project::Kind::Article);
+    assert_eq!(
+        h.state().st.template_dir.as_deref(),
+        Some(tmp.join("art").as_path())
+    );
+    h.get_by_label_contains("Crear documento").click();
+    h.run_steps(5);
+    let art = std::fs::canonicalize(tmp.join("art")).unwrap();
+    assert!(art.join("template.typ").is_file(), "falta template.typ");
+    assert_eq!(
+        h.state().st.docs.cur().path.as_deref(),
+        Some(art.join("main.typ").as_path())
+    );
+    assert!(cur_text(&h).starts_with("#import \"template.typ\""));
+    assert!(
+        h.state().st.template_dir.is_none(),
+        "el builder sigue vinculado"
+    );
 }
 
 /// Borrador: un snippet de la biblioteca se inserta en su buffer.

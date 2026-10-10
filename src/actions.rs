@@ -9,8 +9,17 @@ use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub enum Action {
     NewDoc,
-    /// Nuevo documento con el texto ya puesto (builder de plantillas).
-    NewFromTemplate { text: String },
+    /// Abre el diálogo «Nuevo proyecto».
+    NewProject,
+    /// Proyecto recién creado en `dir`: lo fija como raíz y abre `main.typ`
+    /// o el builder según el tipo.
+    OpenProject {
+        dir: PathBuf,
+        kind: crate::project::Kind,
+    },
+    /// Builder de plantillas: elige carpeta, escribe `template.typ` y
+    /// `main.typ`, y abre este último.
+    NewFromTemplate(Box<crate::templates::Article>),
     /// Elige la carpeta raíz del gestor de archivos y lo muestra.
     PickFolder,
     Open,

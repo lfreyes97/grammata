@@ -37,6 +37,9 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             if menu_item(ui, icon::FILE_PLUS, "Nuevo", "Ctrl+N") {
                 a.push(Action::NewDoc)
             }
+            if menu_item(ui, icon::FOLDER_PLUS, "Nuevo proyecto…", "Ctrl+Mayús+N") {
+                a.push(Action::NewProject)
+            }
             if menu_item(ui, icon::ARTICLE, "Nuevo desde plantilla…", "Ctrl+Mayús+T") {
                 a.push(Action::ShowPanel(Panel::Templates))
             }
@@ -360,26 +363,25 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
         Modal::ConfirmClose(id) => {
             let id = *id;
             let name = st.docs.get(id).map(|d| d.fname()).unwrap_or_default();
-            egui::Modal::new(egui::Id::new("confirm-close")).show(ctx, |ui| {
-                ui.set_width(360.0);
-                ui.label(
-                    RichText::new(format!("¿Guardar los cambios de «{name}»?"))
-                        .size(15.0)
-                        .color(pal.text),
+            widgets::modal(ctx, "confirm-close", 400.0, |ui| {
+                widgets::modal_header_tinted(
+                    ui,
+                    &pal,
+                    icon::WARNING,
+                    pal.warn,
+                    &format!("¿Guardar los cambios de «{name}»?"),
+                    Some("Si no los guardas, se perderán."),
                 );
-                ui.add_space(4.0);
-                ui.label(RichText::new("Si no los guardas, se perderán.").color(pal.text_dim));
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    if widgets::accent_button(ui, &pal, "Guardar").clicked() {
+                widgets::modal_footer(ui, |ui| {
+                    if widgets::primary_button(ui, &pal, "Guardar", true).clicked() {
                         st.actions.push(Action::SaveAndClose(id));
                         close = true;
                     }
-                    if ui.button("No guardar").clicked() {
+                    if widgets::secondary_button(ui, &pal, "No guardar").clicked() {
                         st.actions.push(Action::Discard(id));
                         close = true;
                     }
-                    if ui.button("Cancelar").clicked()
+                    if widgets::secondary_button(ui, &pal, "Cancelar").clicked()
                         || ui.input(|i| i.key_pressed(egui::Key::Escape))
                     {
                         close = true;
@@ -393,25 +395,21 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
                 .file_name()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| path.display().to_string());
-            egui::Modal::new(egui::Id::new("confirm-delete")).show(ctx, |ui| {
-                ui.set_width(360.0);
-                ui.label(
-                    RichText::new(format!("¿Eliminar «{name}»?"))
-                        .size(15.0)
-                        .color(pal.text),
+            widgets::modal(ctx, "confirm-delete", 400.0, |ui| {
+                widgets::modal_header_tinted(
+                    ui,
+                    &pal,
+                    icon::TRASH,
+                    pal.err,
+                    &format!("¿Eliminar «{name}»?"),
+                    Some("Se borra del disco y no se puede deshacer."),
                 );
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new("Se borra del disco y no se puede deshacer.")
-                        .color(pal.text_dim),
-                );
-                ui.add_space(12.0);
-                ui.horizontal(|ui| {
-                    if widgets::accent_button(ui, &pal, "Eliminar").clicked() {
+                widgets::modal_footer(ui, |ui| {
+                    if widgets::danger_button(ui, &pal, "Eliminar").clicked() {
                         crate::files::delete_path(st, &path);
                         close = true;
                     }
-                    if ui.button("Cancelar").clicked()
+                    if widgets::secondary_button(ui, &pal, "Cancelar").clicked()
                         || ui.input(|i| i.key_pressed(egui::Key::Escape))
                     {
                         close = true;
@@ -419,17 +417,30 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
                 });
             });
         }
-        Modal::GotoLine(input) => {            egui::Modal::new(egui::Id::new("goto-line")).show(ctx, |ui| {
-                ui.set_width(280.0);
-                ui.label(RichText::new("Ir a línea").size(15.0).color(pal.text));
-                ui.add_space(6.0);
+        Modal::GotoLine(input) => {
+            widgets::modal(ctx, "goto-line", 320.0, |ui| {
+                widgets::modal_header(
+                    ui,
+                    &pal,
+                    icon::ARROW_BEND_DOWN_RIGHT,
+                    "Ir a línea",
+                    Some("Línea y, opcional, columna: 42 o 42:7."),
+                );
                 let r = ui.add(
                     egui::TextEdit::singleline(input)
                         .hint_text("línea[:columna]")
+                        .margin(widgets::FIELD_MARGIN)
                         .desired_width(f32::INFINITY),
                 );
                 r.request_focus();
-                if ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                let go = widgets::modal_footer(ui, |ui| {
+                    let go = widgets::primary_button(ui, &pal, "Ir", true).clicked();
+                    if widgets::secondary_button(ui, &pal, "Cancelar").clicked() {
+                        close = true;
+                    }
+                    go
+                });
+                if go || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                     let mut it = input
                         .split([':', ','])
                         .map(|s| s.trim().parse::<usize>().ok());
@@ -447,15 +458,18 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
                 }
             });
         }
+        Modal::NewProject(np) => {
+            close = crate::project::show(ctx, &pal, np, &mut st.actions);
+        }
         Modal::About => {
-            let r = egui::Modal::new(egui::Id::new("about")).show(ctx, |ui| {
-                ui.set_width(380.0);
-                ui.label(RichText::new("Typst Editor").size(18.0).color(pal.accent));
-                ui.label(
-                    RichText::new("Editor de Typst en Rust + egui, con vista previa del PDF real.")
-                        .color(pal.text_dim),
+            let r = widgets::modal(ctx, "about", 420.0, |ui| {
+                widgets::modal_header(
+                    ui,
+                    &pal,
+                    icon::INFO,
+                    "Typst Editor",
+                    Some("Editor de Typst en Rust + egui, con vista previa del PDF real."),
                 );
-                ui.add_space(8.0);
                 let v = st
                     .typst_version
                     .as_deref()
@@ -482,9 +496,9 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
                             ui.end_row();
                         }
                     });
-                ui.add_space(10.0);
-                ui.vertical_centered(|ui| ui.button("Cerrar").clicked())
-                    .inner
+                widgets::modal_footer(ui, |ui| {
+                    widgets::secondary_button(ui, &pal, "Cerrar").clicked()
+                })
             });
             if r.inner || r.should_close() {
                 close = true;
@@ -500,6 +514,7 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
 
 const SHORTCUTS: &[(&str, &str)] = &[
     ("Ctrl+N / O / S", "nuevo · abrir · guardar"),
+    ("Ctrl+Mayús+N", "nuevo proyecto"),
     ("Ctrl+W", "cerrar pestaña"),
     ("Ctrl+Tab / Ctrl+RePág", "cambiar de pestaña"),
     ("Ctrl+1…9", "ir a la pestaña n"),
@@ -509,7 +524,10 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Ctrl+G", "ir a línea"),
     ("Ctrl+Espacio", "autocompletar"),
     ("Ctrl+Mayús+O / V / M", "esquema · vista previa · problemas"),
-    ("Ctrl+Mayús+Y / I / T / F / B", "símbolos · snippets · plantillas · archivos · borrador"),
+    (
+        "Ctrl+Mayús+Y / I / T / F / B",
+        "símbolos · snippets · plantillas · archivos · borrador",
+    ),
     ("Ctrl+= / - / 0", "tamaño de fuente"),
     ("Ctrl+rueda", "zoom de la vista previa"),
 ];

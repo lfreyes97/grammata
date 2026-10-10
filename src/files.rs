@@ -234,11 +234,16 @@ impl FileMgr {
 /// Elige la carpeta raíz del gestor.
 pub fn pick_root(st: &mut State) {
     if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-        st.prefs.files_root = Some(dir);
-        st.files.scanned_root = None;
-        st.files.selected = None;
-        st.needs_persist = true;
+        set_root(st, dir);
     }
+}
+
+/// Fija la carpeta raíz del gestor (se reescanea en el próximo frame).
+pub fn set_root(st: &mut State, dir: PathBuf) {
+    st.prefs.files_root = Some(dir);
+    st.files.scanned_root = None;
+    st.files.selected = None;
+    st.needs_persist = true;
 }
 
 pub fn panel(st: &mut State, ui: &mut egui::Ui) {
@@ -297,7 +302,10 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
             }
         }
     }
-    let stale = st.files.last_scan.is_none_or(|t| t.elapsed() > RESCAN_EVERY);
+    let stale = st
+        .files
+        .last_scan
+        .is_none_or(|t| t.elapsed() > RESCAN_EVERY);
     if stale && st.files.scanning.is_none() {
         let (tx, rx) = std::sync::mpsc::channel();
         let (dir, ctx) = (root.clone(), ui.ctx().clone());
@@ -433,9 +441,11 @@ fn empty_state(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
     egui::Frame::new().inner_margin(14).show(ui, |ui| {
         ui.label(RichText::new("Sin carpeta todavía.").color(pal.text_dim));
         ui.label(
-            RichText::new("El gestor muestra el árbol de una carpeta para abrir y organizar tus `.typ`.")
-                .small()
-                .color(pal.text_faint),
+            RichText::new(
+                "El gestor muestra el árbol de una carpeta para abrir y organizar tus `.typ`.",
+            )
+            .small()
+            .color(pal.text_faint),
         );
         ui.add_space(8.0);
         if widgets::accent_button(ui, pal, &format!("{}  Abrir carpeta…", icon::FOLDER_OPEN))
@@ -499,13 +509,11 @@ fn breadcrumbs(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, root: &P
                         .map(|s| s.to_string_lossy().into_owned())
                         .unwrap_or_else(|| p.display().to_string());
                     let last = i + 1 == chain.len();
-                    let b = egui::Button::new(
-                        RichText::new(name).small().color(if last {
-                            pal.text
-                        } else {
-                            pal.text_dim
-                        }),
-                    )
+                    let b = egui::Button::new(RichText::new(name).small().color(if last {
+                        pal.text
+                    } else {
+                        pal.text_dim
+                    }))
                     .selected(last)
                     .frame_when_inactive(false);
                     if ui.add(b).on_hover_text(p.display().to_string()).clicked() {
@@ -545,8 +553,7 @@ fn row(
         ui.horizontal(|ui| {
             ui.add_space(it.depth as f32 * 14.0);
             let r = ui.add(
-                egui::TextEdit::singleline(&mut st.files.rename_text)
-                    .desired_width(f32::INFINITY),
+                egui::TextEdit::singleline(&mut st.files.rename_text).desired_width(f32::INFINITY),
             );
             if st.files.rename_focus {
                 r.request_focus();
@@ -567,7 +574,11 @@ fn row(
     let (ic, color) = if it.is_dir {
         let open = st.files.expanded.contains(&it.path);
         (
-            if open { icon::FOLDER_OPEN } else { icon::FOLDER },
+            if open {
+                icon::FOLDER_OPEN
+            } else {
+                icon::FOLDER
+            },
             pal.text_dim,
         )
     } else if is_image(&it.path) {
@@ -665,9 +676,7 @@ fn row(
     // Solo si ningún widget tiene el teclado (editor, campos de texto…).
     if selected
         && ui.ctx().memory(|m| m.focused().is_none())
-        && ui.input(|i| {
-            i.key_pressed(egui::Key::F2) || i.key_pressed(egui::Key::Delete)
-        })
+        && ui.input(|i| i.key_pressed(egui::Key::F2) || i.key_pressed(egui::Key::Delete))
     {
         if ui.input(|i| i.key_pressed(egui::Key::F2)) {
             *start_rename = Some((it.path.clone(), it.name.clone()));
@@ -702,7 +711,11 @@ fn create_row(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, root: &Pa
             }));
             let r = ui.add(
                 egui::TextEdit::singleline(&mut st.files.new_name)
-                    .hint_text(if is_dir { "nombre-carpeta" } else { "nombre-archivo.typ" })
+                    .hint_text(if is_dir {
+                        "nombre-carpeta"
+                    } else {
+                        "nombre-archivo.typ"
+                    })
                     .desired_width(220.0),
             );
             if st.files.create_focus {
@@ -808,7 +821,8 @@ mod tests {
     use super::*;
 
     fn sandbox(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("typst-editor-fm-{}-{}", name, std::process::id()));
+        let d =
+            std::env::temp_dir().join(format!("typst-editor-fm-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("a").join("b")).unwrap();
         std::fs::write(d.join("z.typ"), "= Z\n").unwrap();

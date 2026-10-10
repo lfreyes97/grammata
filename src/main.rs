@@ -15,6 +15,7 @@ mod outline;
 mod panels;
 mod pdf_render;
 mod preview;
+mod project;
 mod scratch;
 mod session;
 mod snippets;

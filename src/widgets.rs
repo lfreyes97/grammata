@@ -100,3 +100,117 @@ pub fn section_label(ui: &mut Ui, pal: &Palette, text: &str) {
             .color(pal.text_faint),
     );
 }
+
+// ---------- Diálogos modales (estilo común) ----------
+
+/// Modal con el marco común (márgenes amplios, esquinas suaves) y ancho fijo.
+pub fn modal<R>(
+    ctx: &egui::Context,
+    id: &str,
+    width: f32,
+    add_contents: impl FnOnce(&mut Ui) -> R,
+) -> egui::ModalResponse<R> {
+    let pal = crate::theme::palette(ctx);
+    let frame = egui::Frame::popup(&ctx.global_style())
+        .inner_margin(Margin::same(20))
+        .corner_radius(CornerRadius::same(10));
+    egui::Modal::new(egui::Id::new(id))
+        .frame(frame)
+        .show(ctx, |ui| {
+            ui.set_width(width);
+            ui.spacing_mut().item_spacing.y = 6.0;
+            // Campos de texto con borde visible también sin foco.
+            let w = &mut ui.visuals_mut().widgets;
+            w.inactive.bg_stroke = Stroke::new(1.0, pal.border_strong);
+            w.hovered.bg_stroke = Stroke::new(1.0, pal.text_faint);
+            add_contents(ui)
+        })
+}
+
+/// Cabecera de modal: icono de acento, título y, opcional, una línea de ayuda.
+pub fn modal_header(ui: &mut Ui, pal: &Palette, icon: &str, title: &str, subtitle: Option<&str>) {
+    modal_header_tinted(ui, pal, icon, pal.accent, title, subtitle);
+}
+
+/// Como `modal_header`, con el color del icono a elección (p. ej. aviso).
+pub fn modal_header_tinted(
+    ui: &mut Ui,
+    pal: &Palette,
+    icon: &str,
+    tint: egui::Color32,
+    title: &str,
+    subtitle: Option<&str>,
+) {
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(icon).size(22.0).color(tint));
+        ui.vertical(|ui| {
+            // Aire entre título y ayuda: con 17 pt el texto pequeño quedaba
+            // pegado a los descendentes del título.
+            ui.spacing_mut().item_spacing.y = 5.0;
+            ui.label(RichText::new(title).size(17.0).strong().color(pal.text));
+            if let Some(s) = subtitle {
+                ui.add(egui::Label::new(RichText::new(s).size(13.0).color(pal.text_dim)).wrap());
+            }
+        });
+    });
+    ui.add_space(10.0);
+}
+
+/// Pie de modal: separador y botones alineados a la derecha. `add` los
+/// recibe de derecha a izquierda: primero el principal.
+pub fn modal_footer<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.add_space(6.0);
+    ui.separator();
+    ui.add_space(4.0);
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        // Margen interior también en los textos largos («No guardar»), y
+        // algo de separación entre botones.
+        ui.spacing_mut().button_padding = vec2(14.0, 5.0);
+        ui.spacing_mut().item_spacing.x = 8.0;
+        add(ui)
+    })
+    .inner
+}
+
+const DIALOG_BUTTON: egui::Vec2 = vec2(84.0, 30.0);
+
+/// Botón principal de diálogo (relleno de acento).
+pub fn primary_button(ui: &mut Ui, pal: &Palette, text: &str, enabled: bool) -> Response {
+    filled_button(ui, pal, text, pal.accent, enabled)
+}
+
+/// Botón de acción destructiva (relleno de error).
+pub fn danger_button(ui: &mut Ui, pal: &Palette, text: &str) -> Response {
+    filled_button(ui, pal, text, pal.err, true)
+}
+
+fn filled_button(
+    ui: &mut Ui,
+    pal: &Palette,
+    text: &str,
+    fill: egui::Color32,
+    enabled: bool,
+) -> Response {
+    ui.add_enabled(
+        enabled,
+        Button::new(RichText::new(text).color(pal.on_accent).strong())
+            .fill(fill)
+            .stroke(Stroke::NONE)
+            .corner_radius(CornerRadius::same(6))
+            .min_size(DIALOG_BUTTON),
+    )
+}
+
+/// Botón secundario con marco visible (los de serie no lo tienen en reposo).
+pub fn secondary_button(ui: &mut Ui, pal: &Palette, text: &str) -> Response {
+    ui.add(
+        Button::new(RichText::new(text).color(pal.text))
+            .fill(pal.chrome)
+            .stroke(Stroke::new(1.0, pal.border_strong))
+            .corner_radius(CornerRadius::same(6))
+            .min_size(DIALOG_BUTTON),
+    )
+}
+
+/// Margen interior común de los campos de texto de los diálogos.
+pub const FIELD_MARGIN: Margin = Margin::symmetric(8, 6);

@@ -11,8 +11,8 @@ use crate::formatbar::FormatBar;
 use crate::layout::{self, Panel, Preset, Tab};
 use crate::panels::{self, OutlineCache};
 use crate::preview::{self, Preview};
-use crate::session::{self, Prefs, Session, SessionTab};
 use crate::scratch;
+use crate::session::{self, Prefs, Session, SessionTab};
 use crate::snippets::{self, UserSnippet};
 use crate::symbols;
 use crate::templates;
@@ -55,6 +55,7 @@ pub enum Modal {
     GotoLine(String),
     About,
     EditSnippet(snippets::Editing),
+    NewProject(crate::project::NewProject),
 }
 
 const MAX_RECENT_SYMBOLS: usize = 18;
@@ -103,6 +104,8 @@ pub struct State {
     pub recent_symbols: Vec<String>,
     pub snippet_query: String,
     pub template: templates::Article,
+    /// Carpeta del proyecto donde escribe el builder (sin ella, pregunta).
+    pub template_dir: Option<PathBuf>,
     pub files: files::FileMgr,
     pub scratch: scratch::Scratch,
     pub user_snippets: Vec<UserSnippet>,
@@ -209,6 +212,7 @@ impl App {
             snippet_query: String::new(),
             user_snippets: snippets::load_user(),
             template: templates::Article::default(),
+            template_dir: None,
             files: files::FileMgr::default(),
             scratch: scratch::Scratch::from_session(scratch_text, scratch_equation),
             fmt: FormatBar::preloaded(&ctx),
@@ -306,6 +310,9 @@ impl App {
             }
             if k(M::SHIFT, K::F3) {
                 self.st.editor.pending_step = Some(-1)
+            }
+            if k(cs, K::N) {
+                a.push(Action::NewProject)
             }
             if k(M::CTRL, K::N) || k(M::CTRL, K::T) {
                 a.push(Action::NewDoc)
@@ -471,11 +478,60 @@ impl App {
                 self.switch_to_id(id);
                 self.st.needs_persist = true;
             }
-            Action::NewFromTemplate { text } => {
-                let id = self.st.docs.push(None, text);
-                layout::add_doc(&mut self.dock, id, cur);
-                self.switch_to_id(id);
-                self.st.needs_persist = true;
+            Action::NewProject => {
+                let np = crate::project::NewProject::new(self.st.prefs.files_root.as_deref());
+                self.st.modal = Some(Modal::NewProject(np));
+            }
+            Action::OpenProject { dir, kind } => {
+                files::set_root(&mut self.st, dir.clone());
+                match kind {
+                    crate::project::Kind::Empty => {
+                        self.open_path(dir.join(templates::MAIN_FILE));
+                        self.st.actions.push(Action::ShowPanel(Panel::Files));
+                    }
+                    crate::project::Kind::Article => {
+                        self.st.template_dir = Some(dir);
+                        self.st.actions.push(Action::ShowPanel(Panel::Templates));
+                    }
+                }
+            }
+            Action::NewFromTemplate(article) => {
+                // Con proyecto vinculado escribe ahí; si no, pide carpeta.
+                let dir = self.st.template_dir.clone().or_else(|| {
+                    let mut dlg = rfd::FileDialog::new().set_title("Carpeta del artículo");
+                    let start = self.st.prefs.files_root.clone().or_else(|| {
+                        self.st
+                            .docs
+                            .cur()
+                            .path
+                            .as_deref()
+                            .and_then(Path::parent)
+                            .map(Path::to_path_buf)
+                    });
+                    if let Some(dir) = start {
+                        dlg = dlg.set_directory(dir);
+                    }
+                    dlg.pick_folder()
+                });
+                if let Some(dir) = dir {
+                    match article.write_project(&dir) {
+                        Ok(main) => {
+                            self.st.template_dir = None;
+                            if self.open_path(main) {
+                                self.st.set_status(
+                                    format!(
+                                        "Creados {} y {} en {}",
+                                        templates::TEMPLATE_FILE,
+                                        templates::MAIN_FILE,
+                                        dir.display()
+                                    ),
+                                    StatusKind::Ok,
+                                );
+                            }
+                        }
+                        Err(e) => self.st.set_status(e, StatusKind::Err),
+                    }
+                }
             }
             Action::PickFolder => {
                 crate::files::pick_root(&mut self.st);
