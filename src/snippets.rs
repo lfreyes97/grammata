@@ -23,9 +23,6 @@ pub struct Snippet {
 pub struct Group {
     pub name: &'static str,
     pub icon: &'static str,
-    /// Útil dentro de una ecuación: el borrador en modo ecuación solo
-    /// ofrece estos grupos.
-    pub math: bool,
     pub items: &'static [Snippet],
 }
 
@@ -37,7 +34,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Documento",
         icon: icon::FILE_TEXT,
-        math: false,
         items: &[
             sn(
                 "Configuración básica",
@@ -61,7 +57,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Texto",
         icon: icon::TEXT_T,
-        math: false,
         items: &[
             sn("Negrita", "*${sel:texto}*"),
             sn("Cursiva", "_${sel:texto}_"),
@@ -80,7 +75,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Listas",
         icon: icon::LIST_NUMBERS,
-        math: false,
         items: &[
             sn("Viñetas", "- ${Elemento}\n- Elemento\n- Elemento\n"),
             sn("Numerada", "+ ${Paso}\n+ Paso\n+ Paso\n"),
@@ -91,7 +85,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Figuras y tablas",
         icon: icon::TABLE,
-        math: false,
         items: &[
             sn(
                 "Imagen con pie",
@@ -113,7 +106,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Ecuaciones",
         icon: icon::SIGMA,
-        math: true,
         items: &[
             sn("Ecuación en línea", "$${sel:x}$"),
             sn("Ecuación en bloque", "$ ${sel:x} $"),
@@ -133,7 +125,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Álgebra y cálculo",
         icon: icon::FUNCTION,
-        math: true,
         items: &[
             sn(
                 "Sistema de ecuaciones",
@@ -150,7 +141,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Fórmulas",
         icon: icon::MATH_OPERATIONS,
-        math: true,
         items: &[
             sn(
                 "Fórmula cuadrática",
@@ -167,7 +157,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Calcular con typst",
         icon: icon::CALCULATOR,
-        math: true,
         items: &[
             sn("Redondear", "#calc.round(${3.14159}, digits: ${2})"),
             sn("Potencia", "#calc.pow(${2}, ${10})"),
@@ -188,7 +177,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Bloques",
         icon: icon::QUOTES,
-        math: false,
         items: &[
             sn(
                 "Teorema",
@@ -207,7 +195,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Código",
         icon: icon::CODE,
-        math: false,
         items: &[
             sn("Bloque de código", "```${rust}\n${sel}\n```\n"),
             sn("Variable", "#let ${nombre} = 1\n"),
@@ -219,7 +206,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Diseño",
         icon: icon::LAYOUT,
-        math: false,
         items: &[
             sn(
                 "Dos columnas",
@@ -241,7 +227,6 @@ pub const BUILTIN: &[Group] = &[
     Group {
         name: "Referencias",
         icon: icon::BOOKMARK_SIMPLE,
-        math: false,
         items: &[
             sn("Etiqueta", "<${etiqueta}>"),
             sn("Referencia", "@${etiqueta}"),
@@ -253,6 +238,141 @@ pub const BUILTIN: &[Group] = &[
         ],
     },
 ];
+
+// ---------- Sintaxis (typst-syntax) ----------
+
+/// Qué es un snippet para typst, según su sintaxis (no según el grupo).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mode {
+    /// Una o varias ecuaciones y nada más: dentro de otra ecuación se
+    /// inserta su interior (ver `strip_equations`).
+    Math,
+    /// Código (`#let`, `#calc…`) que acaba en ecuaciones: vale en el
+    /// borrador en modo ecuación (lo previsualiza como marcado).
+    MathCode,
+    /// Texto, listas, bloques…
+    Markup,
+}
+
+impl Mode {
+    /// ¿Tiene sentido en el borrador en modo ecuación?
+    pub fn for_equation(self) -> bool {
+        self != Mode::Markup
+    }
+}
+
+/// Hijos de primer nivel del marcado sin espacios ni saltos de párrafo.
+fn top_level(root: &typst_syntax::SyntaxNode) -> Vec<&typst_syntax::SyntaxNode> {
+    use typst_syntax::SyntaxKind as K;
+    root.children()
+        .filter(|n| !matches!(n.kind(), K::Space | K::Parbreak))
+        .collect()
+}
+
+/// Clasifica un cuerpo de snippet (los marcadores se sustituyen por relleno
+/// antes de analizarlo).
+pub fn mode(body: &str) -> Mode {
+    use typst_syntax::SyntaxKind as K;
+    let text = expand(body, "x").0;
+    let root = typst_syntax::parse(&text);
+    if !root.errors_and_warnings().0.is_empty() {
+        return Mode::Markup;
+    }
+    let nodes = top_level(&root);
+    let eqs = nodes.iter().filter(|n| n.kind() == K::Equation).count();
+    if eqs == 0 {
+        return Mode::Markup;
+    }
+    if eqs == nodes.len() {
+        return Mode::Math;
+    }
+    // `#expr` se parte en `Hash` + la expresión de código.
+    let code_or_eq = nodes
+        .iter()
+        .all(|n| n.kind() == K::Equation || n.kind() == K::Hash || is_code(n.kind()));
+    if code_or_eq {
+        Mode::MathCode
+    } else {
+        Mode::Markup
+    }
+}
+
+/// Expresiones de código que pueden ir tras `#` en el marcado.
+fn is_code(k: typst_syntax::SyntaxKind) -> bool {
+    use typst_syntax::SyntaxKind as K;
+    matches!(
+        k,
+        K::LetBinding
+            | K::SetRule
+            | K::ShowRule
+            | K::FuncCall
+            | K::FieldAccess
+            | K::Ident
+            | K::Conditional
+            | K::ForLoop
+            | K::WhileLoop
+            | K::ModuleImport
+            | K::CodeBlock
+            | K::ContentBlock
+            | K::Semicolon
+    )
+}
+
+/// Si `text` (ya expandido) son solo ecuaciones, devuelve su interior para
+/// insertarlo dentro de otra ecuación: sin los `$`, varias unidas con un
+/// salto de línea de mate (`\`). `sa..sb` (selección en chars) se traslada
+/// al texto nuevo. `None` si hay algo más que ecuaciones.
+pub fn strip_equations(text: &str, sa: usize, sb: usize) -> Option<(String, usize, usize)> {
+    use typst_syntax::SyntaxKind as K;
+    let root = typst_syntax::parse(text);
+    if !root.errors_and_warnings().0.is_empty() {
+        return None;
+    }
+    let nodes = top_level(&root);
+    if nodes.is_empty() || nodes.iter().any(|n| n.kind() != K::Equation) {
+        return None;
+    }
+    // Rango en bytes del interior (`Math`) de cada ecuación.
+    let mut ranges = Vec::new();
+    let mut offset = 0;
+    for n in root.children() {
+        if n.kind() == K::Equation {
+            let mut o = offset;
+            let mut inner = o..o;
+            for c in n.children() {
+                if c.kind() == K::Math {
+                    inner = o..o + c.len();
+                }
+                o += c.len();
+            }
+            ranges.push(inner);
+        }
+        offset += n.len();
+    }
+    const SEP: &str = " \\\n";
+    let mut out = String::new();
+    // (inicio en el original, fin en el original, inicio en la salida) en bytes.
+    let mut map = Vec::new();
+    for (i, r) in ranges.iter().enumerate() {
+        if i > 0 {
+            out.push_str(SEP);
+        }
+        map.push((r.start, r.end, out.len()));
+        out.push_str(&text[r.clone()]);
+    }
+    let to_out = |c: usize| {
+        let b = crate::text::char_to_byte(text, c);
+        let ob = map
+            .iter()
+            .rev()
+            .find(|(start, _, _)| *start <= b)
+            .map(|&(start, end, o)| o + b.min(end) - start)
+            .unwrap_or(0);
+        out[..ob].chars().count()
+    };
+    let (na, nb) = (to_out(sa), to_out(sb));
+    Some((out, na, nb))
+}
 
 /// Expande los marcadores. Devuelve (texto, inicio, fin) de la selección
 /// final en chars: el primer relleno o `${}`; si no hay, el final.
@@ -519,6 +639,67 @@ pub fn edit_modal(ctx: &egui::Context, e: &mut Editing) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clasifica_por_sintaxis() {
+        assert_eq!(mode("$${sel:x}$"), Mode::Math);
+        assert_eq!(mode("$ ${x} $"), Mode::Math);
+        assert_eq!(mode("$ a $\n$ b $"), Mode::Math);
+        assert_eq!(mode("$ ${x} $ <${eq}>"), Mode::Markup);
+        assert_eq!(
+            mode("#let a = ${2}\n#let D = a * 2\n$Delta = #D$"),
+            Mode::MathCode
+        );
+        assert_eq!(mode("#calc.round(${3.14}, digits: 2)"), Mode::Markup);
+        assert_eq!(
+            mode("#set math.equation(numbering: \"(1)\")\n${}"),
+            Mode::Markup
+        );
+        assert_eq!(mode("_Demostración._ ${sel:x} $square$"), Mode::Markup);
+        assert_eq!(mode("*${sel:texto}*"), Mode::Markup);
+    }
+
+    #[test]
+    fn pela_ecuaciones_y_traslada_la_seleccion() {
+        // `$ frac(a, b) $` con `a` seleccionada → `frac(a, b)` con `a`.
+        let (t, a, b) = expand("$ frac(${a}, ${b}) $", "");
+        let (o, na, nb) = strip_equations(&t, a, b).unwrap();
+        assert_eq!(o, "frac(a, b)");
+        assert_eq!(&o[na..nb], "a");
+        // Varias ecuaciones: unidas con salto de línea de mate.
+        let (o, _, _) = strip_equations("$ u = 1 $\n$ d = 2 $", 0, 0).unwrap();
+        assert_eq!(o, "u = 1 \\\nd = 2");
+        // Selección dentro de la segunda.
+        let t = "$x$ $ yz $";
+        let c = t.find("yz").unwrap();
+        let (o, na, nb) = strip_equations(t, c, c + 2).unwrap();
+        assert_eq!(o, "x \\\nyz");
+        assert_eq!(o.chars().skip(na).take(nb - na).collect::<String>(), "yz");
+        // Cursor tras el `$` final → final del interior.
+        let (o, na, _) = strip_equations("$x$", 3, 3).unwrap();
+        assert_eq!((o.as_str(), na), ("x", 1));
+        assert!(strip_equations("*a* $x$", 0, 0).is_none());
+        assert!(strip_equations("$ x $ <eq>", 0, 0).is_none());
+    }
+
+    /// Los grupos de mate de serie son lo que dicen ser.
+    #[test]
+    fn grupos_de_mate_son_ecuaciones() {
+        for g in BUILTIN {
+            for s in g.items {
+                let m = mode(s.body);
+                match g.name {
+                    "Álgebra y cálculo" | "Fórmulas" => {
+                        assert_eq!(m, Mode::Math, "{}", s.name)
+                    }
+                    "Texto" | "Listas" | "Figuras y tablas" | "Bloques" | "Diseño" => {
+                        assert_eq!(m, Mode::Markup, "{}", s.name)
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 
     #[test]
     fn expande_marcadores() {

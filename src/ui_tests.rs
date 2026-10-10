@@ -613,3 +613,43 @@ fn plantillas_y_simbolos_compilan() {
         }
     }
 }
+
+/// Un snippet que solo son ecuaciones, insertado dentro de una ecuación,
+/// entra sin sus `$` (nada de ecuaciones anidadas) y con el relleno
+/// seleccionado.
+#[test]
+#[ignore = "necesita GPU"]
+fn snippet_de_ecuacion_dentro_de_ecuacion() {
+    let tmp = std::env::temp_dir().join(format!("typst-editor-test-se-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("cfg")).unwrap();
+    // SAFETY: único test que toca el entorno; se fija antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut().st.actions.push(Action::NewDoc);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::InsertMath("alpha".into()));
+    h.run_steps(3);
+    assert_eq!(cur_text(&h), "$alpha$");
+    h.state_mut().st.actions.push(Action::InsertSnippet(
+        "$ lim_(${x} -> ${0}) ${f(x)} $".into(),
+    ));
+    h.run_steps(3);
+    assert_eq!(cur_text(&h), "$alpha lim_(x -> 0) f(x)$");
+    let (a, b) = h.state().st.editor.selection.expect("sin selección");
+    assert_eq!(
+        cur_text(&h).chars().skip(a).take(b - a).collect::<String>(),
+        "x",
+        "debería quedar seleccionada la «x»"
+    );
+    // Fuera de una ecuación, el snippet entra tal cual.
+    h.state_mut().st.actions.push(Action::NewDoc);
+    h.state_mut().st.actions.push(Action::InsertSnippet(
+        "$ lim_(${x} -> ${0}) ${f(x)} $".into(),
+    ));
+    h.run_steps(3);
+    assert_eq!(cur_text(&h), "$ lim_(x -> 0) f(x) $");
+}

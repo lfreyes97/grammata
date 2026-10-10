@@ -772,8 +772,19 @@ impl App {
             (None, None) => (len, len),
         };
         let (mut text, mut sa, mut sb) = snippets::expand(template, &sel_text);
+        let in_math = symbols::in_math(&doc.text, a);
+        // Un snippet que solo son ecuaciones, dentro de otra ecuación: su
+        // interior (sin `$` anidados), con el espaciado de los símbolos.
+        let mut math = math;
+        if !math
+            && in_math
+            && let Some((t, x, y)) = snippets::strip_equations(&text, sa, sb)
+        {
+            (text, sa, sb) = (t, x, y);
+            math = true;
+        }
         if math {
-            if !symbols::in_math(&doc.text, a) {
+            if !in_math {
                 // Envuelve; sin relleno, el cursor queda antes del `$` final
                 // para seguir escribiendo dentro de la ecuación.
                 text = format!("${text}$");

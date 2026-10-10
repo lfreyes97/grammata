@@ -217,7 +217,17 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         ui.menu_button(format!("{}  Añadir snippet", icon::BRACKETS_CURLY), |ui| {
-                            for g in crate::snippets::BUILTIN.iter().filter(|g| g.math || !eq) {
+                            for g in crate::snippets::BUILTIN {
+                                // En modo ecuación, solo lo que el parser ve
+                                // como ecuación (o código que acaba en una).
+                                let items: Vec<_> = g
+                                    .items
+                                    .iter()
+                                    .filter(|s| !eq || crate::snippets::mode(s.body).for_equation())
+                                    .collect();
+                                if items.is_empty() {
+                                    continue;
+                                }
                                 ui.menu_button(format!("{}  {}", g.icon, g.name), |ui| {
                                     for s in g.items {
                                         if ui.button(s.name).clicked() {
@@ -371,16 +381,14 @@ fn apply_snippet(
     let (sa, sb) = (a.min(b), a.max(b));
     let sel: String = text.chars().skip(sa).take(sb - sa).collect();
     let (expanded, na, nb) = crate::snippets::expand(body, &sel);
-    // En modo ecuación pela los `$…$` del snippet y el cursor va al final
-    // (los marcadores ya se resolvieron al pelar). Sin `$` (estructuras),
-    // el relleno queda seleccionado como en el editor.
-    let (expanded, (oa, ob)) = if equation && expanded.trim_start().starts_with('$') {
-        let e = strip_math(&expanded).to_string();
-        let n = e.chars().count();
-        (e, (n, n))
+    // En modo ecuación, si el snippet son solo ecuaciones, va su interior:
+    // el borrador ya envuelve.
+    let stripped = if equation {
+        crate::snippets::strip_equations(&expanded, na, nb)
     } else {
-        (expanded, (na, nb))
+        None
     };
+    let (expanded, oa, ob) = stripped.unwrap_or((expanded, na, nb));
     let (ba, bb) = (
         crate::text::char_to_byte(text, sa),
         crate::text::char_to_byte(text, sb),
