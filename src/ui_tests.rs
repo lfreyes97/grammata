@@ -736,3 +736,65 @@ fn borrador_edita_la_ecuacion_del_cursor() {
     assert_eq!(cur_text(&h), "Nada");
     assert!(h.state().st.scratch.editing.is_none());
 }
+
+/// Biblioteca del proyecto: se crea con ejemplos y una función insertada
+/// trae su `#import` (una sola vez) y compila.
+#[test]
+#[ignore = "necesita GPU"]
+fn biblioteca_de_snippets_del_proyecto() {
+    use egui_kittest::kittest::Queryable;
+    let tmp = std::env::temp_dir().join(format!("typst-editor-test-lib-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("cfg")).unwrap();
+    std::fs::create_dir_all(tmp.join("proj")).unwrap();
+    let main = tmp.join("proj").join("main.typ");
+    std::fs::write(&main, "= Hola\n").unwrap();
+    // SAFETY: único test que toca el entorno; se fija antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::OpenPath(main.clone()));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Snippets));
+    h.run_steps(5);
+    h.get_by_label_contains("Crear snippets.typ del proyecto")
+        .click();
+    h.run_steps(5);
+    let lib = tmp.join("proj").join(crate::snippet_lib::FILE);
+    assert!(lib.is_file(), "no se creó la biblioteca");
+    // Vuelve a main.typ con el cursor al final.
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::OpenPath(main.clone()));
+    h.run_steps(3);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::Select { start: 7, end: 7 });
+    h.run_steps(5);
+    shot(&mut h, "snippets-biblioteca");
+    h.get_by_label_contains("Caja de aviso con título").click();
+    h.run_steps(3);
+    let want =
+        "#import \"snippets.typ\": *\n= Hola\n#aviso(titulo: \"Aviso\", color: orange)[texto]";
+    assert_eq!(cur_text(&h), want);
+    // Otra vez: sin segundo `#import`.
+    h.state_mut().st.actions.push(Action::Select {
+        start: want.chars().count(),
+        end: want.chars().count(),
+    });
+    h.run_steps(3);
+    h.get_by_label_contains("Ley de Ohm").click();
+    h.run_steps(3);
+    let text = cur_text(&h);
+    assert_eq!(text.matches("#import").count(), 1, "{text}");
+    assert!(text.ends_with("$ V = I R $"), "{text}");
+    let out = crate::engine::compile_pdf(&text, &tmp.join("proj"), "main.typ");
+    assert!(out.pdf.is_some(), "{:?}", out.diags);
+}

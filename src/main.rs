@@ -18,6 +18,7 @@ mod preview;
 mod project;
 mod scratch;
 mod session;
+mod snippet_lib;
 mod snippets;
 mod symbols;
 mod syntax;

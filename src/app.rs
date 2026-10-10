@@ -111,6 +111,8 @@ pub struct State {
     pub files: files::FileMgr,
     pub scratch: scratch::Scratch,
     pub user_snippets: Vec<UserSnippet>,
+    /// Bibliotecas `snippets.typ` (global y del proyecto).
+    pub snippet_libs: crate::snippet_lib::Libs,
     pub fmt: FormatBar,
     force_compile: bool,
 }
@@ -214,6 +216,7 @@ impl App {
             recent_symbols: session.recent_symbols,
             snippet_query: String::new(),
             user_snippets: snippets::load_user(),
+            snippet_libs: crate::snippet_lib::Libs::default(),
             template: templates::Options::default(),
             template_font_filter: String::new(),
             template_dir: None,
@@ -700,6 +703,31 @@ impl App {
                 self.st.needs_persist = true;
             }
             Action::InsertSnippet(body) => self.insert(&body, false),
+            Action::InsertLibSnippet { body, preamble } => {
+                if let Some(p) = preamble {
+                    self.prepend(&p);
+                }
+                self.insert(&body, false);
+            }
+            Action::CreateSnippetLib(path) => {
+                if !path.exists() {
+                    let made = path
+                        .parent()
+                        .map_or(Ok(()), std::fs::create_dir_all)
+                        .and_then(|_| std::fs::write(&path, crate::snippet_lib::starter()));
+                    if let Err(e) = made {
+                        self.st.set_status(
+                            format!("No se pudo crear {}: {e}", path.display()),
+                            StatusKind::Err,
+                        );
+                        return;
+                    }
+                }
+                // Que el panel la vea ya, sin esperar a la próxima comprobación.
+                self.st.snippet_libs.global.invalidate();
+                self.st.snippet_libs.project = None;
+                self.open_path(path);
+            }
             Action::ReplaceText {
                 doc,
                 start,
@@ -832,6 +860,18 @@ impl App {
         });
         layout::focus_doc(&mut self.dock, id);
         self.st.needs_persist = true;
+    }
+
+    /// Añade `text` al principio del documento actual, desplazando cursor y
+    /// selección para que lo que se inserte después caiga donde estaba.
+    fn prepend(&mut self, text: &str) {
+        let n = text.chars().count();
+        let d = self.st.docs.cur_mut();
+        d.text.insert_str(0, text);
+        d.touch();
+        let e = &mut self.st.editor;
+        e.cursor = e.cursor.map(|c| c + n);
+        e.selection = e.selection.map(|(a, b)| (a + n, b + n));
     }
 
     /// Reemplaza el `$…$` que el borrador está editando. Si el documento

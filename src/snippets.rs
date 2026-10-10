@@ -455,6 +455,11 @@ pub struct Editing {
 
 pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
+    {
+        let d = st.docs.cur();
+        let dir = d.path.as_deref().and_then(std::path::Path::parent);
+        st.snippet_libs.refresh(dir, st.prefs.files_root.as_deref());
+    }
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
             if widgets::icon_button(ui, icon::PLUS, "Nuevo snippet (con la selección actual)")
@@ -501,12 +506,35 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                                 act = Some(Action::EditSnippet(i));
                             }
                             let w = ui.available_width();
-                            if row(ui, &pal, &s.name, &s.body, w).clicked() {
+                            if row(ui, &pal, &s.name, &s.body, "", w).clicked() {
                                 act = Some(Action::InsertSnippet(s.body.clone()));
                             }
                         });
                     }
                 });
+            // Bibliotecas en typst: global y del proyecto.
+            let libs = &st.snippet_libs;
+            lib_section(ui, &pal, &libs.global, "Biblioteca", &matches, &st.docs, &mut act);
+            if let Some(p) = &libs.project {
+                let dir = p
+                    .path
+                    .parent()
+                    .and_then(|d| d.file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                lib_section(ui, &pal, p, &format!("Proyecto: {dir}"), &matches, &st.docs, &mut act);
+            } else if let Some(dir) = st.docs.cur().path.as_deref().and_then(std::path::Path::parent)
+                && q.is_empty()
+                && ui
+                    .small_button(format!("{}  Crear snippets.typ del proyecto", icon::FOLDER_PLUS))
+                    .on_hover_text(format!(
+                        "Crea {} con ejemplos; sus funciones se importan en los documentos de esa carpeta",
+                        dir.join(crate::snippet_lib::FILE).display()
+                    ))
+                    .clicked()
+            {
+                act = Some(Action::CreateSnippetLib(dir.join(crate::snippet_lib::FILE)));
+            }
             // De serie.
             for g in BUILTIN {
                 let items: Vec<&Snippet> = g.items.iter().filter(|s| matches(s.name, s.body)).collect();
@@ -518,7 +546,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     .show(ui, |ui| {
                         for s in items {
                             let w = ui.available_width();
-                            if row(ui, &pal, s.name, s.body, w).clicked() {
+                            if row(ui, &pal, s.name, s.body, "", w).clicked() {
                                 act = Some(Action::InsertSnippet(s.body.to_string()));
                             }
                         }
@@ -540,12 +568,106 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     }
 }
 
+/// Sección de una biblioteca `snippets.typ`: sus snippets por grupo, con
+/// abrir/crear el archivo y los errores de sintaxis.
+fn lib_section(
+    ui: &mut egui::Ui,
+    pal: &theme::Palette,
+    lib: &crate::snippet_lib::Library,
+    title: &str,
+    matches: &dyn Fn(&str, &str) -> bool,
+    docs: &crate::doc::Docs,
+    act: &mut Option<Action>,
+) {
+    use crate::snippet_lib::{self as sl, LibSnippet};
+    let items: Vec<&LibSnippet> = lib
+        .items
+        .iter()
+        .filter(|s| {
+            matches(&s.name, s.insert_text())
+                || matches(&s.ident, "")
+                || s.group.as_deref().is_some_and(|g| matches(g, ""))
+        })
+        .collect();
+    if lib.exists() && items.is_empty() && !lib.items.is_empty() {
+        return; // la búsqueda no deja ninguno
+    }
+    egui::CollapsingHeader::new(RichText::new(format!("{}  {title}", icon::BOOKS)).color(pal.text))
+        .id_salt(("snippet-lib", &lib.path))
+        .default_open(true)
+        .show(ui, |ui| {
+            if !lib.exists() {
+                ui.label(
+                    RichText::new("Snippets escritos en typst: cada #let es uno.")
+                        .small()
+                        .color(pal.text_faint),
+                );
+                if ui
+                    .small_button(format!("{}  Crear con ejemplos", icon::FILE_PLUS))
+                    .on_hover_text(lib.path.display().to_string())
+                    .clicked()
+                {
+                    *act = Some(Action::CreateSnippetLib(lib.path.clone()));
+                }
+                return;
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .small_button(format!("{}  Abrir {}", icon::PENCIL_SIMPLE, sl::FILE))
+                    .on_hover_text(lib.path.display().to_string())
+                    .clicked()
+                {
+                    *act = Some(Action::OpenPath(lib.path.clone()));
+                }
+                if lib.errors > 0 {
+                    ui.label(
+                        RichText::new(format!("{}  {} errores", icon::WARNING_CIRCLE, lib.errors))
+                            .small()
+                            .color(pal.err),
+                    )
+                    .on_hover_text("Los #let con errores de sintaxis no aparecen");
+                }
+            });
+            if lib.items.is_empty() {
+                ui.label(
+                    RichText::new("Sin #let públicos todavía.")
+                        .small()
+                        .color(pal.text_faint),
+                );
+            }
+            // Por grupo (sin grupo, al final), en el orden del archivo.
+            let mut groups: Vec<Option<&str>> = Vec::new();
+            for s in &items {
+                if !groups.contains(&s.group.as_deref()) {
+                    groups.push(s.group.as_deref());
+                }
+            }
+            groups.sort_by_key(|g| g.is_none());
+            for g in groups {
+                if let Some(g) = g {
+                    ui.label(RichText::new(g).small().color(pal.text_dim));
+                }
+                for s in items.iter().filter(|s| s.group.as_deref() == g) {
+                    let w = ui.available_width();
+                    if row(ui, pal, &s.name, s.insert_text(), &s.desc, w).clicked() {
+                        let d = docs.cur();
+                        *act = Some(Action::InsertLibSnippet {
+                            body: s.insert_text().to_string(),
+                            preamble: sl::preamble(s, &lib.path, &d.root_dir(), &d.text),
+                        });
+                    }
+                }
+            }
+        });
+}
+
 /// Fila de snippet: nombre a la izquierda, primera línea del cuerpo atenuada.
 fn row(
     ui: &mut egui::Ui,
     pal: &theme::Palette,
     name: &str,
     body: &str,
+    desc: &str,
     width: f32,
 ) -> egui::Response {
     let preview: String = expand(body, "…")
@@ -570,6 +692,9 @@ fn row(
         .truncate(),
     )
     .on_hover_ui(|ui| {
+        if !desc.is_empty() {
+            ui.label(RichText::new(desc).color(pal.text_dim));
+        }
         ui.label(
             RichText::new(expand(body, "⟨selección⟩").0)
                 .monospace()

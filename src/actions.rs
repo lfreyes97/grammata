@@ -9,6 +9,14 @@ use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub enum Action {
     NewDoc,
+    /// Snippet de una biblioteca `snippets.typ`: `preamble` (el `#import`
+    /// o la definición) va al principio del documento si hace falta.
+    InsertLibSnippet {
+        body: String,
+        preamble: Option<String>,
+    },
+    /// Crea (si no existe) una biblioteca `snippets.typ` con ejemplos y la abre.
+    CreateSnippetLib(PathBuf),
     /// Reemplaza en `doc` el texto `expect` que empezaba en `start` (chars;
     /// si se movió, la aparición más cercana). El borrador lo usa al editar
     /// una ecuación del documento.
