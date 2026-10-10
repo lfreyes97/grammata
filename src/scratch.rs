@@ -247,6 +247,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                             }
                         }
                     };
+                    let root = st.compile_root();
                     let s = &mut st.scratch;
                     ui.horizontal(|ui| {
                         ui.checkbox(&mut s.equation, "Como ecuación")
@@ -380,7 +381,6 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                         apply_snippet(ui, &out, &mut s.text, body, eq);
                     }
                     // Vista previa en vivo (con debounce).
-                    let root = st.docs.cur().root_dir();
                     let src = preview_source(&s.text, s.equation, s.block);
                     let key = format!("{src}|{SCALE:.1}");
                     if key != s.current {

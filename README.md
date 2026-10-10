@@ -28,8 +28,8 @@ Sesión (pestañas, preferencias y diseño del dock) en
 
 - **Vista previa PDF**: el compilador embebido (`engine.rs`: crates `typst` /
   `typst-pdf` 0.15.1, sin CLI) compila el buffer vivo a PDF en un hilo aparte
-  (`--root` = carpeta del documento, así que `#image`/`#include` relativos y
-  paquetes `@preview` funcionan) y
+  (`--root` = carpeta del gestor si contiene al documento, si no la del
+  documento; así `#image`/`#include` relativos y paquetes `@preview` funcionan) y
   [`hayro`](https://crates.io/crates/hayro) lo rasteriza en otro hilo. Solo se
   pintan las páginas visibles (+1 pantalla), a la resolución exacta de zoom × densidad
   de pantalla; mientras llega el render nuevo se muestra el anterior escalado (sin

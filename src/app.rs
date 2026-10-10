@@ -126,6 +126,14 @@ impl State {
         };
     }
 
+    /// Raíz efectiva de compilación del documento actual (ver
+    /// `Doc::compile_root`).
+    pub(crate) fn compile_root(&self) -> PathBuf {
+        self.docs
+            .cur()
+            .compile_root(self.prefs.files_root.as_deref())
+    }
+
     fn preview_info(&self) -> preview::Info {
         let doc = self.docs.cur();
         let built = self.compiler.built.get(&doc.id);
@@ -138,7 +146,7 @@ impl State {
             stale: self.preview.loaded.is_some_and(|k| k.rev != doc.rev),
             has_build: built.is_some(),
             sync: built.map(|b| b.sync.clone()).unwrap_or_default(),
-            root: doc.root_dir(),
+            root: self.compile_root(),
         }
     }
 }
@@ -461,8 +469,9 @@ impl App {
             false
         };
         if go {
-            let (text, root) = (doc.text.clone(), doc.root_dir());
-            let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref());
+            let (text, root) = (doc.text.clone(), st.compile_root());
+            let filename =
+                crate::engine::EngineWorld::filename_for_job(doc.path.as_deref(), &root);
             st.compiler.request(key, text, root, filename);
         }
     }
@@ -1149,8 +1158,9 @@ impl App {
             return;
         }
         // PDF desactualizado, PNG o SVG: se recompila en proceso.
-        let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref());
-        match crate::engine::export_pages(&doc.text, &doc.root_dir(), &filename, &dest, fmt, ppi) {
+        let root = self.st.compile_root();
+        let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref(), &root);
+        match crate::engine::export_pages(&doc.text, &root, &filename, &dest, fmt, ppi) {
             Ok(()) => self
                 .st
                 .set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),

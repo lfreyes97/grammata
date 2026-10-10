@@ -40,6 +40,17 @@ impl Doc {
             .unwrap_or_else(std::env::temp_dir)
     }
 
+    /// Raíz efectiva de compilación: la carpeta del gestor si contiene al
+    /// documento (proyectos como Instatypst, con `#import "../…"` por encima
+    /// de la carpeta del fichero), si no la del propio documento.
+    pub fn compile_root(&self, files_root: Option<&Path>) -> PathBuf {
+        let own = self.root_dir();
+        match (self.path.as_deref(), files_root) {
+            (Some(p), Some(r)) if r.is_dir() && p.strip_prefix(r).is_ok() => r.to_path_buf(),
+            _ => own,
+        }
+    }
+
     pub fn touch(&mut self) {
         self.rev = self.rev.wrapping_add(1);
         self.last_edit = Instant::now();
@@ -115,5 +126,42 @@ impl Docs {
             self.current -= 1;
         }
         self.current = self.current.min(self.list.len() - 1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raiz_efectiva() {
+        let dir = std::env::temp_dir().join(format!("typst-editor-root-{}", std::process::id()));
+        let sub = dir.join("campana");
+        std::fs::create_dir_all(&sub).unwrap();
+        let f = sub.join("a.typ");
+        std::fs::write(&f, "= A\n").unwrap();
+        let mut docs = Docs::new();
+        let id = docs.push(Some(f), "= A\n".to_string());
+        let doc = docs.get(id).expect("doc");
+        // Sin gestor: carpeta del documento.
+        assert_eq!(doc.compile_root(None), sub);
+        // Gestor que no contiene al documento: carpeta del documento.
+        let fuera = std::env::temp_dir().join(format!("typst-editor-fuera-{}", std::process::id()));
+        std::fs::create_dir_all(&fuera).unwrap();
+        assert_eq!(doc.compile_root(Some(fuera.as_path())), sub);
+        // Gestor que contiene al documento: el gestor manda.
+        assert_eq!(doc.compile_root(Some(dir.as_path())), dir);
+        // Raíz inexistente: se ignora.
+        assert_eq!(doc.compile_root(Some(dir.join("nope").as_path())), sub);
+        // Sin archivo: temporal, sin gestor posible.
+        let mut bare_docs = Docs::new();
+        let bid = bare_docs.push(None, "x".to_string());
+        let bare = bare_docs.get(bid).expect("doc");
+        assert_eq!(
+            bare.compile_root(Some(dir.as_path())),
+            std::env::temp_dir()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&fuera);
     }
 }

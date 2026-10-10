@@ -752,17 +752,18 @@ fn doc_labels(text: &str) -> Vec<String> {
     out
 }
 
-/// Diálogo de imagen → cuerpo `image(…)` con ruta relativa al documento.
+/// Diálogo de imagen → cuerpo `image(…)` con ruta relativa a la raíz de
+/// compilación.
 fn pick_image(st: &mut State) -> Option<String> {
-    let root = st.docs.cur().root_dir();
+    let root = st.compile_root();
     let p = rfd::FileDialog::new()
         .add_filter("Imagen", &["png", "jpg", "jpeg", "svg", "webp", "gif"])
         .set_directory(&root)
         .pick_file()?;
-    // Typst solo lee dentro de la raíz (la carpeta del documento).
+    // Typst solo lee dentro de la raíz efectiva de compilación.
     let Some(path) = image_path(&root, &p) else {
         st.set_status(
-            "La imagen debe estar dentro de la carpeta del documento",
+            "La imagen debe estar dentro de la carpeta raíz",
             StatusKind::Err,
         );
         return None;

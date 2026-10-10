@@ -112,12 +112,23 @@ impl EngineWorld {
         }
     }
 
-    /// Nombre virtual del main: el fichero real si está guardado, `main.typ`
-    /// si no. Los `#include` relativos resuelven igual que con el CLI.
-    pub(crate) fn filename_for_job(path: Option<&Path>) -> String {
-        path.and_then(|p| p.file_name())
-            .map(|s| s.to_string_lossy().into_owned())
-            .filter(|s| VirtualPath::new(s).is_ok())
+    /// Nombre virtual del main: la ruta relativa a la raíz si el fichero
+    /// está guardado dentro de ella (como el CLI), el nombre base si no,
+    /// `main.typ` si no hay archivo. Los `#include`/`#import` relativos
+    /// resuelven igual que con el CLI.
+    pub(crate) fn filename_for_job(path: Option<&Path>, root: &Path) -> String {
+        let rel = path.and_then(|p| p.strip_prefix(root).ok()).map(|r| {
+            r.components()
+                .map(|c| c.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/")
+        });
+        rel.filter(|s| VirtualPath::new(s).is_ok())
+            .or_else(|| {
+                path.and_then(|p| p.file_name())
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .filter(|s| VirtualPath::new(s).is_ok())
+            })
             .unwrap_or_else(|| "main.typ".to_string())
     }
 }
