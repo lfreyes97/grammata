@@ -798,3 +798,65 @@ fn biblioteca_de_snippets_del_proyecto() {
     let out = crate::engine::compile_pdf(&text, &tmp.join("proj"), "main.typ");
     assert!(out.pdf.is_some(), "{:?}", out.diags);
 }
+
+/// Vista previa fijada en `main.typ`: al editar el capítulo incluido, se
+/// autoguarda y el principal se recompila (y se sigue mostrando él).
+#[test]
+#[ignore = "necesita GPU"]
+fn fijar_vista_previa_y_autoguardado() {
+    let tmp = std::env::temp_dir().join(format!("typst-editor-test-pin-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let main = tmp.join("main.typ");
+    let cap = tmp.join("cap.typ");
+    std::fs::write(&main, "= Libro\n#include \"cap.typ\"\n").unwrap();
+    std::fs::write(&cap, "Capítulo uno.\n").unwrap();
+    let svg = tmp.join("figura.svg");
+    std::fs::write(
+        &svg,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60"><circle cx="60" cy="30" r="25" fill="teal"/></svg>"#,
+    )
+    .unwrap();
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut().st.actions.push(Action::OpenPath(main.clone()));
+    h.run_steps(3);
+    let main_id = h.state().st.docs.cur_id();
+    h.state_mut().st.actions.push(Action::TogglePin);
+    h.state_mut().st.actions.push(Action::OpenPath(cap.clone()));
+    h.run_steps(3);
+    assert_ne!(h.state().st.docs.cur_id(), main_id);
+    wait(&mut h, "compila main fijado", |a| {
+        a.st.preview.loaded.is_some_and(|k| k.doc == main_id) && rendered_pages(a)
+    });
+    // Edición del capítulo: autoguardado → sube la generación de disco →
+    // el principal se recompila.
+    {
+        let d = h.state_mut().st.docs.cur_mut();
+        d.text.push_str("Añadido al capítulo.\n");
+        d.touch();
+    }
+    wait(&mut h, "autoguardado y recompilación", |a| {
+        a.st.disk_gen > 0
+            && a.st.preview.loaded.is_some_and(|k| k.doc == main_id && k.disk == a.st.disk_gen)
+            && rendered_pages(a)
+    });
+    assert!(std::fs::read_to_string(&cap).unwrap().contains("Añadido"));
+    assert!(!h.state().st.docs.cur().modified());
+    shot(&mut h, "preview-fijado");
+    // Visor de imágenes: el SVG se abre en su pestaña y se renderiza.
+    h.state_mut().st.actions.push(Action::OpenPath(svg.clone()));
+    wait(&mut h, "imagen renderizada", |a| {
+        a.st.images.list.first().is_some_and(|t| !t_loading(t))
+    });
+    shot(&mut h, "visor-imagen");
+    // Insertar #image en el documento actual (el capítulo).
+    let p = svg.canonicalize().unwrap();
+    h.state_mut().st.actions.push(Action::InsertImage(p));
+    h.run_steps(3);
+    assert!(cur_text(&h).contains("#image(\"figura.svg\")"), "{}", cur_text(&h));
+}
+
+fn t_loading(t: &crate::image_view::ImageTab) -> bool {
+    t.loading()
+}

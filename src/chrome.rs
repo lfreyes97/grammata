@@ -120,6 +120,15 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             if menu_check(ui, st.prefs.auto_compile, "Compilar al escribir", "") {
                 a.push(Action::ToggleAuto)
             }
+            if menu_check(ui, st.prefs.auto_save, "Autoguardar", "") {
+                a.push(Action::ToggleAutoSave)
+            }
+            let pinned = st.pinned.is_some();
+            if (pinned || st.docs.cur().path.is_some())
+                && menu_check(ui, pinned, "Fijar vista previa", "")
+            {
+                a.push(Action::TogglePin)
+            }
             if menu_check(ui, pal.dark, "Tema oscuro", "") {
                 a.push(Action::ToggleTheme)
             }
@@ -230,11 +239,13 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
 pub fn status_bar(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
     let doc = st.docs.cur();
-    let built = st.compiler.built.get(&doc.id);
+    // Estado de compilación: el del documento principal (el fijado si lo hay).
+    let main = st.pinned.filter(|&id| st.docs.get(id).is_some()).unwrap_or(doc.id);
+    let built = st.compiler.built.get(&main);
     let (errors, warnings) = built
         .map(|b| diagnostics::count(&b.diagnostics))
         .unwrap_or((0, 0));
-    let compiling = st.compiler.in_flight.is_some_and(|k| k.doc == doc.id);
+    let compiling = st.compiler.in_flight.is_some_and(|k| k.doc == main);
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;

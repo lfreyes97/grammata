@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub enum Tab {
     Doc(DocId),
     Panel(Panel),
+    /// Visor de imagen (no se guarda en la sesión).
+    Image(crate::image_view::ImageId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
@@ -231,25 +233,34 @@ pub fn show_panel(dock: &mut DockState<Tab>, p: Panel, cur_doc: DocId) {
 
 /// Añade una pestaña de documento junto a los demás documentos.
 pub fn add_doc(dock: &mut DockState<Tab>, id: DocId, near: DocId) {
+    add_tab(dock, Tab::Doc(id), near);
+}
+
+/// Añade `tab` (documento o imagen) junto a los documentos.
+pub fn add_tab(dock: &mut DockState<Tab>, tab: Tab, near: DocId) {
     let at = docs_node(dock, near);
     if dock.iter_all_tabs().next().is_none() {
-        dock.main_surface_mut().push_to_first_leaf(Tab::Doc(id));
+        dock.main_surface_mut().push_to_first_leaf(tab);
         return;
     }
     // Si el nodo de docs ya no es una hoja (raro), cae a la raíz.
     match &mut dock[at.surface][at.node] {
         Node::Leaf(leaf) => {
-            leaf.append_tab(Tab::Doc(id));
+            leaf.append_tab(tab);
             let _ = leaf.set_active_tab(leaf.len() - 1);
         }
-        _ => dock.main_surface_mut().push_to_first_leaf(Tab::Doc(id)),
+        _ => dock.main_surface_mut().push_to_first_leaf(tab),
     }
 }
 
 /// Activa la pestaña del doc y enfoca su nodo (para que el dock lo trate
 /// como el documento actual).
 pub fn focus_doc(dock: &mut DockState<Tab>, id: DocId) {
-    if let Some(path) = dock.find_tab(&Tab::Doc(id)) {
+    focus_tab(dock, Tab::Doc(id));
+}
+
+pub fn focus_tab(dock: &mut DockState<Tab>, tab: Tab) {
+    if let Some(path) = dock.find_tab(&tab) {
         let _ = dock.set_active_tab(path);
         dock.set_focused_node_and_surface(NodePath {
             surface: path.surface,

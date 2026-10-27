@@ -48,6 +48,12 @@ pub struct Info {
     pub sync: Arc<Vec<SyncEntry>>,
     /// Carpeta del documento (para abrir incluidos desde el clic).
     pub root: PathBuf,
+    /// Ruta del documento compilado si no es el actual (fijado otro).
+    pub main_path: Option<PathBuf>,
+    /// Nombre del documento fijado.
+    pub pinned: Option<String>,
+    /// El documento actual se puede fijar (tiene ruta).
+    pub can_pin: bool,
 }
 
 pub struct Preview {
@@ -643,6 +649,29 @@ impl Preview {
                     {
                         actions.push(Action::Compile);
                     }
+                    let tip = match &info.pinned {
+                        Some(n) => format!("Fijado en {n}: clic para seguir al documento actual"),
+                        None if info.can_pin => {
+                            "Fijar la vista previa en este documento".to_string()
+                        }
+                        None => "Guarda el documento para poder fijarlo".to_string(),
+                    };
+                    ui.add_enabled_ui(info.pinned.is_some() || info.can_pin, |ui| {
+                        let ic = if info.pinned.is_some() {
+                            icon::PUSH_PIN_SLASH
+                        } else {
+                            icon::PUSH_PIN
+                        };
+                        if crate::widgets::icon_toggle(ui, info.pinned.is_some(), ic, &tip)
+                            .clicked()
+                        {
+                            actions.push(Action::TogglePin);
+                        }
+                    });
+                    if let Some(n) = &info.pinned {
+                        ui.label(egui::RichText::new(n).small().color(pal.accent))
+                            .on_hover_text(&tip);
+                    }
                     if info.compiling {
                         ui.add(egui::Spinner::new().size(14.0).color(pal.accent));
                     } else if info.errors > 0 {
@@ -903,12 +932,17 @@ impl Preview {
                     page_pos(origin, &tops, &self.sizes, zoom, content_w, up)
                 && let Some(e) = crate::engine::line_for_pos(&info.sync, page, x, y)
             {
-                actions.push(match &e.file {
-                    None => Action::JumpTo {
+                actions.push(match (&e.file, &info.main_path) {
+                    (None, None) => Action::JumpTo {
                         line: e.line,
                         col: e.col,
                     },
-                    Some(f) => Action::OpenAt {
+                    (None, Some(p)) => Action::OpenAt {
+                        path: p.clone(),
+                        line: e.line,
+                        col: e.col,
+                    },
+                    (Some(f), _) => Action::OpenAt {
                         path: info.root.join(f),
                         line: e.line,
                         col: e.col,

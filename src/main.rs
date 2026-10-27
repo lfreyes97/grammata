@@ -10,6 +10,7 @@ mod engine;
 mod files;
 mod formatbar;
 mod highlight;
+mod image_view;
 mod layout;
 mod outline;
 mod panels;

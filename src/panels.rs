@@ -118,10 +118,10 @@ pub fn outline(st: &mut State, ui: &mut egui::Ui) {
 
 pub fn problems(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
-    let doc = st.docs.cur();
-    let built = st.compiler.built.get(&doc.id);
+    let key = st.main_key();
+    let built = st.compiler.built.get(&key.doc);
     let diags = built.map(|b| b.diagnostics.as_slice()).unwrap_or(&[]);
-    let stale = built.is_some_and(|b| b.key.rev != doc.rev);
+    let stale = built.is_some_and(|b| b.key != key);
     let (errors, warnings) = crate::diagnostics::count(diags);
 
     widgets::toolbar_frame(&pal).show(ui, |ui| {
@@ -163,7 +163,10 @@ pub fn problems(st: &mut State, ui: &mut egui::Ui) {
     let mut act = None;
     let mut go = None;
     // Owned (Arc) para no prestar `st` dentro de los closures (abajo &mut).
-    let root = st.compile_root();
+    let root = st.main_root();
+    let main_path = (key.doc != st.docs.cur_id())
+        .then(|| st.main_doc().path.clone())
+        .flatten();
     let sync = built.map(|b| b.sync.clone()).unwrap_or_default();
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -222,9 +225,15 @@ pub fn problems(st: &mut State, ui: &mut egui::Ui) {
                         if r.clicked()
                             && let (Some(line), Some(col)) = (d.line, d.col)
                         {
-                            act = Some(match &d.file {
-                                None => Action::JumpTo { line, col },
-                                Some(f) => Action::OpenAt {
+                            act = Some(match (&d.file, &main_path) {
+                                (None, None) => Action::JumpTo { line, col },
+                                // Fijado otro documento: su error se abre en él.
+                                (None, Some(p)) => Action::OpenAt {
+                                    path: p.clone(),
+                                    line,
+                                    col,
+                                },
+                                (Some(f), _) => Action::OpenAt {
                                     path: root.join(f),
                                     line,
                                     col,

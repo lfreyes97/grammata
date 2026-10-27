@@ -39,6 +39,10 @@ pub struct Prefs {
     pub font_size: f32,
     pub wrap: bool,
     pub auto_compile: bool,
+    /// Guarda solo los documentos con ruta tras una pausa al escribir.
+    pub auto_save: bool,
+    /// Documento fijado en la vista previa (se restaura si sigue abierto).
+    pub pinned: Option<PathBuf>,
     pub zoom: f32,
     pub fit: FitMode,
     /// Fila de formato (tipografía, párrafo) bajo la barra superior.
@@ -60,6 +64,8 @@ impl Default for Prefs {
             font_size: 14.0,
             wrap: false,
             auto_compile: true,
+            auto_save: true,
+            pinned: None,
             zoom: 1.0,
             fit: FitMode::Width,
             format_bar: true,
@@ -168,6 +174,7 @@ pub fn save_layout(dock: &DockState<Tab>, order: &[u64]) -> DockState<SavedTab> 
     dock.filter_map_tabs(|t| match *t {
         Tab::Doc(id) => order.iter().position(|&o| o == id).map(SavedTab::Doc),
         Tab::Panel(p) => Some(SavedTab::Panel(p)),
+        Tab::Image(_) => None,
     })
 }
 

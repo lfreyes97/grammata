@@ -41,6 +41,8 @@ pub enum Action {
     PickFolder,
     Open,
     OpenPath(PathBuf),
+    /// Inserta `#image("…")` con la ruta de esa imagen en el documento actual.
+    InsertImage(PathBuf),
     /// Abre (o enfoca) un archivo y salta a L:C — errores en `#include`.
     OpenAt {
         path: PathBuf,
@@ -79,6 +81,9 @@ pub enum Action {
     /// Forward synctex desde el cursor: lleva la vista previa a la línea
     /// actual (mostrando el panel si está oculto).
     SyncToPdf,
+    /// Fija la vista previa en el documento actual (o la desfija).
+    TogglePin,
+    ToggleAutoSave,
     /// Selecciona el rango de chars `[start, end)` del documento actual.
     Select {
         start: usize,

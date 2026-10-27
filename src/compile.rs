@@ -17,6 +17,9 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 pub struct Key {
     pub doc: DocId,
     pub rev: u64,
+    /// Generación de disco (`State::disk_gen`): sube al guardar otro
+    /// archivo, así los `#include` guardados recompilan el principal.
+    pub disk: u64,
 }
 
 struct Job {

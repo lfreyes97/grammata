@@ -263,6 +263,78 @@ pub fn render_preview(src: &str, root: &Path, scale: f32) -> Result<egui::ColorI
     out
 }
 
+/// Una imagen suelta tal como la dibuja `#image`.
+pub struct ImageRender {
+    pub image: egui::ColorImage,
+    /// Tamaño natural en puntos (el que tendría sin `width`/`height`).
+    pub size_pt: egui::Vec2,
+    /// Tamaño de origen en píxeles (en SVG/PDF, el de su caja).
+    pub px: (f64, f64),
+    /// Formato según typst («png», «svg», «pdf»…).
+    pub format: String,
+}
+
+/// Renderiza `path` (cualquier formato que acepte `#image`: png, jpg, gif,
+/// webp, svg, pdf) con el propio typst, así se ve igual que en el
+/// documento. El lado mayor queda en `max_px` como mucho.
+pub fn render_image(path: &Path, max_px: f32) -> Result<ImageRender, String> {
+    let root = path.parent().ok_or("ruta sin carpeta")?;
+    let name = path
+        .file_name()
+        .ok_or("ruta sin nombre")?
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"");
+    let src = format!(
+        "#set page(width: auto, height: auto, margin: 0pt, fill: none)\n#image(\"{name}\")\n"
+    );
+    let world = EngineWorld::new(root.to_path_buf(), "__visor__.typ", src);
+    let doc = compile::<PagedDocument>(&world).output.map_err(|errors| {
+        diagnostics::from_source(&world, world.main_id, &errors)
+            .first()
+            .and_then(|d| d.message.lines().next().map(str::to_string))
+            .unwrap_or_else(|| "no se pudo leer la imagen".into())
+    })?;
+    let page = doc.pages().first().ok_or("sin página")?;
+    let size = page.frame.size();
+    let size_pt = egui::vec2(size.x.to_pt() as f32, size.y.to_pt() as f32);
+    let img = find_image(&page.frame).ok_or("sin imagen")?;
+    let px = (img.width(), img.height());
+    // `Vector(Svg)`, `Raster(Exchange(Png))`… → «svg», «png».
+    let format = format!("{:?}", img.format()).to_lowercase();
+    let format = format.rsplit('(').next().unwrap_or("").trim_end_matches(')').to_string();
+    // Escala: en mapas de bits, sus px de origen (al menos 2 px/pt); los
+    // vectoriales, a media resolución máxima para que aguanten el zoom.
+    let long = size_pt.x.max(size_pt.y).max(1.0);
+    let native = if matches!(format.as_str(), "svg" | "pdf") {
+        (max_px / 2.0 / long).min(16.0)
+    } else {
+        (px.0.max(px.1) as f32 / long).max(2.0)
+    };
+    let scale = native.min(max_px / long).max(0.05);
+    let pix = typst_render::render(
+        page,
+        &typst_render::RenderOptions {
+            pixel_per_pt: Scalar::new(scale as f64),
+            render_bleed: false,
+        },
+    );
+    Ok(ImageRender {
+        image: pixmap_to_image(&pix),
+        size_pt,
+        px,
+        format,
+    })
+}
+
+fn find_image(frame: &Frame) -> Option<typst::visualize::Image> {
+    frame.items().find_map(|(_, item)| match item {
+        FrameItem::Image(img, _, _) => Some(img.clone()),
+        FrameItem::Group(g) => find_image(&g.frame),
+        _ => None,
+    })
+}
+
 /// Pixmap premultiplicado de tiny-skia → `ColorImage` sobre fondo blanco
 /// (como la vista previa del PDF).
 fn pixmap_to_image(pix: &tiny_skia::Pixmap) -> egui::ColorImage {

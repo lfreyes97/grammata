@@ -635,11 +635,11 @@ fn row(
             st.files.selected = Some(it.path.clone());
             if it.is_dir {
                 *toggle = Some(it.path.clone());
-            } else if openable(&it.path) {
+            } else if openable(&it.path) || crate::image_view::is_viewable(&it.path) {
                 *open = Some(it.path.clone());
             } else {
                 st.set_status(
-                    "Solo los archivos de texto se abren en el editor",
+                    "Solo se abren archivos de texto e imágenes",
                     StatusKind::Info,
                 );
             }
@@ -658,7 +658,9 @@ fn row(
                     ui.close();
                 }
                 ui.separator();
-            } else if openable(&it.path) && ui.button("Abrir").clicked() {
+            } else if (openable(&it.path) || crate::image_view::is_viewable(&it.path))
+                && ui.button("Abrir").clicked()
+            {
                 *open = Some(it.path.clone());
                 ui.close();
             }

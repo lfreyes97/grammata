@@ -26,6 +26,8 @@ use std::time::{Duration, Instant};
 
 const DEFAULT_FONT: f32 = 14.0;
 const MAX_OPEN_BYTES: u64 = 5_000_000;
+/// Pausa al escribir antes de autoguardar.
+const AUTOSAVE_DELAY: Duration = Duration::from_millis(800);
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum StatusKind {
@@ -115,6 +117,13 @@ pub struct State {
     pub snippet_libs: crate::snippet_lib::Libs,
     pub fmt: FormatBar,
     force_compile: bool,
+    /// Documento fijado en la vista previa: se compila y muestra él aunque
+    /// se edite otro (p. ej. `main.typ` mientras se escribe un capítulo).
+    pub pinned: Option<DocId>,
+    /// Sube al guardar un archivo que no es el principal (ver `Key::disk`).
+    pub disk_gen: u64,
+    /// Pestañas del visor de imágenes.
+    pub images: crate::image_view::Images,
 }
 
 impl State {
@@ -134,8 +143,58 @@ impl State {
             .compile_root(self.prefs.files_root.as_deref())
     }
 
+    /// Documento que se compila y se ve en la vista previa: el fijado o,
+    /// sin fijar, el actual.
+    pub(crate) fn main_doc(&self) -> &Doc {
+        self.pinned
+            .and_then(|id| self.docs.get(id))
+            .unwrap_or_else(|| self.docs.cur())
+    }
+
+    pub(crate) fn main_key(&self) -> Key {
+        let doc = self.main_doc();
+        Key {
+            doc: doc.id,
+            rev: doc.rev,
+            disk: self.disk_gen,
+        }
+    }
+
+    pub(crate) fn main_root(&self) -> PathBuf {
+        self.main_doc()
+            .compile_root(self.prefs.files_root.as_deref())
+    }
+
+    /// Nombre del documento fijado (si lo hay y sigue abierto).
+    pub(crate) fn pinned_name(&self) -> Option<String> {
+        self.pinned.and_then(|id| self.docs.get(id)).map(Doc::fname)
+    }
+
+    /// Ruta del documento actual en las entradas synctex del principal:
+    /// `None` si es el principal, `Some(relativa a la raíz)` si es un
+    /// incluido. `Err` si no está bajo la raíz (no puede aparecer).
+    pub(crate) fn sync_file(&self) -> Result<Option<String>, ()> {
+        let (cur, main) = (self.docs.cur(), self.main_doc());
+        if cur.id == main.id {
+            return Ok(None);
+        }
+        let root = self.main_root();
+        cur.path
+            .as_deref()
+            .and_then(|p| p.strip_prefix(&root).ok())
+            .map(|r| {
+                Some(
+                    r.components()
+                        .map(|c| c.as_os_str().to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join("/"),
+                )
+            })
+            .ok_or(())
+    }
+
     fn preview_info(&self) -> preview::Info {
-        let doc = self.docs.cur();
+        let doc = self.main_doc();
         let built = self.compiler.built.get(&doc.id);
         preview::Info {
             compiling: self.compiler.in_flight.is_some_and(|k| k.doc == doc.id),
@@ -143,10 +202,15 @@ impl State {
             errors: built
                 .map(|b| diagnostics::count(&b.diagnostics).0)
                 .unwrap_or(0),
-            stale: self.preview.loaded.is_some_and(|k| k.rev != doc.rev),
+            stale: self.preview.loaded.is_some_and(|k| k != self.main_key()),
             has_build: built.is_some(),
             sync: built.map(|b| b.sync.clone()).unwrap_or_default(),
-            root: self.compile_root(),
+            root: self.main_root(),
+            main_path: (doc.id != self.docs.cur_id())
+                .then(|| doc.path.clone())
+                .flatten(),
+            pinned: self.pinned_name(),
+            can_pin: self.docs.cur().path.is_some(),
         }
     }
 }
@@ -157,6 +221,8 @@ pub struct App {
     dock_style: Option<(bool, egui_dock::Style)>,
     last_persist: Instant,
     title: String,
+    /// Última rev de cada doc que el autoguardado ya revisó.
+    autosave_seen: std::collections::HashMap<DocId, u64>,
 }
 
 impl App {
@@ -203,7 +269,7 @@ impl App {
         );
         let prefs = session.prefs;
         theme::apply(&ctx, prefs.dark);
-        let st = State {
+        let mut st = State {
             docs,
             prefs,
             compiler: Compiler::new(ctx.clone()),
@@ -232,7 +298,16 @@ impl App {
             scratch: scratch::Scratch::from_session(scratch_text, scratch_equation, scratch_block),
             fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
+            pinned: None,
+            disk_gen: 0,
+            images: crate::image_view::Images::new(ctx.clone()),
         };
+        st.pinned = st
+            .prefs
+            .pinned
+            .as_deref()
+            .and_then(|p| st.docs.by_path(p))
+            .map(|i| st.docs.list[i].id);
 
         Self {
             st,
@@ -240,6 +315,7 @@ impl App {
             dock_style: None,
             last_persist: Instant::now(),
             title: String::new(),
+            autosave_seen: Default::default(),
         }
     }
 
@@ -266,6 +342,11 @@ impl App {
         self.st.prefs.scratch_text = self.st.scratch.text.clone();
         self.st.prefs.scratch_equation = self.st.scratch.equation;
         self.st.prefs.scratch_block = self.st.scratch.block;
+        self.st.prefs.pinned = self
+            .st
+            .pinned
+            .and_then(|id| self.st.docs.get(id))
+            .and_then(|d| d.path.clone());
         let s = Session::new(
             tabs,
             self.st.docs.current,
@@ -426,7 +507,7 @@ impl App {
     fn compile_tick(&mut self, ctx: &egui::Context) {
         let st = &mut self.st;
         for key in st.compiler.poll() {
-            if key.doc == st.docs.cur_id()
+            if key.doc == st.main_doc().id
                 && let Some(e) = st.compiler.built.get(&key.doc).and_then(|b| {
                     b.diagnostics
                         .iter()
@@ -437,9 +518,9 @@ impl App {
                 st.set_status(format!("{}: {msg}", e.location()), StatusKind::Err);
             }
         }
-        // Vista previa ← último PDF válido del doc actual.
-        let cur = st.docs.cur_id();
-        match st.compiler.built.get(&cur).and_then(|b| b.pdf.clone()) {
+        // Vista previa ← último PDF válido del doc principal.
+        let main = st.main_doc().id;
+        match st.compiler.built.get(&main).and_then(|b| b.pdf.clone()) {
             Some((k, data)) if st.preview.loaded != Some(k) => st.preview.load(k, data),
             None if st.preview.loaded.is_some() => st.preview.clear(),
             _ => {}
@@ -449,11 +530,8 @@ impl App {
         if st.compiler.in_flight.is_some() {
             return;
         }
-        let doc = st.docs.cur();
-        let key = Key {
-            doc: doc.id,
-            rev: doc.rev,
-        };
+        let key = st.main_key();
+        let doc = st.docs.get(key.doc).expect("doc principal");
         let go = if st.force_compile {
             st.force_compile = false;
             true
@@ -469,7 +547,7 @@ impl App {
             false
         };
         if go {
-            let (text, root) = (doc.text.clone(), st.compile_root());
+            let (text, root) = (doc.text.clone(), st.main_root());
             let filename =
                 crate::engine::EngineWorld::filename_for_job(doc.path.as_deref(), &root);
             st.compiler.request(key, text, root, filename);
@@ -643,12 +721,11 @@ impl App {
                     None => self.st.editor.cursor.unwrap_or(0),
                 };
                 let (line, _) = text::char_to_line_col(&doc.text, at);
-                let pos = self
-                    .st
-                    .compiler
-                    .built
-                    .get(&doc.id)
-                    .and_then(|b| crate::engine::page_for_line(&b.sync, None, line));
+                let file = self.st.sync_file().ok();
+                let pos = file.and_then(|f| {
+                    let b = self.st.compiler.built.get(&self.st.main_doc().id)?;
+                    crate::engine::page_for_line(&b.sync, f.as_deref(), line)
+                });
                 match pos {
                     Some((page, y)) => {
                         layout::show_panel(&mut self.dock, Panel::Preview, cur);
@@ -672,7 +749,9 @@ impl App {
             Action::TogglePanel(p) => layout::toggle_panel(&mut self.dock, p, cur),
             Action::ShowPanel(p) => layout::show_panel(&mut self.dock, p, cur),
             Action::ApplyPreset(p) => {
-                let tabs = self.st.docs.list.iter().map(|d| Tab::Doc(d.id)).collect();
+                let tabs = (self.st.docs.list.iter().map(|d| Tab::Doc(d.id)))
+                    .chain(self.st.images.list.iter().map(|t| Tab::Image(t.id)))
+                    .collect();
                 self.dock = p.build(tabs);
                 layout::focus_doc(&mut self.dock, cur);
                 self.st.needs_persist = true;
@@ -694,6 +773,17 @@ impl App {
                 self.st.prefs.wrap = !self.st.prefs.wrap;
                 self.st.needs_persist = true;
             }
+            Action::TogglePin => {
+                self.st.pinned = match self.st.pinned {
+                    Some(_) => None,
+                    None => self.st.docs.cur().path.is_some().then_some(cur),
+                };
+                self.st.needs_persist = true;
+            }
+            Action::ToggleAutoSave => {
+                self.st.prefs.auto_save = !self.st.prefs.auto_save;
+                self.st.needs_persist = true;
+            }
             Action::ToggleAuto => {
                 self.st.prefs.auto_compile = !self.st.prefs.auto_compile;
                 self.st.needs_persist = true;
@@ -712,6 +802,21 @@ impl App {
                 self.st.needs_persist = true;
             }
             Action::InsertSnippet(body) => self.insert(&body, false),
+            Action::InsertImage(img) => {
+                let doc = self.st.docs.cur();
+                match crate::image_view::image_ref(&img, doc.path.as_deref(), &self.st.compile_root())
+                {
+                    Some(r) => {
+                        let r = r.replace('\\', "\\\\").replace('"', "\\\"");
+                        self.insert(&format!("#image(\"{r}\")${{}}"), false);
+                        layout::focus_doc(&mut self.dock, cur);
+                    }
+                    None => self.st.set_status(
+                        "La imagen está fuera de la carpeta del proyecto: typst no puede leerla",
+                        StatusKind::Err,
+                    ),
+                }
+            }
             Action::InsertLibSnippet { body, preamble } => {
                 if let Some(p) = preamble {
                     self.prepend(&p);
@@ -991,6 +1096,14 @@ impl App {
     /// Abre `p` (o enfoca su pestaña). Devuelve si quedó como doc actual.
     fn open_path(&mut self, p: PathBuf) -> bool {
         let p = std::fs::canonicalize(&p).unwrap_or(p);
+        if crate::image_view::is_viewable(&p) {
+            let tab = Tab::Image(self.st.images.open(p));
+            if self.dock.find_tab(&tab).is_none() {
+                layout::add_tab(&mut self.dock, tab, self.st.docs.cur_id());
+            }
+            layout::focus_tab(&mut self.dock, tab);
+            return false;
+        }
         if let Some(i) = self.st.docs.by_path(&p) {
             let id = self.st.docs.list[i].id;
             self.switch_to_id(id);
@@ -1053,26 +1166,68 @@ impl App {
             }
         };
         let Some(dest) = dest else { return false };
-        let text = doc.text.clone();
-        match std::fs::write(&dest, &text) {
+        match self.write_doc(id, &dest) {
             Ok(()) => {
-                let d = self.st.docs.get_mut(id).expect("doc");
-                let moved = d.path.as_ref() != Some(&dest);
-                d.saved = text;
-                d.path = Some(dest.clone());
-                if moved {
-                    // Cambió la carpeta raíz: las rutas relativas se resuelven distinto.
-                    d.touch();
-                }
                 self.st
                     .set_status(format!("Guardado {}", dest.display()), StatusKind::Ok);
-                self.st.needs_persist = true;
                 true
             }
             Err(e) => {
                 self.st
                     .set_status(format!("No se pudo guardar: {e}"), StatusKind::Err);
                 false
+            }
+        }
+    }
+
+    /// Escribe el doc en `dest` y lo marca guardado (sin mensaje).
+    fn write_doc(&mut self, id: DocId, dest: &Path) -> std::io::Result<()> {
+        let text = self.st.docs.get(id).expect("doc").text.clone();
+        std::fs::write(dest, &text)?;
+        let d = self.st.docs.get_mut(id).expect("doc");
+        let moved = d.path.as_deref() != Some(dest);
+        d.saved = text;
+        d.path = Some(dest.to_path_buf());
+        if moved {
+            // Cambió la carpeta raíz: las rutas relativas se resuelven distinto.
+            d.touch();
+        }
+        // Un incluido guardado cambia lo que compila el principal.
+        if id != self.st.main_doc().id {
+            self.st.disk_gen += 1;
+        }
+        self.st.needs_persist = true;
+        Ok(())
+    }
+
+    /// Autoguardado: los docs con ruta y cambios se escriben tras
+    /// `AUTOSAVE_DELAY` sin teclear. Un fallo se avisa una vez por versión.
+    fn autosave(&mut self, ctx: &egui::Context) {
+        if !self.st.prefs.auto_save {
+            return;
+        }
+        let mut due = Vec::new();
+        for d in &self.st.docs.list {
+            if d.path.is_none() || self.autosave_seen.get(&d.id) == Some(&d.rev) {
+                continue;
+            }
+            let elapsed = d.last_edit.elapsed();
+            if elapsed < AUTOSAVE_DELAY {
+                ctx.request_repaint_after(AUTOSAVE_DELAY - elapsed);
+                continue;
+            }
+            due.push((d.id, d.rev, d.path.clone().expect("ruta")));
+        }
+        for (id, rev, path) in due {
+            self.autosave_seen.insert(id, rev);
+            if !self.st.docs.get(id).is_some_and(Doc::modified) {
+                continue;
+            }
+            if let Err(e) = self.write_doc(id, &path) {
+                self.st.set_status(
+                    format!("No se pudo autoguardar {}: {e}", path.display()),
+                    StatusKind::Err,
+                );
             }
         }
     }
@@ -1092,6 +1247,9 @@ impl App {
         }
         self.st.docs.remove(id);
         self.st.compiler.forget(id);
+        if self.st.pinned == Some(id) {
+            self.st.pinned = None;
+        }
         let cur = self.st.docs.cur_id();
         layout::focus_doc(&mut self.dock, cur);
         self.on_doc_changed();
@@ -1101,8 +1259,9 @@ impl App {
         self.export_with(fmt, None);
     }
 
+    /// Exporta el documento principal (el fijado si lo hay: lo que se ve).
     fn export_with(&mut self, fmt: &str, ppi: Option<u32>) {
-        let doc = self.st.docs.cur();
+        let doc = self.st.main_doc();
         let stem = doc
             .path
             .as_deref()
@@ -1134,10 +1293,7 @@ impl App {
         }
 
         // PDF al día: se copia el de la vista previa, sin recompilar.
-        let key = Key {
-            doc: doc.id,
-            rev: doc.rev,
-        };
+        let key = self.st.main_key();
         if fmt == "pdf"
             && let Some((k, data)) = self
                 .st
@@ -1158,7 +1314,7 @@ impl App {
             return;
         }
         // PDF desactualizado, PNG o SVG: se recompila en proceso.
-        let root = self.st.compile_root();
+        let root = self.st.main_root();
         let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref(), &root);
         match crate::engine::export_pages(&doc.text, &root, &filename, &dest, fmt, ppi) {
             Ok(()) => self
@@ -1242,6 +1398,7 @@ impl eframe::App for App {
             editor::find_step(&mut self.st, dir);
         }
         self.run_actions(&ctx);
+        self.autosave(&ctx);
         self.compile_tick(&ctx);
 
         egui::Panel::top("top-bar")
@@ -1349,12 +1506,12 @@ impl TabViewer for Viewer<'_> {
                 None => "(cerrado)".into(),
             },
             Tab::Panel(Panel::Problems) => {
-                let cur = self.st.docs.cur_id();
+                let main = self.st.main_doc().id;
                 let n = self
                     .st
                     .compiler
                     .built
-                    .get(&cur)
+                    .get(&main)
                     .map(|b| b.diagnostics.len())
                     .unwrap_or(0);
                 let p = Panel::Problems;
@@ -1365,6 +1522,10 @@ impl TabViewer for Viewer<'_> {
                 }
             }
             Tab::Panel(p) => format!("{} {}", p.icon(), p.title()).into(),
+            Tab::Image(id) => match self.st.images.get(id) {
+                Some(t) => format!("{} {}", icon::IMAGE, t.name()).into(),
+                None => "(cerrada)".into(),
+            },
         }
     }
 
@@ -1383,6 +1544,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Panel(Panel::Templates) => templates::panel(st, ui),
             Tab::Panel(Panel::Files) => files::panel(st, ui),
             Tab::Panel(Panel::Scratch) => scratch::panel(st, ui),
+            Tab::Image(id) => crate::image_view::tab(st, ui, id),
         }
     }
 
@@ -1424,6 +1586,10 @@ impl TabViewer for Viewer<'_> {
                 OnCloseResponse::Ignore
             }
             Tab::Panel(_) => OnCloseResponse::Close,
+            Tab::Image(id) => {
+                self.st.images.close(id);
+                OnCloseResponse::Close
+            }
         }
     }
 
