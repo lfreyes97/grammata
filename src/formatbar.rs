@@ -38,6 +38,9 @@ pub struct FormatBar {
     pub font: String,
     pub url: String,
     pub link_open: bool,
+    /// Tipografía/alineación como `#set` en el cursor (desde ahí en adelante)
+    /// en vez de envolver la selección.
+    pub set_mode: bool,
     pub fonts: Option<Vec<String>>,
     pub font_filter: String,
     fonts_rx: Option<std::sync::mpsc::Receiver<Vec<String>>>,
@@ -52,6 +55,7 @@ impl Default for FormatBar {
             font: String::new(),
             url: String::new(),
             link_open: false,
+            set_mode: false,
             fonts: None,
             font_filter: String::new(),
             fonts_rx: None,
@@ -294,6 +298,25 @@ pub fn toggle_wrap(text: &str, a: usize, b: usize, mark: Mark) -> (String, usize
     let inner: String = chars[a..b].iter().collect();
     let wrapped = format!("{o}{inner}{c}");
     (splice(a, b, &wrapped), a + len(o), b + len(o))
+}
+
+/// Inserta la regla `#set …` en su propia línea en el char `pos`: tal cual si
+/// el cursor está al principio de línea (solo espacios antes), y si no, en una
+/// línea aparte a continuación del cursor. Devuelve (texto, cursor tras la regla).
+pub fn insert_set_line(text: &str, pos: usize, rule: &str) -> (String, usize) {
+    let chars: Vec<char> = text.chars().collect();
+    let pos = pos.min(chars.len());
+    let line_start = chars[..pos].iter().rposition(|&c| c == '\n').map_or(0, |i| i + 1);
+    let at_start = chars[line_start..pos].iter().all(|c| c.is_whitespace());
+    let ins = if at_start {
+        format!("{rule}\n")
+    } else {
+        format!("\n{rule}\n")
+    };
+    let mut out: String = chars[..pos].iter().collect();
+    out.push_str(&ins);
+    out.extend(&chars[pos..]);
+    (out, pos + ins.chars().count())
 }
 
 /// Nivel de encabezado (nº de `=`) de la línea que contiene el char `cursor`;
@@ -547,6 +570,25 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             },
         );
         widgets::vsep(ui, &pal);
+        // Ámbito de tipografía y alineación: selección o `#set` desde el cursor.
+        if widgets::icon_toggle(
+            ui,
+            st.fmt.set_mode,
+            icon::TEXT_AA,
+            "Tipografía como #set desde el cursor (no solo la selección)",
+        )
+        .clicked()
+        {
+            st.fmt.set_mode = !st.fmt.set_mode;
+        }
+        let set_mode = st.fmt.set_mode;
+        let apply = move |inline: String, rule: String| {
+            if set_mode {
+                Action::InsertSetRule(rule)
+            } else {
+                Action::InsertSnippet(inline)
+            }
+        };
         // Tamaño de fuente.
         let size = RichText::new(format!("{} pt", fmt_pt(st.fmt.size_pt))).small();
         widgets::combo(ui, &pal, size, 64.0, "Tamaño", |ui| {
@@ -557,10 +599,10 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                     .clicked()
                 {
                     st.fmt.size_pt = *s;
-                    act = Some(Action::InsertSnippet(format!(
-                        "#text(size: {}pt)[${{sel}}]",
-                        fmt_pt(*s)
-                    )));
+                    act = Some(apply(
+                        format!("#text(size: {}pt)[${{sel}}]", fmt_pt(*s)),
+                        format!("#set text(size: {}pt)", fmt_pt(*s)),
+                    ));
                     ui.close();
                 }
             }
@@ -606,9 +648,10 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                             if ui.selectable_label(*f == st.fmt.font, f).clicked() {
                                 st.fmt.font = f.clone();
                                 let f = f.replace('\\', "\\\\").replace('"', "\\\"");
-                                act = Some(Action::InsertSnippet(format!(
-                                    "#text(font: \"{f}\")[${{sel}}]"
-                                )));
+                                act = Some(apply(
+                                    format!("#text(font: \"{f}\")[${{sel}}]"),
+                                    format!("#set text(font: \"{f}\")"),
+                                ));
                                 ui.close();
                             }
                         }
@@ -642,9 +685,10 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                                 .clicked()
                             {
                                 st.fmt.color_hex = h.to_string();
-                                act = Some(Action::InsertSnippet(format!(
-                                    "#text(fill: rgb(\"{h}\"))[${{sel}}]"
-                                )));
+                                act = Some(apply(
+                                    format!("#text(fill: rgb(\"{h}\"))[${{sel}}]"),
+                                    format!("#set text(fill: rgb(\"{h}\"))"),
+                                ));
                                 ui.close();
                             }
                             if i % 3 == 2 {
@@ -659,9 +703,10 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                         let h = color_to_hex(st.fmt.custom);
                         st.fmt.color_hex = h.clone();
                         st.fmt.custom = hex_to_color(&h).unwrap_or(st.fmt.custom);
-                        act = Some(Action::InsertSnippet(format!(
-                            "#text(fill: rgb(\"{h}\"))[${{sel}}]"
-                        )));
+                        act = Some(apply(
+                            format!("#text(fill: rgb(\"{h}\"))[${{sel}}]"),
+                            format!("#set text(fill: rgb(\"{h}\"))"),
+                        ));
                         ui.close();
                     }
                 });
@@ -690,7 +735,12 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                     .add(egui::Button::new(format!("{ic}  {name}")).frame_when_inactive(false))
                     .clicked()
                 {
-                    act = Some(Action::InsertSnippet(format!("#align({name})[${{sel}}]")));
+                    let rule = if name == "justify" {
+                        "#set par(justify: true)".to_string()
+                    } else {
+                        format!("#set align({name})")
+                    };
+                    act = Some(apply(format!("#align({name})[${{sel}}]"), rule));
                     ui.close();
                 }
             }
@@ -863,6 +913,20 @@ fn image_path(root: &std::path::Path, img: &std::path::Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn set_en_el_cursor() {
+        assert_eq!(
+            insert_set_line("uno\ndos", 4, "#set text(size: 9pt)"),
+            ("uno\n#set text(size: 9pt)\ndos".into(), 25)
+        );
+        // A mitad de línea: línea aparte tras el cursor.
+        assert_eq!(
+            insert_set_line("ab", 1, "#set x"),
+            ("a\n#set x\nb".into(), 9)
+        );
+        assert_eq!(insert_set_line("", 0, "#set x"), ("#set x\n".into(), 7));
+    }
 
     #[test]
     fn marcas_alternan() {

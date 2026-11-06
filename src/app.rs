@@ -880,6 +880,7 @@ impl App {
             } => self.replace_text(doc, start, &expect, text),
             Action::PrefixLines(prefix) => self.prefix_lines(&prefix),
             Action::ToggleMark(mark) => self.toggle_mark(mark),
+            Action::InsertSetRule(rule) => self.insert_set_rule(&rule),
             Action::NewSnippet => {
                 let body = self.selected_text();
                 self.st.modal = Some(Modal::EditSnippet(snippets::Editing {
@@ -936,6 +937,29 @@ impl App {
             doc: id,
             start: na,
             end: nb,
+            focus: true,
+        });
+        layout::focus_doc(&mut self.dock, id);
+        self.st.needs_persist = true;
+    }
+
+    fn insert_set_rule(&mut self, rule: &str) {
+        let doc = self.st.docs.cur();
+        let len = doc.text.chars().count();
+        let at = match (self.st.editor.selection, self.st.editor.cursor) {
+            (Some((a, b)), _) => a.min(b).min(len),
+            (None, Some(c)) => c.min(len),
+            (None, None) => len,
+        };
+        let id = doc.id;
+        let (text, cur) = crate::formatbar::insert_set_line(&doc.text, at, rule);
+        let d = self.st.docs.cur_mut();
+        d.text = text;
+        d.touch();
+        self.st.editor.goto = Some(Goto {
+            doc: id,
+            start: cur,
+            end: cur,
             focus: true,
         });
         layout::focus_doc(&mut self.dock, id);
