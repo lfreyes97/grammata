@@ -58,6 +58,16 @@ pub enum Modal {
     About,
     EditSnippet(snippets::Editing),
     NewProject(crate::project::NewProject),
+    Export(ExportDlg),
+}
+
+/// Opciones del diálogo de exportación. `total`: páginas de la vista previa
+/// (0 si aún no hay), para validar el rango.
+pub struct ExportDlg {
+    pub fmt: String,
+    pub pages: String,
+    pub ppi: u32,
+    pub total: usize,
 }
 
 const MAX_RECENT_SYMBOLS: usize = 18;
@@ -441,7 +451,7 @@ impl App {
                 a.push(Action::GotoLinePrompt)
             }
             if k(M::CTRL, K::E) {
-                a.push(Action::ExportPdf)
+                a.push(Action::Export("pdf".into()))
             }
             if k(M::NONE, K::F5) {
                 a.push(Action::Compile)
@@ -724,10 +734,15 @@ impl App {
             Action::Compile => {
                 self.st.force_compile = true;
             }
-            Action::ExportPdf => self.export_with(ctx, "pdf", None),
-            Action::ExportPdfA => self.export_with(ctx, "pdfa", None),
-            Action::ExportPng(ppi) => self.export_with(ctx, "png", Some(ppi)),
-            Action::ExportSvg => self.export_with(ctx, "svg", None),
+            Action::Export(fmt) => {
+                self.st.modal = Some(Modal::Export(ExportDlg {
+                    fmt,
+                    pages: String::new(),
+                    ppi: 144,
+                    total: self.st.preview.page_count(),
+                }));
+            }
+            Action::ExportRun { fmt, ppi, pages } => self.export_with(ctx, &fmt, ppi, &pages),
             Action::Find => {
                 let f = &mut self.st.editor.find;
                 f.open = true;
@@ -1336,7 +1351,7 @@ impl App {
     /// Exporta el documento principal (el fijado si lo hay: lo que se ve).
     /// `fmt`: `pdf`, `pdfa`, `png` o `svg`. La compilación va en un hilo; el
     /// resultado llega por `export_rx` (ver `compile_tick`).
-    fn export_with(&mut self, ctx: &egui::Context, fmt: &str, ppi: Option<u32>) {
+    fn export_with(&mut self, ctx: &egui::Context, fmt: &str, ppi: Option<u32>, pages: &[usize]) {
         if self.st.export_rx.is_some() {
             self.st
                 .set_status("Ya hay una exportación en curso", StatusKind::Info);
@@ -1350,7 +1365,12 @@ impl App {
             .and_then(Path::file_stem)
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "documento".into());
-        let multi = !ext.eq("pdf") && self.st.preview.page_count() > 1;
+        let n_pages = if pages.is_empty() {
+            self.st.preview.page_count()
+        } else {
+            pages.len()
+        };
+        let multi = ext != "pdf" && n_pages > 1;
         let name = match (multi, fmt) {
             (true, _) => format!("{stem}-{{p}}.{ext}"),
             (_, "pdfa") => format!("{stem}-pdfa.{ext}"),
@@ -1360,11 +1380,12 @@ impl App {
             .add_filter(ext.to_uppercase(), &[ext])
             .set_file_name(name);
         // Última carpeta de exportación; si no, la del documento.
-        let dir = self
-            .st
-            .last_export_dir
-            .clone()
-            .or_else(|| doc_path.as_deref().and_then(Path::parent).map(Path::to_path_buf));
+        let dir = self.st.last_export_dir.clone().or_else(|| {
+            doc_path
+                .as_deref()
+                .and_then(Path::parent)
+                .map(Path::to_path_buf)
+        });
         if let Some(dir) = dir {
             dlg = dlg.set_directory(dir);
         }
@@ -1384,6 +1405,7 @@ impl App {
         // PDF al día: se copia el de la vista previa, sin recompilar.
         let key = self.st.main_key();
         if fmt == "pdf"
+            && pages.is_empty()
             && let Some((k, data)) = self
                 .st
                 .compiler
@@ -1405,14 +1427,19 @@ impl App {
         // PDF/A, PDF desactualizado, PNG o SVG: se recompila en un hilo.
         let root = self.st.main_root();
         let filename = crate::engine::EngineWorld::filename_for_job(doc_path.as_deref(), &root);
-        let (text, fmt) = (self.st.main_doc().text.clone(), fmt.to_string());
+        let (text, fmt, pages) = (
+            self.st.main_doc().text.clone(),
+            fmt.to_string(),
+            pages.to_vec(),
+        );
         let (tx, rx) = std::sync::mpsc::channel();
         let ctx = ctx.clone();
         let shown = dest.clone();
         let spawned = std::thread::Builder::new()
             .name("export".into())
             .spawn(move || {
-                let r = crate::engine::export_pages(&text, &root, &filename, &dest, &fmt, ppi);
+                let r =
+                    crate::engine::export_pages(&text, &root, &filename, &dest, &fmt, ppi, &pages);
                 let _ = tx.send(r.map(|()| shown));
                 ctx.request_repaint();
             });

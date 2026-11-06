@@ -61,11 +61,14 @@ pub enum Action {
     PrevDoc,
     SwitchTo(usize),
     Compile,
-    ExportPdf,
-    /// PDF/A-2b (archivo).
-    ExportPdfA,
-    ExportPng(u32),
-    ExportSvg,
+    /// Abre el diálogo de exportación de `fmt` (`pdf`, `pdfa`, `png`, `svg`).
+    Export(String),
+    /// Exporta con lo elegido en el diálogo (`pages` vacío = todas).
+    ExportRun {
+        fmt: String,
+        ppi: Option<u32>,
+        pages: Vec<usize>,
+    },
     Find,
     GotoLinePrompt,
     /// Salta a L:C (desde 1) del documento actual.

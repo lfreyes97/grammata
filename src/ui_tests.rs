@@ -574,6 +574,7 @@ fn plantillas_y_simbolos_compilan() {
         &dir.join("imagen.png"),
         "png",
         Some(72),
+        &[],
     );
     assert!(out.is_ok(), "{out:?}");
     std::fs::write(
@@ -872,4 +873,32 @@ fn fijar_vista_previa_y_autoguardado() {
 
 fn t_loading(t: &crate::image_view::ImageTab) -> bool {
     t.loading()
+}
+
+#[test]
+#[ignore = "necesita GPU"]
+fn dialogo_de_exportacion() {
+    // SAFETY: como los demás tests de UI, aísla la sesión antes de crear la app.
+    let tmp = std::env::temp_dir().join(format!("typst-editor-exp-{}", std::process::id()));
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(3);
+    h.state_mut().st.actions.push(Action::Export("png".into()));
+    h.run_steps(3);
+    let Some(Modal::Export(d)) = &mut h.state_mut().st.modal else {
+        panic!("el diálogo de exportación debía abrirse");
+    };
+    assert_eq!((d.fmt.as_str(), d.ppi), ("png", 144));
+    d.total = 6;
+    d.pages = "2-3, 5".into();
+    h.run_steps(3);
+    shot(&mut h, "exportar-png");
+    if let Some(Modal::Export(d)) = &mut h.state_mut().st.modal {
+        d.pages = "9".into();
+    }
+    h.run_steps(3);
+    shot(&mut h, "exportar-error");
+    // Un rango inválido no exporta (el botón está desactivado).
+    assert!(h.state().st.actions.is_empty());
+    assert!(matches!(h.state().st.modal, Some(Modal::Export(_))));
 }

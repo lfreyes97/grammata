@@ -497,6 +497,7 @@ pub fn export_pages(
     dest_template: &Path,
     fmt: &str,
     ppi: Option<u32>,
+    pages: &[usize],
 ) -> Result<(), String> {
     let world = EngineWorld::new(root.to_path_buf(), filename, text.to_string());
     let warned = compile::<PagedDocument>(&world);
@@ -510,8 +511,25 @@ pub fn export_pages(
     if doc.pages().is_empty() {
         return Err("el documento no tiene páginas".to_string());
     }
+    if let Some(&p) = pages.iter().find(|&&p| p > doc.pages().len()) {
+        return Err(format!(
+            "la página {p} no existe: el documento tiene {}",
+            doc.pages().len()
+        ));
+    }
     if fmt == "pdf" || fmt == "pdfa" {
         let mut opts = typst_pdf::PdfOptions::default();
+        if !pages.is_empty() {
+            // typst no admite un rango con el PDF etiquetado (accesibilidad).
+            opts.tagged = false;
+            opts.page_ranges = Some(typst::layout::PageRanges::new(
+                pages
+                    .iter()
+                    .filter_map(|&p| std::num::NonZeroUsize::new(p))
+                    .map(|n| Some(n)..=Some(n))
+                    .collect(),
+            ));
+        }
         if fmt == "pdfa" {
             opts.standards = typst_pdf::PdfStandards::new(&[typst_pdf::PdfStandard::A_2b])
                 .map_err(|e| e.message().to_string())?;
@@ -525,8 +543,16 @@ pub fn export_pages(
         return std::fs::write(dest_template, bytes)
             .map_err(|e| format!("no se pudo escribir {}: {e}", dest_template.display()));
     }
-    let multi = doc.pages().len() > 1;
+    // Los archivos conservan el número de página original (`doc-5.png`).
+    let multi = if pages.is_empty() {
+        doc.pages().len()
+    } else {
+        pages.len()
+    } > 1;
     for (i, page) in doc.pages().iter().enumerate() {
+        if !pages.is_empty() && !pages.contains(&(i + 1)) {
+            continue;
+        }
         let bytes: Vec<u8> = match fmt {
             "svg" => typst_svg::svg(page, &typst_svg::SvgOptions::default()).into_bytes(),
             _ => {
@@ -550,6 +576,60 @@ pub fn export_pages(
             .map_err(|e| format!("no se pudo escribir {}: {e}", dest.display()))?;
     }
     Ok(())
+}
+
+/// Páginas de una especificación como `1-3, 5, 8-` (1-based; `-4` = hasta la 4,
+/// `8-` = desde la 8). Devuelve las páginas ordenadas y sin repetir; vacía
+/// (o en blanco) significa todas. Con `total` > 0 se comprueba el límite.
+pub fn parse_pages(spec: &str, total: usize) -> Result<Vec<usize>, String> {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return Ok(Vec::new());
+    }
+    let num = |t: &str| -> Result<usize, String> {
+        match t.trim().parse::<usize>() {
+            Ok(0) => Err("las páginas empiezan en 1".to_string()),
+            Ok(n) => Ok(n),
+            Err(_) => Err(format!("«{}» no es un número de página", t.trim())),
+        }
+    };
+    let mut out = Vec::new();
+    for part in spec
+        .split([',', ';'])
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        let (a, b) = match part.split_once('-') {
+            None => {
+                let n = num(part)?;
+                (n, n)
+            }
+            Some((a, b)) => {
+                let a = if a.trim().is_empty() { 1 } else { num(a)? };
+                let b = if b.trim().is_empty() {
+                    if total == 0 {
+                        return Err("«8-» necesita saber cuántas páginas hay".to_string());
+                    }
+                    total
+                } else {
+                    num(b)?
+                };
+                (a, b)
+            }
+        };
+        if a > b {
+            return Err(format!("el rango {a}-{b} está al revés"));
+        }
+        if total > 0 && b > total {
+            return Err(format!(
+                "la página {b} no existe: el documento tiene {total}"
+            ));
+        }
+        out.extend(a..=b);
+    }
+    out.sort_unstable();
+    out.dedup();
+    Ok(out)
 }
 
 fn expand_dest(template: &Path, fmt: &str, multi: bool, page: usize) -> PathBuf {
@@ -676,6 +756,43 @@ mod tests {
     }
 
     #[test]
+    fn rangos_de_paginas() {
+        assert_eq!(parse_pages("", 5), Ok(vec![]));
+        assert_eq!(parse_pages("  ", 0), Ok(vec![]));
+        assert_eq!(parse_pages("1-3, 5, 8-", 9), Ok(vec![1, 2, 3, 5, 8, 9]));
+        assert_eq!(parse_pages("-2", 9), Ok(vec![1, 2]));
+        assert_eq!(parse_pages("3,1,3,2-3", 9), Ok(vec![1, 2, 3]));
+        assert!(parse_pages("0", 9).is_err());
+        assert!(parse_pages("4-2", 9).is_err());
+        assert!(parse_pages("a", 9).is_err());
+        assert!(parse_pages("10", 9).unwrap_err().contains("tiene 9"));
+        // Sin total conocido se acepta lo explícito, no el final abierto.
+        assert_eq!(parse_pages("2-4", 0), Ok(vec![2, 3, 4]));
+        assert!(parse_pages("2-", 0).is_err());
+    }
+
+    #[test]
+    fn exporta_rango_de_paginas() {
+        let dir = std::env::temp_dir().join(format!("typst-editor-rng-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let src = "Uno\n#pagebreak()\nDos\n#pagebreak()\nTres";
+        // PDF: un archivo con solo las páginas pedidas.
+        let pdf = dir.join("r.pdf");
+        export_pages(src, &dir, "main.typ", &pdf, "pdf", None, &[1, 3]).unwrap();
+        let txt = String::from_utf8_lossy(&std::fs::read(&pdf).unwrap()).into_owned();
+        assert!(txt.contains("/Count 2"), "{}", &txt[..txt.len().min(400)]);
+        // PNG: conservan el número original.
+        let png = dir.join("r-{p}.png");
+        export_pages(src, &dir, "main.typ", &png, "png", Some(36), &[2, 3]).unwrap();
+        assert!(!dir.join("r-1.png").exists());
+        assert!(dir.join("r-2.png").exists() && dir.join("r-3.png").exists());
+        // Fuera de rango.
+        let e = export_pages(src, &dir, "main.typ", &png, "png", Some(36), &[4]).unwrap_err();
+        assert!(e.contains("tiene 3"), "{e}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn exporta_pdf_entero() {
         // PDF multipágina: un solo archivo PDF real, no PNG por página.
         let dir = std::env::temp_dir().join(format!("typst-editor-pdf-{}", std::process::id()));
@@ -688,6 +805,7 @@ mod tests {
             &dest,
             "pdf",
             None,
+            &[],
         );
         assert!(out.is_ok(), "{out:?}");
         assert!(std::fs::read(&dest).unwrap().starts_with(b"%PDF"));

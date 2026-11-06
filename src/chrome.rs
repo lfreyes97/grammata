@@ -27,20 +27,16 @@ fn menu_check(ui: &mut egui::Ui, on: bool, text: &str, shortcut: &str) -> bool {
 /// Entradas de exportación, comunes al menú Archivo y al botón de la barra.
 fn export_items(ui: &mut egui::Ui, a: &mut Vec<Action>) {
     if menu_item(ui, icon::FILE_PDF, "PDF…", "Ctrl+E") {
-        a.push(Action::ExportPdf)
+        a.push(Action::Export("pdf".into()))
     }
     if menu_item(ui, icon::FILE_PDF, "PDF/A-2b (archivo)…", "") {
-        a.push(Action::ExportPdfA)
+        a.push(Action::Export("pdfa".into()))
     }
-    ui.menu_button(format!("{}  PNG", icon::FILE_PNG), |ui| {
-        for ppi in [144, 300, 600] {
-            if menu_item(ui, icon::IMAGE, &format!("{ppi} ppi…"), "") {
-                a.push(Action::ExportPng(ppi))
-            }
-        }
-    });
+    if menu_item(ui, icon::FILE_PNG, "PNG…", "") {
+        a.push(Action::Export("png".into()))
+    }
     if menu_item(ui, icon::FILE_SVG, "SVG…", "") {
-        a.push(Action::ExportSvg)
+        a.push(Action::Export("svg".into()))
     }
 }
 
@@ -361,6 +357,10 @@ pub fn status_bar(st: &mut State, ui: &mut egui::Ui) {
     });
 }
 
+fn ui_enter(ctx: &egui::Context) -> bool {
+    ctx.input(|i| i.key_pressed(egui::Key::Enter))
+}
+
 pub fn modals(st: &mut State, ctx: &egui::Context) {
     let pal = theme::palette(ctx);
     let Some(modal) = st.modal.as_mut() else {
@@ -468,6 +468,93 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
         }
         Modal::NewProject(np) => {
             close = crate::project::show(ctx, &pal, np, &mut st.actions);
+        }
+        Modal::Export(d) => {
+            let (title, what) = match d.fmt.as_str() {
+                "pdf" => ("Exportar PDF", "un PDF"),
+                "pdfa" => ("Exportar PDF/A-2b", "un PDF/A-2b, para archivo"),
+                "png" => ("Exportar PNG", "una imagen PNG por página"),
+                _ => ("Exportar SVG", "un SVG por página"),
+            };
+            let parsed = crate::engine::parse_pages(&d.pages, d.total);
+            let png = d.fmt == "png";
+            let go = widgets::modal(ctx, "export", 380.0, |ui| {
+                widgets::modal_header(
+                    ui,
+                    &pal,
+                    icon::EXPORT,
+                    title,
+                    Some(&format!("Se guarda {what}.")),
+                );
+                ui.label(RichText::new("Páginas").small().color(pal.text_dim));
+                let r = ui.add(
+                    egui::TextEdit::singleline(&mut d.pages)
+                        .hint_text("todas · p. ej. 1-3, 5, 8-")
+                        .margin(widgets::FIELD_MARGIN)
+                        .desired_width(f32::INFINITY),
+                );
+                r.request_focus();
+                match &parsed {
+                    Err(e) => {
+                        ui.label(RichText::new(e).small().color(pal.err));
+                    }
+                    Ok(v) => {
+                        let msg = match (v.len(), d.total) {
+                            (0, 0) => "Todas las páginas".to_string(),
+                            (0, n) => format!("Todas las páginas ({n})"),
+                            (1, _) => "1 página".to_string(),
+                            (k, _) => format!("{k} páginas"),
+                        };
+                        ui.label(RichText::new(msg).small().color(pal.text_dim));
+                        if !v.is_empty() && !png && d.fmt != "svg" {
+                            ui.label(
+                                RichText::new(
+                                    "Con rango, el PDF sale sin etiquetas de accesibilidad.",
+                                )
+                                .small()
+                                .color(pal.text_faint),
+                            );
+                        }
+                    }
+                }
+                if png {
+                    ui.add_space(4.0);
+                    ui.label(RichText::new("Resolución").small().color(pal.text_dim));
+                    ui.horizontal(|ui| {
+                        for ppi in [144, 300, 600] {
+                            if ui
+                                .selectable_label(d.ppi == ppi, format!("{ppi} ppi"))
+                                .clicked()
+                            {
+                                d.ppi = ppi;
+                            }
+                        }
+                    });
+                }
+                widgets::modal_footer(ui, |ui| {
+                    let go =
+                        widgets::primary_button(ui, &pal, "Exportar…", parsed.is_ok()).clicked();
+                    if widgets::secondary_button(ui, &pal, "Cancelar").clicked() {
+                        close = true;
+                    }
+                    go
+                })
+            })
+            .inner;
+            let enter = ui_enter(ctx);
+            if let Ok(pages) = &parsed
+                && (go || enter)
+            {
+                st.actions.push(Action::ExportRun {
+                    fmt: d.fmt.clone(),
+                    ppi: png.then_some(d.ppi),
+                    pages: pages.clone(),
+                });
+                close = true;
+            }
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                close = true;
+            }
         }
         Modal::About => {
             let r = widgets::modal(ctx, "about", 420.0, |ui| {
