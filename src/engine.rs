@@ -487,6 +487,7 @@ fn locate_span(
     crate::diagnostics::locate_span(world, main, span)
 }
 
+/// `fmt`: `pdf`, `pdfa` (PDF/A-2b), `png` o `svg`.
 /// Compila y escribe el PDF entero, o PNG/SVG por página expandiendo `{p}`.
 /// Bloqueante como antes (la exportación es una acción explícita).
 pub fn export_pages(
@@ -509,8 +510,13 @@ pub fn export_pages(
     if doc.pages().is_empty() {
         return Err("el documento no tiene páginas".to_string());
     }
-    if fmt == "pdf" {
-        let bytes = typst_pdf::pdf(&doc, &typst_pdf::PdfOptions::default()).map_err(|errors| {
+    if fmt == "pdf" || fmt == "pdfa" {
+        let mut opts = typst_pdf::PdfOptions::default();
+        if fmt == "pdfa" {
+            opts.standards = typst_pdf::PdfStandards::new(&[typst_pdf::PdfStandard::A_2b])
+                .map_err(|e| e.message().to_string())?;
+        }
+        let bytes = typst_pdf::pdf(&doc, &opts).map_err(|errors| {
             errors
                 .first()
                 .map(|e| e.message.to_string())

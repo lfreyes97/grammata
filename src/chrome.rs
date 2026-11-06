@@ -24,6 +24,26 @@ fn menu_check(ui: &mut egui::Ui, on: bool, text: &str, shortcut: &str) -> bool {
     menu_item(ui, ic, text, shortcut)
 }
 
+/// Entradas de exportación, comunes al menú Archivo y al botón de la barra.
+fn export_items(ui: &mut egui::Ui, a: &mut Vec<Action>) {
+    if menu_item(ui, icon::FILE_PDF, "PDF…", "Ctrl+E") {
+        a.push(Action::ExportPdf)
+    }
+    if menu_item(ui, icon::FILE_PDF, "PDF/A-2b (archivo)…", "") {
+        a.push(Action::ExportPdfA)
+    }
+    ui.menu_button(format!("{}  PNG", icon::FILE_PNG), |ui| {
+        for ppi in [144, 300, 600] {
+            if menu_item(ui, icon::IMAGE, &format!("{ppi} ppi…"), "") {
+                a.push(Action::ExportPng(ppi))
+            }
+        }
+    });
+    if menu_item(ui, icon::FILE_SVG, "SVG…", "") {
+        a.push(Action::ExportSvg)
+    }
+}
+
 pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
     let a = &mut st.actions;
@@ -57,19 +77,7 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                 a.push(Action::SaveAs)
             }
             ui.separator();
-            if menu_item(ui, icon::FILE_PDF, "Exportar PDF…", "Ctrl+E") {
-                a.push(Action::ExportPdf)
-            }
-            ui.menu_button(format!("{}  Exportar PNG", icon::FILE_PNG), |ui| {
-                for ppi in [144, 300, 600] {
-                    if menu_item(ui, icon::IMAGE, &format!("{ppi} ppi"), "") {
-                        a.push(Action::ExportPng(ppi))
-                    }
-                }
-            });
-            if menu_item(ui, icon::FILE_SVG, "Exportar SVG…", "") {
-                a.push(Action::ExportSvg)
-            }
+            export_items(ui, a);
             ui.separator();
             if menu_item(ui, icon::X, "Cerrar pestaña", "Ctrl+W") {
                 a.push(Action::CloseCurrent)
@@ -174,19 +182,8 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             a.push(Action::ToggleAuto);
         }
         ui.menu_button(RichText::new(format!("{}  Exportar", icon::EXPORT)), |ui| {
-            ui.set_min_width(200.0);
-            if menu_item(ui, icon::FILE_PDF, "PDF…", "Ctrl+E") {
-                a.push(Action::ExportPdf)
-            }
-            if menu_item(ui, icon::FILE_PNG, "PNG (144 ppi)…", "") {
-                a.push(Action::ExportPng(144))
-            }
-            if menu_item(ui, icon::FILE_PNG, "PNG (300 ppi)…", "") {
-                a.push(Action::ExportPng(300))
-            }
-            if menu_item(ui, icon::FILE_SVG, "SVG…", "") {
-                a.push(Action::ExportSvg)
-            }
+            ui.set_min_width(220.0);
+            export_items(ui, a);
         });
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

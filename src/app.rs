@@ -124,6 +124,9 @@ pub struct State {
     pub disk_gen: u64,
     /// Pestañas del visor de imágenes.
     pub images: crate::image_view::Images,
+    /// Exportación en curso (hilo) y última carpeta elegida.
+    export_rx: Option<std::sync::mpsc::Receiver<Result<PathBuf, String>>>,
+    last_export_dir: Option<PathBuf>,
 }
 
 impl State {
@@ -298,6 +301,8 @@ impl App {
             scratch: scratch::Scratch::from_session(scratch_text, scratch_equation, scratch_block),
             fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
+            export_rx: None,
+            last_export_dir: None,
             pinned: None,
             disk_gen: 0,
             images: crate::image_view::Images::new(ctx.clone()),
@@ -535,6 +540,21 @@ impl App {
             _ => {}
         }
         st.preview.poll(ctx);
+        if let Some(rx) = &st.export_rx {
+            use std::sync::mpsc::TryRecvError;
+            match rx.try_recv() {
+                Ok(Ok(p)) => {
+                    st.export_rx = None;
+                    st.set_status(format!("Exportado {}", p.display()), StatusKind::Ok);
+                }
+                Ok(Err(e)) => {
+                    st.export_rx = None;
+                    st.set_status(format!("Falló la exportación: {e}"), StatusKind::Err);
+                }
+                Err(TryRecvError::Disconnected) => st.export_rx = None,
+                Err(TryRecvError::Empty) => {}
+            }
+        }
 
         if st.compiler.in_flight.is_some() {
             return;
@@ -704,9 +724,10 @@ impl App {
             Action::Compile => {
                 self.st.force_compile = true;
             }
-            Action::ExportPdf => self.export("pdf"),
-            Action::ExportPng(ppi) => self.export_with("png", Some(ppi)),
-            Action::ExportSvg => self.export("svg"),
+            Action::ExportPdf => self.export_with(ctx, "pdf", None),
+            Action::ExportPdfA => self.export_with(ctx, "pdfa", None),
+            Action::ExportPng(ppi) => self.export_with(ctx, "png", Some(ppi)),
+            Action::ExportSvg => self.export_with(ctx, "svg", None),
             Action::Find => {
                 let f = &mut self.st.editor.find;
                 f.open = true;
@@ -1288,41 +1309,52 @@ impl App {
         self.on_doc_changed();
     }
 
-    fn export(&mut self, fmt: &str) {
-        self.export_with(fmt, None);
-    }
-
     /// Exporta el documento principal (el fijado si lo hay: lo que se ve).
-    fn export_with(&mut self, fmt: &str, ppi: Option<u32>) {
+    /// `fmt`: `pdf`, `pdfa`, `png` o `svg`. La compilación va en un hilo; el
+    /// resultado llega por `export_rx` (ver `compile_tick`).
+    fn export_with(&mut self, ctx: &egui::Context, fmt: &str, ppi: Option<u32>) {
+        if self.st.export_rx.is_some() {
+            self.st
+                .set_status("Ya hay una exportación en curso", StatusKind::Info);
+            return;
+        }
+        let ext = if fmt == "pdfa" { "pdf" } else { fmt };
         let doc = self.st.main_doc();
-        let stem = doc
-            .path
+        let (doc_path, doc_id) = (doc.path.clone(), doc.id);
+        let stem = doc_path
             .as_deref()
             .and_then(Path::file_stem)
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_else(|| "documento".into());
-        let multi = fmt != "pdf" && self.st.preview.page_count() > 1;
-        let name = if multi {
-            format!("{stem}-{{p}}.{fmt}")
-        } else {
-            format!("{stem}.{fmt}")
+        let multi = !ext.eq("pdf") && self.st.preview.page_count() > 1;
+        let name = match (multi, fmt) {
+            (true, _) => format!("{stem}-{{p}}.{ext}"),
+            (_, "pdfa") => format!("{stem}-pdfa.{ext}"),
+            _ => format!("{stem}.{ext}"),
         };
         let mut dlg = rfd::FileDialog::new()
-            .add_filter(fmt.to_uppercase(), &[fmt])
+            .add_filter(ext.to_uppercase(), &[ext])
             .set_file_name(name);
-        if let Some(dir) = doc.path.as_deref().and_then(Path::parent) {
+        // Última carpeta de exportación; si no, la del documento.
+        let dir = self
+            .st
+            .last_export_dir
+            .clone()
+            .or_else(|| doc_path.as_deref().and_then(Path::parent).map(Path::to_path_buf));
+        if let Some(dir) = dir {
             dlg = dlg.set_directory(dir);
         }
         let Some(mut dest) = dlg.save_file() else {
             return;
         };
+        self.st.last_export_dir = dest.parent().map(Path::to_path_buf);
         // Varias páginas en PNG/SVG: typst exige una plantilla `{p}` en el nombre.
         if multi && !dest.to_string_lossy().contains("{p}") {
             let s = dest
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            dest.set_file_name(format!("{s}-{{p}}.{fmt}"));
+            dest.set_file_name(format!("{s}-{{p}}.{ext}"));
         }
 
         // PDF al día: se copia el de la vista previa, sin recompilar.
@@ -1332,7 +1364,7 @@ impl App {
                 .st
                 .compiler
                 .built
-                .get(&doc.id)
+                .get(&doc_id)
                 .and_then(|b| b.pdf.clone())
             && k == key
         {
@@ -1346,13 +1378,25 @@ impl App {
             }
             return;
         }
-        // PDF desactualizado, PNG o SVG: se recompila en proceso.
+        // PDF/A, PDF desactualizado, PNG o SVG: se recompila en un hilo.
         let root = self.st.main_root();
-        let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref(), &root);
-        match crate::engine::export_pages(&doc.text, &root, &filename, &dest, fmt, ppi) {
-            Ok(()) => self
-                .st
-                .set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
+        let filename = crate::engine::EngineWorld::filename_for_job(doc_path.as_deref(), &root);
+        let (text, fmt) = (self.st.main_doc().text.clone(), fmt.to_string());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        let shown = dest.clone();
+        let spawned = std::thread::Builder::new()
+            .name("export".into())
+            .spawn(move || {
+                let r = crate::engine::export_pages(&text, &root, &filename, &dest, &fmt, ppi);
+                let _ = tx.send(r.map(|()| shown));
+                ctx.request_repaint();
+            });
+        match spawned {
+            Ok(_) => {
+                self.st.export_rx = Some(rx);
+                self.st.set_status("Exportando…", StatusKind::Info);
+            }
             Err(e) => self
                 .st
                 .set_status(format!("Falló la exportación: {e}"), StatusKind::Err),

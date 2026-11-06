@@ -62,6 +62,8 @@ pub enum Action {
     SwitchTo(usize),
     Compile,
     ExportPdf,
+    /// PDF/A-2b (archivo).
+    ExportPdfA,
     ExportPng(u32),
     ExportSvg,
     Find,
