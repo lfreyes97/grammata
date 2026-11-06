@@ -811,6 +811,9 @@ fn fijar_vista_previa_y_autoguardado() {
     let cap = tmp.join("cap.typ");
     std::fs::write(&main, "= Libro\n#include \"cap.typ\"\n").unwrap();
     std::fs::write(&cap, "Capítulo uno.\n").unwrap();
+    // SAFETY: como los demás tests de UI, aísla la sesión antes de crear la
+    // app (sin esto, la sesión real del usuario acaba con estas pestañas).
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
     let svg = tmp.join("figura.svg");
     std::fs::write(
         &svg,
@@ -855,6 +858,16 @@ fn fijar_vista_previa_y_autoguardado() {
     h.state_mut().st.actions.push(Action::InsertImage(p));
     h.run_steps(3);
     assert!(cur_text(&h).contains("#image(\"figura.svg\")"), "{}", cur_text(&h));
+    // Ajuste de línea (activo por defecto) con sangría colgante.
+    {
+        let d = h.state_mut().st.docs.cur_mut();
+        d.text.push_str("\n- Una viñeta larga que se parte en varias filas para ver que las continuaciones quedan alineadas bajo el texto y no en el margen.\n  - Y otra anidada, también bastante larga, para comprobar que respeta la sangría de su nivel.\n");
+        d.touch();
+    }
+    h.state_mut().st.actions.push(Action::OpenPath(cap.clone()));
+    h.run_steps(4);
+    assert!(h.state().st.prefs.wrap);
+    shot(&mut h, "ajuste-sangria");
 }
 
 fn t_loading(t: &crate::image_view::ImageTab) -> bool {

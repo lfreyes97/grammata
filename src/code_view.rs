@@ -6,6 +6,7 @@
 
 use crate::highlight;
 use crate::theme::Palette;
+use egui::epaint::text::{ByteIndex, Galley, LayoutSection};
 use egui::text::LayoutJob;
 use egui::text_edit::TextEditOutput;
 use egui::{Align2, FontId, Rect};
@@ -71,8 +72,13 @@ pub fn show(
             }
         };
         let mut job = (*job).clone();
-        job.wrap.max_width = if opt.wrap { wrap_width } else { f32::INFINITY };
-        ui.fonts_mut(|f| f.layout_job(job))
+        if !opt.wrap {
+            job.wrap.max_width = f32::INFINITY;
+            return ui.fonts_mut(|f| f.layout_job(job));
+        }
+        job.wrap.max_width = wrap_width;
+        let ppp = ui.ctx().pixels_per_point();
+        ui.fonts_mut(|f| layout_hanging(job, |j| f.layout_job(j), ppp))
     };
 
     let mut output = None;
@@ -105,6 +111,99 @@ pub fn show(
             });
         });
     (output.expect("TextEdit dibujado"), area.id)
+}
+
+/// Con ajuste de línea, las filas de continuación arrancan bajo el texto de
+/// su línea (tras la sangría y la viñeta de lista), no en el margen. Cada
+/// línea lógica se maqueta aparte (egui cachea cada una) con el ancho menos
+/// la sangría, y sus filas de continuación se desplazan esa medida.
+fn layout_hanging(
+    job: LayoutJob,
+    mut layout: impl FnMut(LayoutJob) -> Arc<Galley>,
+    pixels_per_point: f32,
+) -> Arc<Galley> {
+    let width = job.wrap.max_width;
+    if job.text.is_empty() {
+        return layout(job);
+    }
+    let mut galleys = Vec::new();
+    for mut para in paragraphs(&job) {
+        let k = hang_chars(&para.text);
+        let g = layout(para.clone());
+        let indent = match g.rows.as_slice() {
+            [first, _, ..] if k > 0 => first.glyphs.get(k).map_or(0.0, |gl| gl.pos.x),
+            _ => 0.0,
+        };
+        if indent <= 0.0 || indent > width * 0.6 {
+            galleys.push(g);
+            continue;
+        }
+        para.wrap.max_width = width - indent;
+        let mut g = (*layout(para)).clone();
+        for row in g.rows.iter_mut().skip(1) {
+            row.pos.x += indent;
+        }
+        galleys.push(Arc::new(g));
+    }
+    Arc::new(Galley::concat(Arc::new(job), &galleys, pixels_per_point))
+}
+
+/// Parte `job` en líneas lógicas como egui (`\n` fuera; el final se queda
+/// en la última), con las secciones de estilo recortadas a cada una.
+fn paragraphs(job: &LayoutJob) -> Vec<LayoutJob> {
+    let text = &job.text;
+    let mut out = Vec::new();
+    let mut start = 0;
+    while start < text.len() {
+        let mut end = text[start..].find('\n').map_or(text.len(), |i| start + i);
+        if end == text.len() - 1 && text.ends_with('\n') {
+            end += 1;
+        }
+        let sections = job
+            .sections
+            .iter()
+            .filter_map(|s| {
+                let (a, b) = (
+                    usize::from(s.byte_range.start),
+                    usize::from(s.byte_range.end),
+                );
+                let (a, b) = (a.max(start), b.min(end));
+                (a < b || (a == b && start == end)).then(|| LayoutSection {
+                    leading_space: 0.0,
+                    byte_range: ByteIndex(a - start)..ByteIndex(b - start),
+                    format: s.format.clone(),
+                })
+            })
+            .collect();
+        out.push(LayoutJob {
+            text: text[start..end].to_owned(),
+            sections,
+            first_row_min_height: 0.0,
+            ..job.clone()
+        });
+        start = end + 1;
+    }
+    // Texto acabado en `\n`… seguido de nada: egui lo deja en el último
+    // párrafo; aquí ya lo incluye el `end += 1`.
+    out
+}
+
+/// Caracteres de sangría colgante de una línea: espacios iniciales más la
+/// viñeta de lista (`- `, `+ `, `12. `), si la hay.
+fn hang_chars(line: &str) -> usize {
+    let ws = line.chars().take_while(|c| *c == ' ' || *c == '\t').count();
+    let rest = &line[ws..];
+    let marker = if rest.starts_with("- ") || rest.starts_with("+ ") {
+        2
+    } else {
+        let d = rest.chars().take_while(char::is_ascii_digit).count();
+        if d > 0 && rest[d..].starts_with(". ") {
+            d + 2
+        } else {
+            0
+        }
+    };
+    ws + marker
 }
 
 /// Números de línea (solo filas visibles) y resalte de la línea del cursor.
@@ -190,5 +289,46 @@ mod tests {
             );
         });
         h.run_steps(2);
+    }
+
+    /// Las continuaciones de `  - …` arrancan bajo el texto de la viñeta,
+    /// nada se sale del ancho y el texto (y sus saltos) queda intacto.
+    #[test]
+    fn sangria_colgante() {
+        assert_eq!(hang_chars("  - uno"), 4);
+        assert_eq!(hang_chars("12. dos"), 4);
+        assert_eq!(hang_chars("#set"), 0);
+        let mut h = egui_kittest::Harness::new_ui(|ui| {
+            let src = "= Título\n\n  - una viñeta con bastante texto para que se parta en varias filas seguro\nfin\n";
+            let pal = crate::theme::palette_for(false);
+            let mut job = highlight::layout_job(src, FontId::monospace(14.0), &pal);
+            job.wrap.max_width = 220.0;
+            let ppp = ui.ctx().pixels_per_point();
+            let g = ui.fonts_mut(|f| layout_hanging(job, |j| f.layout_job(j), ppp));
+            assert_eq!(g.text(), src);
+            let lines = g.rows.iter().filter(|r| r.ends_with_newline).count();
+            assert_eq!(lines, src.matches('\n').count());
+            // Filas de la viñeta: la 3.ª línea lógica (índices tras 2 saltos).
+            let mut n = 0;
+            let mut vin = Vec::new();
+            for r in &g.rows {
+                if n == 2 {
+                    vin.push(r);
+                }
+                if r.ends_with_newline {
+                    n += 1;
+                }
+            }
+            assert!(vin.len() > 1, "la viñeta no se partió");
+            let indent = vin[0].glyphs[4].pos.x;
+            assert!(indent > 0.0);
+            for r in &vin[1..] {
+                assert!((r.pos.x - indent).abs() < 1.0, "{} vs {indent}", r.pos.x);
+            }
+            for r in &g.rows {
+                assert!(r.rect().right() <= 220.0 + 1.0, "{:?}", r.rect());
+            }
+        });
+        h.run_steps(1);
     }
 }

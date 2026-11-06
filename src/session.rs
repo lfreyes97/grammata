@@ -62,7 +62,7 @@ impl Default for Prefs {
         Self {
             dark: true,
             font_size: 14.0,
-            wrap: false,
+            wrap: true,
             auto_compile: true,
             auto_save: true,
             pinned: None,
