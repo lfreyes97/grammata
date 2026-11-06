@@ -374,9 +374,12 @@ pub fn install_fonts(ctx: &egui::Context) {
     fonts
         .font_data
         .insert("phosphor".into(), egui::FontData::from_owned(icons).into());
-    if let Some(prop) = fonts.families.get_mut(&FontFamily::Proportional) {
-        prop.retain(|n| n != "phosphor");
-        prop.insert(0, "phosphor".into());
+    // También en la monoespaciada: etiquetas como «⌕ 100 %» van en `.monospace()`.
+    for family in [FontFamily::Proportional, FontFamily::Monospace] {
+        if let Some(list) = fonts.families.get_mut(&family) {
+            list.retain(|n| n != "phosphor");
+            list.insert(0, "phosphor".into());
+        }
     }
     ctx.set_fonts(fonts);
 }
