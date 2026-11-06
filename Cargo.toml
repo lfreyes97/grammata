@@ -2,6 +2,7 @@
 name = "typst-editor"
 version = "0.1.0"
 edition = "2024"
+description = "Grammata: editor de Typst con vista previa del PDF real"
 
 [dependencies]
 eframe = { version = "0.36", features = ["default"] }

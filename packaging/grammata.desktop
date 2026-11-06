@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Grammata
+GenericName=Editor de Typst
+Comment=Editor de Typst con vista previa del PDF real
+Exec=typst-editor %F
+Icon=grammata
+Terminal=false
+Categories=Utility;TextEditor;
+MimeType=text/x-typst;
+StartupWMClass=grammata
+Keywords=typst;pdf;documentos;

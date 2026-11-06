@@ -475,7 +475,7 @@ pub fn modals(st: &mut State, ctx: &egui::Context) {
                     ui,
                     &pal,
                     icon::INFO,
-                    "Typst Editor",
+                    "Grammata",
                     Some("Editor de Typst en Rust + egui, con vista previa del PDF real."),
                 );
                 let v = st

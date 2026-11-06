@@ -1,6 +1,13 @@
-# Typst Editor — Rust + egui
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-horizontal-oscuro.svg">
+    <img alt="Grammata" src="assets/logo-horizontal-claro.svg" height="96">
+  </picture>
+</p>
 
-Editor Typst con pestañas, paneles acoplables, autocompletado y vista previa del
+# Grammata — editor de Typst en Rust + egui
+
+Grammata es un editor Typst con pestañas, paneles acoplables, autocompletado y vista previa del
 **PDF real** en vivo.
 
 ## Uso
@@ -68,6 +75,15 @@ Sesión (pestañas, preferencias y diseño del dock) en
   `..`); búsqueda con coincidencias resaltadas; cerrar con cambios pide confirmación.
 - **Estilo**: paleta propia claro/oscuro (`theme.rs`), Inter + monoespaciada del sistema
   vía `fc-match`, iconos [Phosphor](https://phosphoricons.com).
+
+## Marca
+
+El logo (una Γ con cursor de texto) está hecho en Typst: `assets/logo.typ`.
+`assets/build-logo.sh` regenera los SVG y los PNG de `assets/icons/`; solo usa
+fuentes embebidas de typst. El nombre viene del griego γράμματα, «letras».
+El binario y la configuración (`~/.config/typst-editor/`) conservan el nombre
+`typst-editor`. Para instalar el lanzador de Linux con su icono:
+`packaging/install-desktop.sh`.
 
 ## Estructura
 
