@@ -108,6 +108,8 @@ pub enum Action {
     /// selección (o la línea del cursor): lo pone si falta, lo quita si todas
     /// lo llevan. Los rivales del mismo grupo se sustituyen (`== ` → `= `).
     PrefixLines(String),
+    /// Alterna negrita, cursiva… sobre la selección o la palabra del cursor.
+    ToggleMark(crate::formatbar::Mark),
     /// Diálogo de snippet nuevo con la selección actual.
     NewSnippet,
     EditSnippet(usize),

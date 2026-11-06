@@ -531,6 +531,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Ctrl+1…9", "ir a la pestaña n"),
     ("F5", "compilar"),
     ("Ctrl+E", "exportar PDF"),
+    ("Ctrl+B / I / U", "negrita · cursiva · subrayado"),
     ("Ctrl+F · F3", "buscar · siguiente"),
     ("Ctrl+G", "ir a línea"),
     ("Ctrl+Espacio", "autocompletar"),

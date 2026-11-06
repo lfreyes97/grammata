@@ -219,6 +219,83 @@ pub fn toggle_prefix(text: &str, a: usize, b: usize, prefix: &str) -> (String, u
     (out, new_start, new_end)
 }
 
+/// Marca de formato en línea que se alterna sobre la selección.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Mark {
+    Bold,
+    Italic,
+    Underline,
+    Strike,
+    Code,
+}
+
+impl Mark {
+    /// (abre, cierra) en la forma corta y en la de función. La corta no vale
+    /// pegada a una letra (`a*b*c`): ahí typst exige `#strong[…]`.
+    fn forms(self) -> [(&'static str, &'static str); 2] {
+        match self {
+            Mark::Bold => [("*", "*"), ("#strong[", "]")],
+            Mark::Italic => [("_", "_"), ("#emph[", "]")],
+            Mark::Underline => [("#underline[", "]"); 2],
+            Mark::Strike => [("#strike[", "]"); 2],
+            Mark::Code => [("`", "`"); 2],
+        }
+    }
+}
+
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric()
+}
+
+/// Alterna la marca sobre `[a, b)` (chars): la quita si la selección ya está
+/// envuelta (por fuera o por dentro), si no la pone. Con el cursor colapsado
+/// opera sobre la palabra que lo toca; sin palabra deja la marca vacía con el
+/// cursor dentro. Devuelve (texto nuevo, inicio, fin) del texto marcado.
+pub fn toggle_wrap(text: &str, a: usize, b: usize, mark: Mark) -> (String, usize, usize) {
+    let chars: Vec<char> = text.chars().collect();
+    let n = chars.len();
+    let (a, b) = (a.min(b).min(n), a.max(b).min(n));
+    let [short, long] = mark.forms();
+    let is = |at: usize, pat: &str| {
+        let p: Vec<char> = pat.chars().collect();
+        at + p.len() <= n && chars[at..at + p.len()] == p[..]
+    };
+    let len = |s: &str| s.chars().count();
+    let splice = |from: usize, to: usize, with: &str| -> String {
+        let mut o: String = chars[..from].iter().collect();
+        o.push_str(with);
+        o.extend(&chars[to..]);
+        o
+    };
+    // Colapsado: la palabra bajo el cursor.
+    let (mut a, mut b) = (a, b);
+    if a == b {
+        while a > 0 && is_word(chars[a - 1]) {
+            a -= 1;
+        }
+        while b < n && is_word(chars[b]) {
+            b += 1;
+        }
+    }
+    // ¿Ya envuelta? Por fuera (`*[x]*`) o por dentro (`[*x*]`).
+    for (o, c) in [short, long] {
+        let (lo, lc) = (len(o), len(c));
+        if a >= lo && is(a - lo, o) && is(b, c) {
+            let inner: String = chars[a..b].iter().collect();
+            return (splice(a - lo, b + lc, &inner), a - lo, b - lo);
+        }
+        if b - a >= lo + lc && is(a, o) && is(b - lc, c) {
+            let inner: String = chars[a + lo..b - lc].iter().collect();
+            return (splice(a, b, &inner), a, b - lo - lc);
+        }
+    }
+    let glued = (a > 0 && is_word(chars[a - 1])) || (b < n && is_word(chars[b]));
+    let (o, c) = if glued { long } else { short };
+    let inner: String = chars[a..b].iter().collect();
+    let wrapped = format!("{o}{inner}{c}");
+    (splice(a, b, &wrapped), a + len(o), b + len(o))
+}
+
 /// Nivel de encabezado (nº de `=`) de la línea que contiene el char `cursor`;
 /// 0 si no es encabezado.
 fn heading_level(text: &str, cursor: usize) -> usize {
@@ -352,17 +429,17 @@ fn inline_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Actio
             }
             widgets::vsep(ui, &pal);
         }
-        if widgets::icon_button(ui, icon::TEXT_BOLDER, "Negrita").clicked() {
-            act = Some(Action::InsertSnippet("*${sel}*".into()));
+        if widgets::icon_button(ui, icon::TEXT_BOLDER, "Negrita  (Ctrl+B)").clicked() {
+            act = Some(Action::ToggleMark(Mark::Bold));
         }
-        if widgets::icon_button(ui, icon::TEXT_ITALIC, "Cursiva").clicked() {
-            act = Some(Action::InsertSnippet("_${sel}_".into()));
+        if widgets::icon_button(ui, icon::TEXT_ITALIC, "Cursiva  (Ctrl+I)").clicked() {
+            act = Some(Action::ToggleMark(Mark::Italic));
         }
-        if widgets::icon_button(ui, icon::TEXT_UNDERLINE, "Subrayado").clicked() {
-            act = Some(Action::InsertSnippet("#underline[${sel}]".into()));
+        if widgets::icon_button(ui, icon::TEXT_UNDERLINE, "Subrayado  (Ctrl+U)").clicked() {
+            act = Some(Action::ToggleMark(Mark::Underline));
         }
         if widgets::icon_button(ui, icon::TEXT_STRIKETHROUGH, "Tachado").clicked() {
-            act = Some(Action::InsertSnippet("#strike[${sel}]".into()));
+            act = Some(Action::ToggleMark(Mark::Strike));
         }
         widgets::vsep(ui, &pal);
         // Enlace (despliega campo URL).
@@ -371,7 +448,7 @@ fn inline_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Actio
         }
         // Código en línea.
         if widgets::icon_button(ui, icon::CODE_SIMPLE, "Código").clicked() {
-            act = Some(Action::InsertSnippet("`${sel:código}`".into()));
+            act = Some(Action::ToggleMark(Mark::Code));
         }
         widgets::vsep(ui, &pal);
         if widgets::icon_button(ui, "//", "Comentar línea/selección  (Ctrl+/)").clicked() {
@@ -786,6 +863,28 @@ fn image_path(root: &std::path::Path, img: &std::path::Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn marcas_alternan() {
+        use Mark::*;
+        // Selección: pone y quita (devuelve el texto marcado seleccionado).
+        assert_eq!(toggle_wrap("hola mundo", 0, 4, Bold), ("*hola* mundo".into(), 1, 5));
+        assert_eq!(toggle_wrap("*hola* mundo", 1, 5, Bold), ("hola mundo".into(), 0, 4));
+        // Selección que incluye las marcas.
+        assert_eq!(toggle_wrap("*hola*", 0, 6, Bold), ("hola".into(), 0, 4));
+        // Cursor en una palabra.
+        assert_eq!(toggle_wrap("hola mundo", 7, 7, Italic), ("hola _mundo_".into(), 6, 11));
+        // Sin palabra: marca vacía con el cursor dentro.
+        assert_eq!(toggle_wrap("a ", 2, 2, Bold), ("a **".into(), 3, 3));
+        // Pegada a una letra: forma de función, y se quita igual.
+        assert_eq!(toggle_wrap("abcd", 1, 3, Bold), ("a#strong[bc]d".into(), 9, 11));
+        assert_eq!(toggle_wrap("a#strong[bc]d", 9, 11, Bold), ("abcd".into(), 1, 3));
+        // Funciones y código.
+        assert_eq!(toggle_wrap("x y", 0, 1, Underline), ("#underline[x] y".into(), 11, 12));
+        assert_eq!(toggle_wrap("x", 0, 1, Code), ("`x`".into(), 1, 2));
+        // Offsets en chars.
+        assert_eq!(toggle_wrap("ñu", 0, 2, Italic), ("_ñu_".into(), 1, 3));
+    }
 
     #[test]
     fn encabezado_toggle() {

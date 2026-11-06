@@ -7,7 +7,7 @@ use crate::diagnostics;
 use crate::doc::{Doc, DocId, Docs};
 use crate::editor::{self, EditorUi, Goto};
 use crate::files;
-use crate::formatbar::FormatBar;
+use crate::formatbar::{FormatBar, Mark};
 use crate::layout::{self, Panel, Preset, Tab};
 use crate::panels::{self, OutlineCache};
 use crate::preview::{self, Preview};
@@ -468,6 +468,15 @@ impl App {
             if k(M::CTRL, K::Space) {
                 self.st.editor.ac.forced = true
             }
+            for (key, mark) in [
+                (K::B, Mark::Bold),
+                (K::I, Mark::Italic),
+                (K::U, Mark::Underline),
+            ] {
+                if k(M::CTRL, key) {
+                    a.push(Action::ToggleMark(mark))
+                }
+            }
             if k(M::CTRL, K::Slash) {
                 a.push(Action::PrefixLines("// ".into()))
             }
@@ -849,6 +858,7 @@ impl App {
                 text,
             } => self.replace_text(doc, start, &expect, text),
             Action::PrefixLines(prefix) => self.prefix_lines(&prefix),
+            Action::ToggleMark(mark) => self.toggle_mark(mark),
             Action::NewSnippet => {
                 let body = self.selected_text();
                 self.st.modal = Some(Modal::EditSnippet(snippets::Editing {
@@ -898,6 +908,29 @@ impl App {
         };
         let id = doc.id;
         let (text, na, nb) = crate::formatbar::toggle_prefix(&doc.text, a, b, prefix);
+        let d = self.st.docs.cur_mut();
+        d.text = text;
+        d.touch();
+        self.st.editor.goto = Some(Goto {
+            doc: id,
+            start: na,
+            end: nb,
+            focus: true,
+        });
+        layout::focus_doc(&mut self.dock, id);
+        self.st.needs_persist = true;
+    }
+
+    fn toggle_mark(&mut self, mark: Mark) {
+        let doc = self.st.docs.cur();
+        let len = doc.text.chars().count();
+        let (a, b) = match (self.st.editor.selection, self.st.editor.cursor) {
+            (Some((a, b)), _) => (a.min(len), b.min(len)),
+            (None, Some(c)) => (c.min(len), c.min(len)),
+            (None, None) => (len, len),
+        };
+        let id = doc.id;
+        let (text, na, nb) = crate::formatbar::toggle_wrap(&doc.text, a, b, mark);
         let d = self.st.docs.cur_mut();
         d.text = text;
         d.touch();
