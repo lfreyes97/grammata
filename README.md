@@ -82,6 +82,14 @@ El logo (una Γ con cursor de texto) está hecho en Typst: `assets/logo.typ`.
 `assets/build-logo.sh` regenera los SVG y los PNG de `assets/icons/`; solo usa
 fuentes embebidas de typst. El nombre viene del griego γράμματα, «letras».
 
+## Instalación
+
+- **Linux (tar.gz):** `packaging/build-linux.sh` compila y genera
+  `dist/grammata-<versión>-linux-<arquitectura>.tar.gz`; dentro, `./install.sh [PREFIX]`
+  (por defecto `~/.local`) instala el binario `grammata`, los iconos y el lanzador.
+- **Nix:** `nix run github:OWNER/grammata` o `nix profile install` (ver `flake.nix`).
+- **Desde el código:** `cargo install --path .`
+
 ## Licencia
 
 Grammata es software libre bajo la **GNU GPL v3 o posterior** (`LICENSE`).
