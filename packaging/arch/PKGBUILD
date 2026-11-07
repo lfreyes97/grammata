@@ -1,0 +1,33 @@
+# Maintainer: Luis Reyes <13804007+lfreyes97@users.noreply.github.com>
+# Compila desde el árbol local del repositorio:
+#   cd packaging/arch && makepkg -si
+pkgname=grammata
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Editor de Typst con vista previa del PDF real'
+arch=('x86_64' 'aarch64')
+license=('GPL-3.0-or-later')
+depends=('gcc-libs' 'glibc' 'openssl' 'fontconfig' 'libxkbcommon' 'wayland'
+         'libx11' 'libxcursor' 'libxi' 'libxrandr' 'vulkan-icd-loader' 'libglvnd')
+makedepends=('cargo' 'pkgconf')
+optdepends=('vulkan-driver: aceleración por GPU')
+options=('!lto' '!debug')  # el perfil de release ya usa LTO; sin debuginfo (el enlazado agotaba la RAM)
+
+_root="$startdir/../.."
+
+prepare() {
+  cd "$_root"
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$_root"
+  export CARGO_TARGET_DIR="$srcdir/target"
+  export CARGO_PROFILE_RELEASE_DEBUG=0
+  cargo build --release --frozen
+}
+
+package() {
+  cd "$_root"
+  BIN="$srcdir/target/release/grammata" packaging/stage.sh "$pkgdir" /usr
+}
