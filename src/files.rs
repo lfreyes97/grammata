@@ -824,7 +824,7 @@ mod tests {
 
     fn sandbox(name: &str) -> PathBuf {
         let d =
-            std::env::temp_dir().join(format!("typst-editor-fm-{}-{}", name, std::process::id()));
+            std::env::temp_dir().join(format!("grammata-fm-{}-{}", name, std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("a").join("b")).unwrap();
         std::fs::write(d.join("z.typ"), "= Z\n").unwrap();

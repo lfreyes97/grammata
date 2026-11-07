@@ -1,4 +1,4 @@
-//! Sesión en `~/.config/typst-editor/session.json`: pestañas, preferencias y
+//! Sesión en `~/.config/grammata/session.json`: pestañas, preferencias y
 //! diseño del dock. Todos los campos tienen valor por defecto, así que las
 //! sesiones de versiones anteriores siguen cargando.
 
@@ -122,7 +122,7 @@ pub fn config_dir() -> PathBuf {
             let home = std::env::var_os("HOME").unwrap_or_else(|| "/tmp".into());
             PathBuf::from(home).join(".config")
         });
-    base.join("typst-editor")
+    base.join("grammata")
 }
 
 pub fn path() -> PathBuf {

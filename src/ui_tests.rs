@@ -63,7 +63,7 @@ fn rendered_pages(app: &App) -> bool {
 #[test]
 #[ignore = "necesita GPU"]
 fn recorrido_de_la_ui() {
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
     unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
@@ -334,7 +334,7 @@ fn recorrido_de_la_ui() {
 fn esquema_navega_al_buffer() {
     use egui_kittest::kittest::Queryable;
     let tmp =
-        std::env::temp_dir().join(format!("typst-editor-test-outline-{}", std::process::id()));
+        std::env::temp_dir().join(format!("grammata-test-outline-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
     unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
@@ -380,7 +380,7 @@ fn esquema_navega_al_buffer() {
 #[ignore = "necesita GPU"]
 fn archivos_pliegan_y_abren() {
     use egui_kittest::kittest::Queryable;
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-fm-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-fm-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     let root = tmp.join("proyecto");
     std::fs::create_dir_all(root.join("capitulos")).unwrap();
@@ -423,7 +423,7 @@ fn archivos_pliegan_y_abren() {
 #[ignore = "necesita GPU"]
 fn nuevo_proyecto_vacio_y_articulo() {
     use egui_kittest::kittest::Queryable;
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-np-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-np-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(tmp.join("cfg")).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
@@ -490,7 +490,7 @@ fn nuevo_proyecto_vacio_y_articulo() {
 #[ignore = "necesita GPU"]
 fn borrador_inserta_snippet() {
     use egui_kittest::kittest::Queryable;
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-ss-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-ss-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(tmp.join("cfg")).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
@@ -535,7 +535,7 @@ fn borrador_inserta_snippet() {
 #[ignore = "necesita GPU"]
 fn borrador_snippet_calc() {
     use egui_kittest::kittest::Queryable;
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-cc-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-cc-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(tmp.join("cfg")).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
@@ -564,7 +564,7 @@ fn borrador_snippet_calc() {
 #[test]
 #[ignore = "compila ~100 documentos (lento)"]
 fn plantillas_y_simbolos_compilan() {
-    let dir = std::env::temp_dir().join(format!("typst-editor-snip-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("grammata-snip-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     // Recursos a los que apuntan algunos snippets.
     let out = crate::engine::export_pages(
@@ -627,7 +627,7 @@ fn plantillas_y_simbolos_compilan() {
 #[test]
 #[ignore = "necesita GPU"]
 fn snippet_de_ecuacion_dentro_de_ecuacion() {
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-se-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-se-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(tmp.join("cfg")).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
@@ -667,7 +667,7 @@ fn snippet_de_ecuacion_dentro_de_ecuacion() {
 #[ignore = "necesita GPU"]
 fn borrador_edita_la_ecuacion_del_cursor() {
     use egui_kittest::kittest::Queryable;
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-be-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-be-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(tmp.join("cfg")).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
@@ -744,7 +744,7 @@ fn borrador_edita_la_ecuacion_del_cursor() {
 #[ignore = "necesita GPU"]
 fn biblioteca_de_snippets_del_proyecto() {
     use egui_kittest::kittest::Queryable;
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-lib-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-lib-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(tmp.join("cfg")).unwrap();
     std::fs::create_dir_all(tmp.join("proj")).unwrap();
@@ -805,7 +805,7 @@ fn biblioteca_de_snippets_del_proyecto() {
 #[test]
 #[ignore = "necesita GPU"]
 fn fijar_vista_previa_y_autoguardado() {
-    let tmp = std::env::temp_dir().join(format!("typst-editor-test-pin-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-pin-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).unwrap();
     let main = tmp.join("main.typ");
@@ -879,7 +879,7 @@ fn t_loading(t: &crate::image_view::ImageTab) -> bool {
 #[ignore = "necesita GPU"]
 fn dialogo_de_exportacion() {
     // SAFETY: como los demás tests de UI, aísla la sesión antes de crear la app.
-    let tmp = std::env::temp_dir().join(format!("typst-editor-exp-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-exp-{}", std::process::id()));
     unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
     let mut h = harness();
     h.run_steps(3);

@@ -1,5 +1,5 @@
 //! Panel de snippets: biblioteca de serie + snippets propios del usuario
-//! (en `~/.config/typst-editor/snippets.json`).
+//! (en `~/.config/grammata/snippets.json`).
 //!
 //! Marcadores en el cuerpo (ver `expand`):
 //! - `${sel}`: el texto seleccionado (el snippet lo envuelve).

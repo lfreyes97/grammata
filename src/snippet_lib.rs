@@ -440,7 +440,7 @@ mod tests {
             None
         );
         // Fuera de la raíz (global): se copia la definición, una vez.
-        let global = Path::new("/home/u/.config/typst-editor/snippets.typ");
+        let global = Path::new("/home/u/.config/grammata/snippets.typ");
         let p = preamble(aviso, global, root, "").unwrap();
         assert!(p.starts_with("#let aviso("));
         assert_eq!(preamble(aviso, global, root, &p), None);
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn busca_la_del_proyecto_hacia_arriba() {
-        let d = std::env::temp_dir().join(format!("typst-editor-lib-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("grammata-lib-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("cap/sub")).unwrap();
         std::fs::write(d.join(FILE), "").unwrap();
@@ -467,7 +467,7 @@ mod tests {
     /// La plantilla compila importada desde un documento que usa sus snippets.
     #[test]
     fn la_plantilla_compila() {
-        let d = std::env::temp_dir().join(format!("typst-editor-libc-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("grammata-libc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         std::fs::write(d.join(FILE), starter()).unwrap();

@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn raiz_efectiva() {
-        let dir = std::env::temp_dir().join(format!("typst-editor-root-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("grammata-root-{}", std::process::id()));
         let sub = dir.join("campana");
         std::fs::create_dir_all(&sub).unwrap();
         let f = sub.join("a.typ");
@@ -146,7 +146,7 @@ mod tests {
         // Sin gestor: carpeta del documento.
         assert_eq!(doc.compile_root(None), sub);
         // Gestor que no contiene al documento: carpeta del documento.
-        let fuera = std::env::temp_dir().join(format!("typst-editor-fuera-{}", std::process::id()));
+        let fuera = std::env::temp_dir().join(format!("grammata-fuera-{}", std::process::id()));
         std::fs::create_dir_all(&fuera).unwrap();
         assert_eq!(doc.compile_root(Some(fuera.as_path())), sub);
         // Gestor que contiene al documento: el gestor manda.

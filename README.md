@@ -13,7 +13,7 @@ Grammata es un editor Typst con pestañas, paneles acoplables, autocompletado y 
 ## Uso
 
 ```bash
-cd typst-editor
+cd grammata
 cargo run
 ```
 
@@ -29,7 +29,7 @@ pestaña, `F5` compilar, `Ctrl+E` exportar PDF, `Ctrl+F` buscar (`Enter`/`F3` si
 snippets · plantillas · archivos · borrador, `Ctrl+rueda` zoom del PDF.
 
 Sesión (pestañas, preferencias y diseño del dock) en
-`~/.config/typst-editor/session.json`. Las sesiones del formato anterior se migran solas.
+`~/.config/grammata/session.json`. Las sesiones del formato anterior se migran solas.
 
 ## Qué hace
 
@@ -52,7 +52,7 @@ Sesión (pestañas, preferencias y diseño del dock) en
   estructuras lo envuelven (`abs(sel)`).
 - **Snippets**: biblioteca de serie (documento, texto, listas, figuras y tablas,
   matemáticas, cálculo con `calc`, código, diseño, referencias) y snippets propios guardados en
-  `~/.config/typst-editor/snippets.json` (botón + crea uno desde la selección).
+  `~/.config/grammata/snippets.json` (botón + crea uno desde la selección).
   Marcadores: `${sel}` selección · `${sel:x}` selección o `x` · `${x}` relleno que queda
   seleccionado para escribir encima · `${}` cursor.
 - **Plantillas**: builder de Artículo en el panel lateral (título, autor, fecha,
@@ -81,9 +81,13 @@ Sesión (pestañas, preferencias y diseño del dock) en
 El logo (una Γ con cursor de texto) está hecho en Typst: `assets/logo.typ`.
 `assets/build-logo.sh` regenera los SVG y los PNG de `assets/icons/`; solo usa
 fuentes embebidas de typst. El nombre viene del griego γράμματα, «letras».
-El binario y la configuración (`~/.config/typst-editor/`) conservan el nombre
-`typst-editor`. Para instalar el lanzador de Linux con su icono:
-`packaging/install-desktop.sh`.
+
+## Licencia
+
+Grammata es software libre bajo la **GNU GPL v3 o posterior** (`LICENSE`).
+Usa typst (Apache-2.0) y otras dependencias con licencias compatibles.
+«Typst» es una marca de Typst GmbH; este proyecto es independiente y no está
+afiliado a ella.
 
 ## Estructura
 

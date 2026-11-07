@@ -97,7 +97,7 @@ impl EngineWorld {
         let vpath = VirtualPath::new(filename)
             .unwrap_or_else(|_| VirtualPath::new("main.typ").expect("vpath"));
         let main_id = RootedPath::new(VirtualRoot::Project, vpath).intern();
-        let downloader = SystemDownloader::new(concat!("typst-editor/", env!("CARGO_PKG_VERSION")));
+        let downloader = SystemDownloader::new(concat!("grammata/", env!("CARGO_PKG_VERSION")));
         let files = FileStore::new(SystemFiles::new(
             FsRoot::new(root),
             SystemPackages::new(downloader),
@@ -773,7 +773,7 @@ mod tests {
 
     #[test]
     fn exporta_rango_de_paginas() {
-        let dir = std::env::temp_dir().join(format!("typst-editor-rng-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("grammata-rng-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let src = "Uno\n#pagebreak()\nDos\n#pagebreak()\nTres";
         // PDF: un archivo con solo las páginas pedidas.
@@ -795,7 +795,7 @@ mod tests {
     #[test]
     fn exporta_pdf_entero() {
         // PDF multipágina: un solo archivo PDF real, no PNG por página.
-        let dir = std::env::temp_dir().join(format!("typst-editor-pdf-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("grammata-pdf-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let dest = dir.join("doc.pdf");
         let out = export_pages(

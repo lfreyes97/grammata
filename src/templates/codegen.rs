@@ -536,7 +536,7 @@ mod tests {
     use super::*;
 
     fn workdir() -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("typst-editor-tmpl-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("grammata-tmpl-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }

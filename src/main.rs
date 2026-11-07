@@ -41,10 +41,8 @@ fn main() -> eframe::Result<()> {
             ),
         ..Default::default()
     };
-    // El nombre interno sigue siendo `typst-editor`: de él cuelgan las rutas de
-    // la configuración del usuario (`~/.config/typst-editor/`).
     eframe::run_native(
-        "typst-editor",
+        "grammata",
         options,
         Box::new(|cc| Ok(Box::new(app::App::new(cc)))),
     )

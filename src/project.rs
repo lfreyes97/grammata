@@ -294,7 +294,7 @@ mod tests {
     use super::*;
 
     fn sandbox(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("typst-editor-np-{name}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("grammata-np-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
