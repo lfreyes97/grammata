@@ -2,10 +2,8 @@
 
 Actualizado el 2026-11-06. Marcar con `[x]` al terminar.
 
-## 1. Estado del árbol (sin commit)
-- [ ] Commit: arreglo de rendimiento del editor (`code_view.rs`, `paragraphs()` y caché del galley, con 2 pruebas).
-- [ ] Commit: licencia GPL-3.0-or-later y renombrado a `grammata`.
-- [ ] Commit: scripts de empaquetado (`packaging/`) y flake de Nix.
+## 1. Estado del árbol
+- [x] Commits de rendimiento del editor, licencia GPL-3.0-or-later, renombrado a `grammata`, empaquetado y flake de Nix.
 - [ ] Reinstalar en `~/.local` el binario con el arreglo (`packaging/build-linux.sh` y `install.sh`).
 
 ## 2. Para poder publicar
@@ -16,7 +14,7 @@ Actualizado el 2026-11-06. Marcar con `[x]` al terminar.
   - [ ] Windows: `.zip` e instalador MSI.
   - [ ] macOS: `.app`/`.dmg` solo desde el CI de GitHub, con aviso de «sin probar».
 - [ ] `THIRD-PARTY-LICENSES` (por ejemplo con `cargo-about`) incluido en los paquetes; `stage.sh` ya lo instala si existe.
-- [ ] `PKGBUILD` para Arch.
+- [x] `PKGBUILD` para Arch (`packaging/arch`, `makepkg -si`; probado: el paquete se genera e instala con iconos).
 - [ ] README y notas de la primera versión: decir que Windows y macOS no están probados a mano; aclarar que «Typst» es marca de Typst GmbH.
 - [ ] Cabeceras de licencia o aviso `GPL-3.0-or-later` en el código fuente (decidir si hacen falta).
 
