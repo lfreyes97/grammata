@@ -27,6 +27,13 @@ struct JobCache {
     job: Option<Arc<LayoutJob>>,
 }
 
+/// Galley con sangría colgante ya maquetado, con la clave que lo produjo.
+#[derive(Clone)]
+struct HangCache {
+    key: (u64, u32, u32),
+    galley: Arc<Galley>,
+}
+
 fn cache_key(text: &str, size: f32, dark: bool) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     text.hash(&mut h);
@@ -78,7 +85,26 @@ pub fn show(
         }
         job.wrap.max_width = wrap_width;
         let ppp = ui.ctx().pixels_per_point();
-        ui.fonts_mut(|f| layout_hanging(job, |j| f.layout_job(j), ppp))
+        // Maquetar con sangría es caro en documentos largos: se guarda por
+        // (texto, ancho, ppp) y solo se rehace si algo de eso cambia.
+        let hang_id = cache_id.with("hang");
+        let hkey = (key, wrap_width.to_bits(), ppp.to_bits());
+        if let Some(HangCache { key: k, galley }) = ui.data(|d| d.get_temp(hang_id))
+            && k == hkey
+        {
+            return galley;
+        }
+        let galley = ui.fonts_mut(|f| layout_hanging(job, |j| f.layout_job(j), ppp));
+        ui.data_mut(|d| {
+            d.insert_temp(
+                hang_id,
+                HangCache {
+                    key: hkey,
+                    galley: galley.clone(),
+                },
+            )
+        });
+        galley
     };
 
     let mut output = None;
@@ -150,18 +176,31 @@ fn layout_hanging(
 
 /// Parte `job` en líneas lógicas como egui (`\n` fuera; el final se queda
 /// en la última), con las secciones de estilo recortadas a cada una.
+/// Las secciones vienen ordenadas y sin solaparse, así que un puntero que solo
+/// avanza basta: el coste es lineal, no párrafos × secciones.
 fn paragraphs(job: &LayoutJob) -> Vec<LayoutJob> {
     let text = &job.text;
     let mut out = Vec::new();
     let mut start = 0;
+    // Ajustes del job sin el texto: `..job.clone()` por párrafo copiaría el
+    // documento entero 10 000 veces.
+    let mut base = job.clone();
+    base.text.clear();
+    base.sections.clear();
+    // Primera sección que aún puede tocar el párrafo actual.
+    let mut first = 0;
     while start < text.len() {
         let mut end = text[start..].find('\n').map_or(text.len(), |i| start + i);
         if end == text.len() - 1 && text.ends_with('\n') {
             end += 1;
         }
-        let sections = job
-            .sections
+        while first < job.sections.len() && usize::from(job.sections[first].byte_range.end) < start
+        {
+            first += 1;
+        }
+        let sections = job.sections[first..]
             .iter()
+            .take_while(|s| usize::from(s.byte_range.start) <= end)
             .filter_map(|s| {
                 let (a, b) = (
                     usize::from(s.byte_range.start),
@@ -179,7 +218,7 @@ fn paragraphs(job: &LayoutJob) -> Vec<LayoutJob> {
             text: text[start..end].to_owned(),
             sections,
             first_row_min_height: 0.0,
-            ..job.clone()
+            ..base.clone()
         });
         start = end + 1;
     }
@@ -328,6 +367,105 @@ mod tests {
             for r in &g.rows {
                 assert!(r.rect().right() <= 220.0 + 1.0, "{:?}", r.rect());
             }
+        });
+        h.run_steps(1);
+    }
+
+    /// Referencia: el reparto en párrafos de antes (recorre todas las secciones
+    /// por párrafo). `paragraphs` debe dar exactamente lo mismo.
+    fn paragraphs_ingenuo(job: &LayoutJob) -> Vec<LayoutJob> {
+        let text = &job.text;
+        let mut out = Vec::new();
+        let mut start = 0;
+        while start < text.len() {
+            let mut end = text[start..].find('\n').map_or(text.len(), |i| start + i);
+            if end == text.len() - 1 && text.ends_with('\n') {
+                end += 1;
+            }
+            let sections = job
+                .sections
+                .iter()
+                .filter_map(|s| {
+                    let (a, b) = (
+                        usize::from(s.byte_range.start),
+                        usize::from(s.byte_range.end),
+                    );
+                    let (a, b) = (a.max(start), b.min(end));
+                    (a < b || (a == b && start == end)).then(|| LayoutSection {
+                        leading_space: 0.0,
+                        byte_range: ByteIndex(a - start)..ByteIndex(b - start),
+                        format: s.format.clone(),
+                    })
+                })
+                .collect();
+            out.push(LayoutJob {
+                text: text[start..end].to_owned(),
+                sections,
+                first_row_min_height: 0.0,
+                ..job.clone()
+            });
+            start = end + 1;
+        }
+        out
+    }
+
+    /// Un documento largo con comentarios de bloque que cruzan párrafos, líneas
+    /// en blanco, listas y ecuaciones.
+    fn texto_largo(lineas: usize) -> String {
+        let mut s = String::new();
+        for i in 0..lineas {
+            match i % 7 {
+                0 => s.push_str(&format!("= Sección {i}\n")),
+                1 => s.push_str("\n"),
+                2 => s.push_str("/* comentario\n   de varias\n   líneas */\n"),
+                3 => s.push_str(&format!(
+                    "  - viñeta número {i} con *negrita* y _cursiva_\n"
+                )),
+                4 => s.push_str("#let f(x) = x + 1 // código\n"),
+                5 => s.push_str("Texto con $x^2 + y^2$ en línea.\n"),
+                _ => s.push_str(&format!("{i}. numerada\n")),
+            }
+        }
+        s
+    }
+
+    #[test]
+    fn parrafos_igual_que_la_referencia() {
+        let pal = crate::theme::palette_for(false);
+        for src in [
+            texto_largo(300),
+            "uno\n\n\ndos\n".to_string(),
+            "sin salto final".to_string(),
+        ] {
+            let job = highlight::layout_job(&src, FontId::monospace(14.0), &pal);
+            let (a, b) = (paragraphs(&job), paragraphs_ingenuo(&job));
+            assert_eq!(a.len(), b.len());
+            for (i, (x, y)) in a.iter().zip(&b).enumerate() {
+                assert_eq!(x.text, y.text, "texto del párrafo {i}");
+                assert_eq!(x.sections.len(), y.sections.len(), "nº de secciones en {i}");
+                for (s, t) in x.sections.iter().zip(&y.sections) {
+                    assert_eq!(s.byte_range, t.byte_range, "rango en {i}");
+                    assert_eq!(s.format, t.format, "formato en {i}");
+                }
+            }
+        }
+    }
+
+    /// Regresión: antes cada párrafo copiaba el documento entero y 10 000
+    /// líneas tardaban ~5 s por fotograma. Margen holgado para no ser frágil.
+    #[test]
+    fn sangria_colgante_en_documento_largo() {
+        let src = texto_largo(10_000);
+        let mut h = egui_kittest::Harness::new_ui(move |ui| {
+            let pal = crate::theme::palette_for(false);
+            let mut job = highlight::layout_job(&src, FontId::monospace(14.0), &pal);
+            job.wrap.max_width = 700.0;
+            let ppp = ui.ctx().pixels_per_point();
+            let t = std::time::Instant::now();
+            let g = ui.fonts_mut(|f| layout_hanging(job, |j| f.layout_job(j), ppp));
+            let dt = t.elapsed();
+            assert!(g.rows.len() >= 10_000);
+            assert!(dt.as_secs_f32() < 1.5, "layout_hanging tardó {dt:?}");
         });
         h.run_steps(1);
     }
