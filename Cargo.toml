@@ -15,6 +15,7 @@ rfd = "0.17.2"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 typst-syntax = "0.15.1"
+typst-ide = "0.15.1"
 # Compilador embebido: sin dependencia del CLI `typst`.
 typst = "0.15.1"
 typst-pdf = "0.15.1"

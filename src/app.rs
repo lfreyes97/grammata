@@ -103,6 +103,7 @@ pub struct State {
     pub docs: Docs,
     pub prefs: Prefs,
     pub compiler: Compiler,
+    pub ide: crate::ide::Ide,
     pub preview: Preview,
     pub editor: EditorUi,
     pub outline: OutlineCache,
@@ -286,6 +287,7 @@ impl App {
             docs,
             prefs,
             compiler: Compiler::new(ctx.clone()),
+            ide: crate::ide::Ide::new(ctx.clone()),
             preview: Preview::new(ctx.clone()),
             editor: EditorUi::default(),
             outline: OutlineCache::default(),
@@ -530,6 +532,7 @@ impl App {
 
     fn compile_tick(&mut self, ctx: &egui::Context) {
         let st = &mut self.st;
+        st.ide.poll();
         for key in st.compiler.poll() {
             if key.doc == st.main_doc().id
                 && let Some(e) = st.compiler.built.get(&key.doc).and_then(|b| {

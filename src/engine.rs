@@ -90,16 +90,19 @@ pub(crate) struct EngineWorld {
     fonts: Arc<FontStore>,
     library: LazyHash<Library>,
     time: Time,
+    root: PathBuf,
+    /// Archivos del proyecto para completar rutas (solo el IDE los llena).
+    known_files: Vec<FileId>,
 }
 
 impl EngineWorld {
-    fn new(root: PathBuf, filename: &str, text: String) -> Self {
+    pub(crate) fn new(root: PathBuf, filename: &str, text: String) -> Self {
         let vpath = VirtualPath::new(filename)
             .unwrap_or_else(|_| VirtualPath::new("main.typ").expect("vpath"));
         let main_id = RootedPath::new(VirtualRoot::Project, vpath).intern();
         let downloader = SystemDownloader::new(concat!("grammata/", env!("CARGO_PKG_VERSION")));
         let files = FileStore::new(SystemFiles::new(
-            FsRoot::new(root),
+            FsRoot::new(root.clone()),
             SystemPackages::new(downloader),
         ));
         Self {
@@ -109,7 +112,58 @@ impl EngineWorld {
             fonts: shared_fonts(),
             library: LazyHash::new(Library::default()),
             time: Time::system(),
+            root,
+            known_files: Vec::new(),
         }
+    }
+
+    /// Reutiliza el mundo para otra consulta del IDE: texto nuevo del main y
+    /// archivos del disco releídos (las fuentes y la librería se conservan).
+    pub(crate) fn set_main(&mut self, text: String) {
+        self.main = Source::new(self.main_id, text);
+        self.files.reset();
+    }
+
+    pub(crate) fn main_source(&self) -> Source {
+        self.main.clone()
+    }
+
+    /// Recorre el proyecto (acotado) para completar rutas de archivo.
+    pub(crate) fn refresh_known_files(&mut self) {
+        const MAX: usize = 4000;
+        let mut out = Vec::new();
+        let mut stack = vec![(self.root.clone(), 0usize)];
+        while let Some((dir, depth)) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for e in rd.flatten() {
+                if out.len() >= MAX {
+                    break;
+                }
+                let name = e.file_name().to_string_lossy().into_owned();
+                if name.starts_with('.') || name == "target" || name == "node_modules" {
+                    continue;
+                }
+                let path = e.path();
+                let Ok(ty) = e.file_type() else { continue };
+                if ty.is_dir() {
+                    if depth < 6 {
+                        stack.push((path, depth + 1));
+                    }
+                } else if let Ok(rel) = path.strip_prefix(&self.root) {
+                    let rel = rel
+                        .components()
+                        .map(|c| c.as_os_str().to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join("/");
+                    if let Ok(v) = VirtualPath::new(&rel) {
+                        out.push(RootedPath::new(VirtualRoot::Project, v).intern());
+                    }
+                }
+            }
+        }
+        self.known_files = out;
     }
 
     /// Nombre virtual del main: la ruta relativa a la raíz si el fichero
@@ -168,6 +222,16 @@ impl World for EngineWorld {
 
     fn today(&self, offset: Option<Duration>) -> Option<Datetime> {
         self.time.today(offset)
+    }
+}
+
+impl typst_ide::IdeWorld for EngineWorld {
+    fn upcast(&self) -> &dyn World {
+        self
+    }
+
+    fn files(&self) -> Vec<FileId> {
+        self.known_files.clone()
     }
 }
 

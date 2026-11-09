@@ -43,6 +43,14 @@ Actualizado el 2026-11-06. Marcar con `[x]` al terminar.
 - [ ] Borrador: extras «Recientes» y compactar la barra de estructuras.
 - [ ] Formato: el botón de enlace no lee un enlace existente para editarlo.
 
+## 8. Ideas: `typst-ide`
+- [ ] Evaluar la crate `typst-ide` (la usan la web app de Typst y `tinymist`): da los datos, la interfaz hay que dibujarla en egui. Hoy no se usa.
+  - [x] Autocompletado semántico (funciones, parámetros, variables, rutas) con el menú propio, en `src/ide.rs`.
+  - [ ] Autocompletado: etiquetas y bibliografía (necesitan pasar el último `PagedDocument` a `autocomplete`), paquetes (`IdeWorld::packages`) y mostrar el tipo de cada ítem.
+  - [ ] Tooltips al pasar el ratón y ayuda de firma de la llamada.
+  - [ ] Ir a la definición.
+  - [ ] Saltar entre código y vista previa: `jump_from_click` (clic en el PDF) y `jump_from_cursor` (cursor al PDF).
+
 ## Límites conocidos
 - Solo se puede probar Linux (GNOME/Wayland). macOS no se puede probar nunca desde aquí; Windows solo compila en el CI.
 - En Wayland el icono de ventana solo sale con el `.desktop` instalado (winit 0.30 ignora `with_icon`).

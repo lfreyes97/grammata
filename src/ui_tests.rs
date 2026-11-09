@@ -90,7 +90,7 @@ fn recorrido_de_la_ui() {
     h.key_press(Key::Tab);
     h.run_steps(3);
     assert!(
-        cur_text(&h).contains("#table(columns: 2, [a], [b])"),
+        cur_text(&h).ends_with("#table(\n  \n)"),
         "no se insertó el snippet:\n{}",
         cur_text(&h)
     );
@@ -333,8 +333,7 @@ fn recorrido_de_la_ui() {
 #[ignore = "necesita GPU"]
 fn esquema_navega_al_buffer() {
     use egui_kittest::kittest::Queryable;
-    let tmp =
-        std::env::temp_dir().join(format!("grammata-test-outline-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-outline-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
     unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
@@ -823,7 +822,10 @@ fn fijar_vista_previa_y_autoguardado() {
     .unwrap();
     let mut h = harness();
     h.run_steps(5);
-    h.state_mut().st.actions.push(Action::OpenPath(main.clone()));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::OpenPath(main.clone()));
     h.run_steps(3);
     let main_id = h.state().st.docs.cur_id();
     h.state_mut().st.actions.push(Action::TogglePin);
@@ -842,7 +844,10 @@ fn fijar_vista_previa_y_autoguardado() {
     }
     wait(&mut h, "autoguardado y recompilación", |a| {
         a.st.disk_gen > 0
-            && a.st.preview.loaded.is_some_and(|k| k.doc == main_id && k.disk == a.st.disk_gen)
+            && a.st
+                .preview
+                .loaded
+                .is_some_and(|k| k.doc == main_id && k.disk == a.st.disk_gen)
             && rendered_pages(a)
     });
     assert!(std::fs::read_to_string(&cap).unwrap().contains("Añadido"));
@@ -858,7 +863,11 @@ fn fijar_vista_previa_y_autoguardado() {
     let p = svg.canonicalize().unwrap();
     h.state_mut().st.actions.push(Action::InsertImage(p));
     h.run_steps(3);
-    assert!(cur_text(&h).contains("#image(\"figura.svg\")"), "{}", cur_text(&h));
+    assert!(
+        cur_text(&h).contains("#image(\"figura.svg\")"),
+        "{}",
+        cur_text(&h)
+    );
     // Ajuste de línea (activo por defecto) con sangría colgante.
     {
         let d = h.state_mut().st.docs.cur_mut();
