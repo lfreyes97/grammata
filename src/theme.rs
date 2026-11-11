@@ -131,8 +131,64 @@ pub const LIGHT: Palette = Palette {
     },
 };
 
+/// Tema de un plugin: sustituye a la paleta de serie de su mismo modo.
+static CUSTOM: std::sync::RwLock<Option<Palette>> = std::sync::RwLock::new(None);
+
+/// Fija (o quita) el tema de un plugin. Luego hay que llamar a `apply`.
+pub fn set_custom(p: Option<Palette>) {
+    *CUSTOM.write().expect("tema") = p;
+}
+
 pub fn palette_for(dark: bool) -> Palette {
-    if dark { DARK } else { LIGHT }
+    match *CUSTOM.read().expect("tema") {
+        Some(p) if p.dark == dark => p,
+        _ if dark => DARK,
+        _ => LIGHT,
+    }
+}
+
+/// Lee un tema en TOML: `name`, `dark` y las tablas `[colors]` y `[syntax]`
+/// con los campos de `Palette` y `SyntaxColors` en `"#rrggbb"`. Lo que no
+/// se indica sale de la paleta de serie del mismo modo.
+pub fn parse_theme(src: &str) -> Result<(String, Palette), String> {
+    fn color(key: &str, v: &toml::Value) -> Result<Color32, String> {
+        v.as_str()
+            .and_then(|s| s.strip_prefix('#'))
+            .filter(|h| h.len() == 6)
+            .and_then(|h| u32::from_str_radix(h, 16).ok())
+            .map(hex)
+            .ok_or_else(|| format!("{key}: se esperaba un color \"#rrggbb\""))
+    }
+    macro_rules! fill {
+        ($table:expr, $target:expr, $($f:ident)*) => {
+            for (k, v) in $table {
+                match k.as_str() {
+                    $(stringify!($f) => $target.$f = color(k, v)?,)*
+                    _ => return Err(format!("color desconocido: {k}")),
+                }
+            }
+        };
+    }
+    let t: toml::Table = src.parse().map_err(|e: toml::de::Error| e.message().to_string())?;
+    let name = t
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("falta `name`")?
+        .to_string();
+    let dark = t.get("dark").and_then(|v| v.as_bool()).unwrap_or(true);
+    let mut p = if dark { DARK } else { LIGHT };
+    let empty = toml::Table::new();
+    let table = |key: &str| match t.get(key) {
+        None => Ok(&empty),
+        Some(v) => v.as_table().ok_or(format!("`{key}` debe ser una tabla")),
+    };
+    fill!(table("colors")?, p,
+        chrome surface surface_hover surface_active border border_strong text text_dim
+        text_faint accent accent_soft on_accent ok warn err canvas);
+    fill!(table("syntax")?, p.syntax,
+        comment punctuation escape strong link raw label heading list math keyword operator
+        number string function interpolated);
+    Ok((name, p))
 }
 
 pub fn palette(ctx: &egui::Context) -> Palette {

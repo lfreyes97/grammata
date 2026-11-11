@@ -9,6 +9,16 @@ use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub enum Action {
     NewDoc,
+    /// Documento nuevo sin guardar con ese texto (plantilla de un plugin).
+    NewDocWith(String),
+    /// Vuelve a leer la carpeta de plugins.
+    PluginsReload,
+    /// Activa o desactiva el plugin con ese id.
+    PluginEnable(String, bool),
+    /// Escribe el plugin de ejemplo y abre su `plugin.toml`.
+    PluginExample,
+    /// Tema `plugin/nombre` de un plugin (`None` = los de serie).
+    SetTheme(Option<String>),
     /// Snippet de una biblioteca `snippets.typ`: `preamble` (el `#import`
     /// o la definición) va al principio del documento si hace falta.
     InsertLibSnippet {

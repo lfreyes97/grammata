@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use typst::diag::FileError;
@@ -21,7 +21,7 @@ use typst::utils::{LazyHash, Scalar};
 use typst::{Library, LibraryExt as _, World, compile};
 use typst_kit::datetime::Time;
 use typst_kit::downloader::SystemDownloader;
-use typst_kit::files::{FileStore, FsRoot, SystemFiles};
+use typst_kit::files::{FileLoader, FileStore, FsRoot, SystemFiles};
 use typst_kit::fonts::FontStore;
 use typst_kit::packages::SystemPackages;
 use typst_layout::PagedDocument;
@@ -30,24 +30,101 @@ use crate::diagnostics::{self, Diagnostic};
 
 // ---------- Fuentes compartidas ----------
 
-static SHARED_FONTS: OnceLock<Arc<FontStore>> = OnceLock::new();
+static SHARED_FONTS: RwLock<Option<Arc<FontStore>>> = RwLock::new(None);
 
 /// Catálogo de fuentes del sistema más las de serie de typst. De las del
 /// sistema solo se escanean los metadatos; cada una se lee del disco la
 /// primera vez que un documento la usa (cargarlas todas de entrada eran GB
 /// de RAM con colecciones .ttc grandes).
 fn shared_fonts() -> Arc<FontStore> {
-    SHARED_FONTS
-        .get_or_init(|| {
-            let mut store = FontStore::new();
-            store.extend(typst_kit::fonts::system());
-            // Las de serie de typst (Libertinus, New Computer Modern…) tras
-            // las del sistema, como el CLI: sin ellas un documento sin
-            // `#set text(font:)` sale con una fuente de reserva cualquiera.
-            store.extend(typst_kit::fonts::embedded());
-            Arc::new(store)
-        })
+    if let Some(f) = SHARED_FONTS.read().expect("fuentes").as_ref() {
+        return f.clone();
+    }
+    let mut slot = SHARED_FONTS.write().expect("fuentes");
+    slot.get_or_insert_with(|| {
+        let mut store = FontStore::new();
+        // Las de los plugins primero: ganan a una del sistema con el
+        // mismo nombre, como `--font-path` en el CLI.
+        for dir in &extras().font_dirs {
+            store.extend(typst_kit::fonts::scan(dir));
+        }
+        store.extend(typst_kit::fonts::system());
+        // Las de serie de typst (Libertinus, New Computer Modern…) tras
+        // las del sistema, como el CLI: sin ellas un documento sin
+        // `#set text(font:)` sale con una fuente de reserva cualquiera.
+        store.extend(typst_kit::fonts::embedded());
+        Arc::new(store)
+    })
+    .clone()
+}
+
+// ---------- Paquetes y fuentes de los plugins ----------
+
+/// Paquete typst servido desde una carpeta (la de un plugin), sin
+/// instalarlo en el sistema: `@namespace/name:version`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PackageDir {
+    pub namespace: String,
+    pub name: String,
+    pub version: String,
+    pub dir: PathBuf,
+}
+
+impl PackageDir {
+    pub fn spec(&self) -> String {
+        format!("@{}/{}:{}", self.namespace, self.name, self.version)
+    }
+}
+
+#[derive(Default)]
+struct Extras {
+    packages: Vec<PackageDir>,
+    font_dirs: Vec<PathBuf>,
+}
+
+static EXTRAS: RwLock<Option<Arc<Extras>>> = RwLock::new(None);
+
+fn extras() -> Arc<Extras> {
+    EXTRAS
+        .read()
+        .expect("extras")
         .clone()
+        .unwrap_or_default()
+}
+
+/// Fija los paquetes y carpetas de fuentes que aportan los plugins activos.
+/// Si cambian las fuentes, el catálogo se vuelve a escanear en el próximo uso.
+pub fn set_extras(packages: Vec<PackageDir>, font_dirs: Vec<PathBuf>) {
+    let fonts_changed = extras().font_dirs != font_dirs;
+    *EXTRAS.write().expect("extras") = Some(Arc::new(Extras {
+        packages,
+        font_dirs,
+    }));
+    if fonts_changed {
+        *SHARED_FONTS.write().expect("fuentes") = None;
+    }
+}
+
+/// Archivos del proyecto y de los paquetes: los de un plugin salen de su
+/// carpeta; el resto, del sistema o de Typst Universe.
+struct Files {
+    system: SystemFiles,
+    extras: Arc<Extras>,
+}
+
+impl FileLoader for Files {
+    fn load(&self, id: FileId) -> Result<Bytes, FileError> {
+        if let VirtualRoot::Package(spec) = id.root()
+            && let Some(p) = self.extras.packages.iter().find(|p| {
+                p.namespace == spec.namespace.as_str()
+                    && p.name == spec.name.as_str()
+                    && p.version == spec.version.to_string()
+            })
+        {
+            return FsRoot::new(p.dir.clone()).load(id.vpath());
+        }
+        self.system.load(id)
+    }
 }
 
 /// Familias disponibles para el font pick (antes: shell a `typst fonts`).
@@ -86,7 +163,7 @@ pub(crate) struct EngineWorld {
     /// Fuente principal parseada una vez: `source()` se llama por cada
     /// consulta de span (diagnósticos, synctex) y re-parsear costaba O(n).
     main: Source,
-    files: FileStore<SystemFiles>,
+    files: FileStore<Files>,
     fonts: Arc<FontStore>,
     library: LazyHash<Library>,
     time: Time,
@@ -101,10 +178,10 @@ impl EngineWorld {
             .unwrap_or_else(|_| VirtualPath::new("main.typ").expect("vpath"));
         let main_id = RootedPath::new(VirtualRoot::Project, vpath).intern();
         let downloader = SystemDownloader::new(concat!("grammata/", env!("CARGO_PKG_VERSION")));
-        let files = FileStore::new(SystemFiles::new(
-            FsRoot::new(root.clone()),
-            SystemPackages::new(downloader),
-        ));
+        let files = FileStore::new(Files {
+            system: SystemFiles::new(FsRoot::new(root.clone()), SystemPackages::new(downloader)),
+            extras: extras(),
+        });
         Self {
             main_id,
             main: Source::new(main_id, text),

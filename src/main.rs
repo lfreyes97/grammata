@@ -16,6 +16,7 @@ mod layout;
 mod outline;
 mod panels;
 mod pdf_render;
+mod plugins;
 mod preview;
 mod project;
 mod scratch;

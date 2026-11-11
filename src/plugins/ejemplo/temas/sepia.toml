@@ -1,0 +1,25 @@
+# Tema del editor. Lo que no se indica sale del tema claro (dark = false)
+# u oscuro (dark = true) de serie. Campos: docs/plugins.md.
+name = "Sepia"
+dark = false
+
+[colors]
+chrome = "#e9dfc9"
+surface = "#f4ecd8"
+surface_hover = "#eadfc6"
+surface_active = "#dfd2b4"
+border = "#d6c8a8"
+border_strong = "#bfae88"
+text = "#3b2f1e"
+text_dim = "#6b5a41"
+text_faint = "#8f7d60"
+accent = "#9a5b13"
+accent_soft = "#ecd9b5"
+canvas = "#d9cdb2"
+
+[syntax]
+heading = "#7a3e0c"
+keyword = "#8a2f4f"
+function = "#2f5d8a"
+string = "#4d6b1f"
+comment = "#9a8a6c"

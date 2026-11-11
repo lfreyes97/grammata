@@ -911,3 +911,52 @@ fn dialogo_de_exportacion() {
     assert!(h.state().st.actions.is_empty());
     assert!(matches!(h.state().st.modal, Some(Modal::Export(_))));
 }
+
+/// Plugin de ejemplo: el formulario de su plantilla crea un documento que
+/// compila contra el paquete del plugin, y su tema se aplica.
+#[test]
+#[ignore]
+fn plugin_formulario_y_tema() {
+    use egui_kittest::kittest::Queryable;
+    let tmp = std::env::temp_dir().join(format!("grammata-test-plug-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("cfg")).unwrap();
+    // SAFETY: se fija antes de crear la app; la sesión y los plugins del
+    // usuario no se tocan.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Plugins));
+    h.run_steps(5);
+    h.get_by_label_contains("Crear plugin de ejemplo").click();
+    h.run_steps(5);
+    assert!(h.state().st.docs.cur().fname().contains("plugin.toml"));
+    h.get_by_label_contains("Tarjeta de cita").click();
+    h.run_steps(5);
+    shot(&mut h, "plugins-formulario");
+    h.get_by_label_contains("Nuevo documento").click();
+    h.run_steps(5);
+    let text = h.state().st.docs.cur().text.clone();
+    assert!(
+        text.starts_with("#import \"@local/tarjetas:0.1.0\": tarjeta") && !text.contains("autor:"),
+        "{text}"
+    );
+    wait(&mut h, "compilar la tarjeta", |a| {
+        a.st.compiler.is_built(a.st.main_key())
+    });
+    let key = h.state().st.main_key();
+    let built = &h.state().st.compiler.built[&key.doc];
+    assert!(built.diagnostics.is_empty(), "la tarjeta no compila");
+    shot(&mut h, "plugins-documento");
+    h.get_by_label("Sepia").click();
+    h.run_steps(5);
+    assert_eq!(h.state().st.prefs.theme.as_deref(), Some("ejemplo/Sepia"));
+    assert!(!h.state().st.prefs.dark);
+    shot(&mut h, "plugins-tema");
+    h.state_mut().st.actions.push(Action::SetTheme(None));
+    h.run_steps(3);
+    let _ = std::fs::remove_dir_all(&tmp);
+}

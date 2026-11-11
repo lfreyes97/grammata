@@ -51,6 +51,15 @@ Actualizado el 2026-11-06. Marcar con `[x]` al terminar.
   - [ ] Ir a la definición.
   - [ ] Saltar entre código y vista previa: `jump_from_click` (clic en el PDF) y `jump_from_cursor` (cursor al PDF).
 
+## 9. Plugins
+- [x] Fase 1 (declarativa): `plugin.toml` con paquete typst, plantillas con formulario, fuentes, snippets y temas; panel «Plugins»; clave de licencia guardada. Ver `docs/plugins.md`.
+- [ ] Fase 2: plugins con **proceso externo** (ejecutable que habla JSON por stdin/stdout): comandos y eventos, y entrega de la clave de licencia para que el plugin la verifique.
+- [ ] Vista previa en vivo del formulario (hoy crea el documento o inserta el código) y volver a editar una llamada ya insertada.
+- [ ] Instalar un plugin desde un `.zip` y botón para abrir la carpeta.
+- [ ] Los temas no cambian aún el fondo de los campos de texto ni el color de selección (`theme::apply`).
+- [ ] Empaquetar Instatypst como plugin (manifiesto con sus presets de `carteles`).
+- [ ] Arrancar con el tema claro guardado sale con colores mezclados en las pruebas de UI (ya pasaba antes de los plugins): comprobar en la app real.
+
 ## Límites conocidos
 - Solo se puede probar Linux (GNOME/Wayland). macOS no se puede probar nunca desde aquí; Windows solo compila en el CI.
 - En Wayland el icono de ventana solo sale con el `.desktop` instalado (winit 0.30 ignora `with_icon`).

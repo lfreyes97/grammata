@@ -22,16 +22,18 @@ pub enum Panel {
     Templates,
     Files,
     Scratch,
+    Plugins,
 }
 
 impl Panel {
-    pub const ALL: [Panel; 8] = [
+    pub const ALL: [Panel; 9] = [
         Panel::Outline,
         Panel::Symbols,
         Panel::Snippets,
         Panel::Templates,
         Panel::Files,
         Panel::Scratch,
+        Panel::Plugins,
         Panel::Preview,
         Panel::Problems,
     ];
@@ -46,6 +48,7 @@ impl Panel {
             Panel::Templates => "Plantillas",
             Panel::Files => "Archivos",
             Panel::Scratch => "Borrador",
+            Panel::Plugins => "Plugins",
         }
     }
 
@@ -59,6 +62,7 @@ impl Panel {
             Panel::Templates => "Ctrl+Mayús+T",
             Panel::Files => "Ctrl+Mayús+F",
             Panel::Scratch => "Ctrl+Mayús+B",
+            Panel::Plugins => "Ctrl+Mayús+U",
         }
     }
 
@@ -73,6 +77,7 @@ impl Panel {
             Panel::Templates => i::ARTICLE,
             Panel::Files => i::FOLDER,
             Panel::Scratch => i::PENCIL_LINE,
+            Panel::Plugins => i::PUZZLE_PIECE,
         }
     }
 
@@ -86,6 +91,7 @@ impl Panel {
                 | Panel::Templates
                 | Panel::Files
                 | Panel::Scratch
+                | Panel::Plugins
         )
     }
 }
@@ -223,7 +229,7 @@ pub fn show_panel(dock: &mut DockState<Tab>, p: Panel, cur_doc: DocId) {
     // es el panel nuevo, aunque la doc de egui_dock diga lo contrario).
     let (split, frac) = match p {
         Panel::Preview => (Split::Right, 0.55),
-        Panel::Outline | Panel::Symbols | Panel::Snippets | Panel::Templates | Panel::Files | Panel::Scratch => {
+        Panel::Outline | Panel::Symbols | Panel::Snippets | Panel::Templates | Panel::Files | Panel::Scratch | Panel::Plugins => {
             (Split::Left, 0.3)
         }
         Panel::Problems => (Split::Below, 0.74),

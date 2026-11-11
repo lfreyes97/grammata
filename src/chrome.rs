@@ -206,6 +206,7 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                 Panel::Templates,
                 Panel::Files,
                 Panel::Scratch,
+                Panel::Plugins,
                 Panel::Symbols,
                 Panel::Outline,
             ] {

@@ -126,6 +126,8 @@ pub struct State {
     pub user_snippets: Vec<UserSnippet>,
     /// Bibliotecas `snippets.typ` (global y del proyecto).
     pub snippet_libs: crate::snippet_lib::Libs,
+    /// Plugins instalados (paquetes, snippets, temas y plantillas).
+    pub plugins: crate::plugins::Plugins,
     pub fmt: FormatBar,
     force_compile: bool,
     /// Documento fijado en la vista previa: se compila y muestra él aunque
@@ -281,7 +283,18 @@ impl App {
             session.prefs.scratch_equation,
             session.prefs.scratch_block,
         );
-        let prefs = session.prefs;
+        let mut prefs = session.prefs;
+        // Antes de tocar las fuentes del motor: los plugins aportan las suyas.
+        let plugins = crate::plugins::Plugins::load();
+        match prefs.theme.as_deref().map(|t| plugins.theme(t)) {
+            Some(Some(p)) => {
+                prefs.dark = p.dark;
+                theme::set_custom(Some(p));
+            }
+            // El plugin del tema ya no está.
+            Some(None) => prefs.theme = None,
+            None => {}
+        }
         theme::apply(&ctx, prefs.dark);
         let mut st = State {
             docs,
@@ -306,6 +319,7 @@ impl App {
             snippet_query: String::new(),
             user_snippets: snippets::load_user(),
             snippet_libs: crate::snippet_lib::Libs::default(),
+            plugins,
             template: templates::Options::default(),
             template_font_filter: String::new(),
             template_dir: None,
@@ -421,6 +435,9 @@ impl App {
             }
             if k(cs, K::B) {
                 a.push(Action::TogglePanel(Panel::Scratch))
+            }
+            if k(cs, K::U) {
+                a.push(Action::TogglePanel(Panel::Plugins))
             }
             if k(M::SHIFT, K::F3) {
                 self.st.editor.pending_step = Some(-1)
@@ -617,6 +634,37 @@ impl App {
                 self.switch_to_id(id);
                 self.st.needs_persist = true;
             }
+            Action::NewDocWith(text) => {
+                let id = self.st.docs.push(None, text);
+                // Sin guardar: al cerrar pregunta, como cualquier texto nuevo.
+                if let Some(d) = self.st.docs.get_mut(id) {
+                    d.saved.clear();
+                }
+                layout::add_doc(&mut self.dock, id, cur);
+                self.switch_to_id(id);
+                self.st.needs_persist = true;
+            }
+            Action::PluginsReload => {
+                self.st.plugins.reload();
+                self.plugins_changed(ctx);
+                let n = self.st.plugins.list.len();
+                self.st.set_status(format!("Plugins: {n}"), StatusKind::Info);
+            }
+            Action::PluginEnable(id, on) => {
+                self.st.plugins.set_enabled(&id, on);
+                self.plugins_changed(ctx);
+            }
+            Action::PluginExample => match self.st.plugins.create_example() {
+                Ok(manifest) => {
+                    self.plugins_changed(ctx);
+                    self.open_path(manifest);
+                }
+                Err(e) => self.st.set_status(
+                    format!("No se pudo crear el plugin de ejemplo: {e}"),
+                    StatusKind::Err,
+                ),
+            },
+            Action::SetTheme(key) => self.set_theme(ctx, key),
             Action::NewProject => {
                 let np = crate::project::NewProject::new(self.st.prefs.files_root.as_deref());
                 self.st.modal = Some(Modal::NewProject(np));
@@ -805,8 +853,12 @@ impl App {
                 self.st.needs_persist = true;
             }
             Action::ToggleTheme => {
+                // Alternar claro/oscuro deja el tema de plugin, si lo había.
+                self.st.prefs.theme = None;
+                theme::set_custom(None);
                 self.st.prefs.dark = !self.st.prefs.dark;
                 theme::apply(ctx, self.st.prefs.dark);
+                self.dock_style = None;
                 self.st.needs_persist = true;
             }
             Action::FontDelta(d) => {
@@ -1457,6 +1509,29 @@ impl App {
         }
     }
 
+    /// Pone el tema `plugin/nombre` (o vuelve a los de serie con `None`).
+    fn set_theme(&mut self, ctx: &egui::Context, key: Option<String>) {
+        let pal = key.as_deref().and_then(|k| self.st.plugins.theme(k));
+        self.st.prefs.theme = key.filter(|_| pal.is_some());
+        if let Some(p) = pal {
+            self.st.prefs.dark = p.dark;
+        }
+        theme::set_custom(pal);
+        theme::apply(ctx, self.st.prefs.dark);
+        self.dock_style = None;
+        self.st.needs_persist = true;
+    }
+
+    /// Tras activar, desactivar o recargar plugins: sus paquetes y fuentes
+    /// ya están en el motor; falta recompilar y soltar el tema que ya no esté.
+    fn plugins_changed(&mut self, ctx: &egui::Context) {
+        self.st.fmt.reload_fonts(ctx);
+        self.st.force_compile = true;
+        if let Some(key) = self.st.prefs.theme.clone() {
+            self.set_theme(ctx, Some(key));
+        }
+    }
+
     fn dock_style(&mut self, ctx: &egui::Context) -> egui_dock::Style {
         let dark = self.st.prefs.dark;
         match &self.dock_style {
@@ -1675,6 +1750,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Panel(Panel::Templates) => templates::panel(st, ui),
             Tab::Panel(Panel::Files) => files::panel(st, ui),
             Tab::Panel(Panel::Scratch) => scratch::panel(st, ui),
+            Tab::Panel(Panel::Plugins) => crate::plugins::panel(st, ui),
             Tab::Image(id) => crate::image_view::tab(st, ui, id),
         }
     }
