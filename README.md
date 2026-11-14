@@ -7,8 +7,11 @@
 
 # Grammata — editor de Typst en Rust + egui
 
-Grammata es un editor Typst con pestañas, paneles acoplables, autocompletado y vista previa del
-**PDF real** en vivo.
+Grammata es un editor de escritorio nativo para [Typst](https://typst.app), escrito en Rust con
+egui: pestañas, paneles acoplables, autocompletado, plugins y vista previa del **PDF real** en vivo.
+
+> **Estado:** probado en Linux. macOS no se ha probado y Windows solo se compilaría en CI,
+> sin pruebas manuales.
 
 ## Uso
 
@@ -56,8 +59,12 @@ Sesión (pestañas, preferencias y diseño del dock) en
   Marcadores: `${sel}` selección · `${sel:x}` selección o `x` · `${x}` relleno que queda
   seleccionado para escribir encima · `${}` cursor.
 - **Plugins**: carpetas en `~/.config/grammata/plugins/` con un `plugin.toml`: paquete typst con
-  formulario, fuentes, snippets, temas y programas externos (importar y exportar Markdown con pandoc). Formato en [`docs/plugins.md`](docs/plugins.md);
-  arquitectura en [`docs/plugins-arquitectura.md`](docs/plugins-arquitectura.md).
+  formulario, fuentes, snippets, temas y programas externos (importar y exportar Markdown con
+  pandoc, que debe estar instalado). Los programas externos son código que se ejecuta en tu
+  máquina: solo corren si los permites en el panel, y el permiso se pierde si cambia su línea de
+  comando. El plugin de Pandoc usa `--sandbox` y no deja pasar typst, HTML ni TeX en crudo.
+  Formato en [`docs/plugins.md`](docs/plugins.md); arquitectura en
+  [`docs/plugins-arquitectura.md`](docs/plugins-arquitectura.md).
 - **Plantillas**: builder de Artículo en el panel lateral (título, autor, fecha,
   idioma, papel, márgenes, fuente, numeración, índice, resumen) que abre el
   documento en una pestaña nueva; todo lo generado compila (`Ctrl+Mayús+T`).
@@ -118,7 +125,7 @@ afiliado a ella.
 | `engine.rs` | `World` typst embebido: archivos, paquetes, fuentes, PDF/PNG/SVG |
 | `panels.rs` | paneles Esquema y Problemas |
 | `symbols.rs` | panel de símbolos (tabla validada contra typst) |
-| `plugins.rs` | plugins: manifiesto, plantillas con formulario, panel (`plugins/panel.rs`) |
+| `plugins.rs` | plugins: manifiesto, plantillas con formulario, panel (`plugins/panel.rs`), programas externos (`plugins/run.rs`) |
 | `snippets.rs` | panel de snippets, marcadores `${…}`, snippets del usuario |
 | `templates.rs` | builders de plantillas (Artículo): opciones → `.typ` que compila |
 | `files.rs` | gestor de archivos: árbol, abrir, crear, renombrar, eliminar |
