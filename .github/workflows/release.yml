@@ -94,4 +94,27 @@ jobs:
           files: artefactos/*
           generate_release_notes: true
           body: |
-            Linux es la plataforma probada. El `.zip` de Windows se compila en CI sin pruebas manuales; macOS no se ofrece.
+            ## Grammata 0.1.0
+
+            Primera versión pública de Grammata: un editor de escritorio nativo para [Typst](https://typst.app), escrito en Rust con egui. El nombre viene del griego γράμματα, «letras».
+
+            ### Qué incluye
+            - Vista previa en vivo del **PDF real**, con el compilador de Typst embebido (no hace falta el CLI).
+            - Pestañas y paneles acoplables: esquema, símbolos, snippets, plantillas, archivos, borrador y problemas.
+            - Editor con resaltado del analizador oficial de Typst y autocompletado.
+            - Plugins declarativos y programas externos, como Pandoc para importar y exportar Markdown. Los programas externos solo corren si los permites.
+
+            ### Descargas
+            - **Linux:** `.tar.gz` (dentro, `./install.sh [PREFIX]`), `.deb` y AppImage.
+            - **Windows:** `.zip` con `grammata.exe`.
+
+            ### Estado por plataforma
+            - **Linux:** es la plataforma probada.
+            - **Windows:** se compila en CI, sin pruebas manuales.
+            - **macOS:** no se ha probado y no se ofrece paquete.
+
+            ### Limitaciones conocidas
+            - Los argumentos de línea de comandos se ignoran: abrir un archivo desde el lanzador todavía no funciona.
+            - El paquete no incluye aún el fichero de licencias de terceros.
+
+            Licencia: GPL-3.0-or-later. «Typst» es marca de Typst GmbH; este proyecto es independiente y no está afiliado a ella.
