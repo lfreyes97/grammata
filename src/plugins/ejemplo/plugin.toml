@@ -1,0 +1,82 @@
+# Plugin de ejemplo de Grammata. Copia esta carpeta para hacer el tuyo;
+# el formato completo está en docs/plugins.md.
+id = "ejemplo"
+name = "Tarjetas (ejemplo)"
+version = "0.1.0"
+description = "Un paquete typst con su formulario, snippets y un tema."
+authors = ["Grammata"]
+license = "MIT"
+# needs_key = true   # plugin de pago: el panel pide la clave de licencia
+
+snippets = ["snippets.typ"]
+themes = ["temas/sepia.toml"]
+# fonts = ["Fonts"]  # carpetas de fuentes que trae el plugin
+
+# El paquete typst de esta carpeta (lee nombre y versión de typst.toml).
+# Se importa como @local/tarjetas:0.1.0 sin instalarlo.
+[package]
+path = "."
+
+[[template]]
+id = "tarjeta"
+name = "Tarjeta de cita"
+group = "Redes"
+description = "Una frase sobre fondo de color, con autor."
+body = """
+#import "{{package}}": tarjeta
+
+#tarjeta(
+  {{texto}},
+  autor: {{autor}},
+  fondo: {{fondo}},
+  formato: {{formato}},
+  tamaño: {{tamano}},
+  centrado: {{centrado}},
+)
+"""
+
+[[template.field]]
+key = "texto"
+label = "Texto"
+type = "content"
+multiline = true
+default = "Todo es gracia."
+
+[[template.field]]
+key = "autor"
+label = "Autor"
+type = "content"
+optional = true
+hint = "Opcional"
+
+[[template.field]]
+key = "fondo"
+label = "Fondo"
+type = "color"
+default = "#1d4ed8"
+
+[[template.field]]
+key = "formato"
+label = "Formato"
+type = "choice"
+default = "(1080, 1350)"
+options = [
+  { value = "(1080, 1350)", label = "Retrato 4:5" },
+  { value = "(1080, 1080)", label = "Cuadrado" },
+  { value = "(1080, 1920)", label = "Historia 9:16" },
+]
+
+[[template.field]]
+key = "tamano"
+label = "Tamaño del texto"
+type = "number"
+default = 72
+unit = "pt"
+min = 20
+max = 200
+
+[[template.field]]
+key = "centrado"
+label = "Centrado"
+type = "bool"
+default = false

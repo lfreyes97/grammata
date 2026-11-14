@@ -459,6 +459,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
         let d = st.docs.cur();
         let dir = d.path.as_deref().and_then(std::path::Path::parent);
         st.snippet_libs.refresh(dir, st.prefs.files_root.as_deref());
+        st.plugins.refresh_snippets();
     }
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -534,6 +535,13 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     .clicked()
             {
                 act = Some(Action::CreateSnippetLib(dir.join(crate::snippet_lib::FILE)));
+            }
+            // De los plugins activos.
+            for p in st.plugins.list.iter().filter(|p| p.active()) {
+                for lib in &p.snippets {
+                    let title = format!("Plugin: {}", p.manifest.name);
+                    lib_section(ui, &pal, lib, &title, &matches, &st.docs, &mut act);
+                }
             }
             // De serie.
             for g in BUILTIN {

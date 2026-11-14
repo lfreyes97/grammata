@@ -43,6 +43,27 @@ Actualizado el 2026-11-06. Marcar con `[x]` al terminar.
 - [ ] Borrador: extras «Recientes» y compactar la barra de estructuras.
 - [ ] Formato: el botón de enlace no lee un enlace existente para editarlo.
 
+## 8. Ideas: `typst-ide`
+- [ ] Evaluar la crate `typst-ide` (la usan la web app de Typst y `tinymist`): da los datos, la interfaz hay que dibujarla en egui. Hoy no se usa.
+  - [x] Autocompletado semántico (funciones, parámetros, variables, rutas) con el menú propio, en `src/ide.rs`.
+  - [ ] Autocompletado: etiquetas y bibliografía (necesitan pasar el último `PagedDocument` a `autocomplete`), paquetes (`IdeWorld::packages`) y mostrar el tipo de cada ítem.
+  - [ ] Tooltips al pasar el ratón y ayuda de firma de la llamada.
+  - [ ] Ir a la definición.
+  - [ ] Saltar entre código y vista previa: `jump_from_click` (clic en el PDF) y `jump_from_cursor` (cursor al PDF).
+
+## 9. Plugins
+- [x] Fase 1 (declarativa): `plugin.toml` con paquete typst, plantillas con formulario, fuentes, snippets y temas; panel «Plugins»; clave de licencia guardada. Ver `docs/plugins.md`.
+- [x] Protocolo 1 de programas externos (`[[import]]`, `[[export]]`, `[[command]]`; texto o JSON por stdin/stdout, con permiso del usuario) y plugin de Pandoc para Markdown.
+- [ ] Protocolo: proceso persistente con eventos (guardar, compilar), comandos en un menú o paleta, y cancelar un programa en marcha.
+- [ ] Importar al abrir o arrastrar un `.md`; probar a mano el diálogo de exportar de los plugins (las pruebas no cubren el diálogo nativo).
+- [ ] Seguridad de plugins: el permiso no cubre el contenido de los `./programa` ni `protocol`/`timeout`; la salida de un programa no tiene límite de tamaño y al vencer el tiempo solo se mata el proceso hijo (no su grupo).
+- [ ] Pandoc: Word y otros formatos (ya están comentados en su manifiesto).
+- [ ] Vista previa en vivo del formulario (hoy crea el documento o inserta el código) y volver a editar una llamada ya insertada.
+- [ ] Instalar un plugin desde un `.zip` y botón para abrir la carpeta.
+- [ ] Los temas no cambian aún el fondo de los campos de texto ni el color de selección (`theme::apply`).
+- [ ] Empaquetar Instatypst como plugin (manifiesto con sus presets de `carteles`).
+- [ ] Arrancar con el tema claro guardado sale con colores mezclados en las pruebas de UI (ya pasaba antes de los plugins): comprobar en la app real.
+
 ## Límites conocidos
 - Solo se puede probar Linux (GNOME/Wayland). macOS no se puede probar nunca desde aquí; Windows solo compila en el CI.
 - En Wayland el icono de ventana solo sale con el `.desktop` instalado (winit 0.30 ignora `with_icon`).

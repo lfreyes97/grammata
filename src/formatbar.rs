@@ -88,6 +88,13 @@ impl FormatBar {
         self.fonts_rx = Some(rx);
     }
 
+    /// Vuelve a pedir la lista (cambiaron las fuentes de los plugins).
+    pub fn reload_fonts(&mut self, ctx: &egui::Context) {
+        self.fonts = None;
+        self.fonts_rx = None;
+        self.preload(ctx);
+    }
+
     /// Recoge las fuentes si ya llegaron (no bloquea).
     fn poll_fonts(&mut self) {
         if self.fonts.is_none()

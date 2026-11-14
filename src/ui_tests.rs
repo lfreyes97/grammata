@@ -90,7 +90,7 @@ fn recorrido_de_la_ui() {
     h.key_press(Key::Tab);
     h.run_steps(3);
     assert!(
-        cur_text(&h).contains("#table(columns: 2, [a], [b])"),
+        cur_text(&h).ends_with("#table(\n  \n)"),
         "no se insertó el snippet:\n{}",
         cur_text(&h)
     );
@@ -333,8 +333,7 @@ fn recorrido_de_la_ui() {
 #[ignore = "necesita GPU"]
 fn esquema_navega_al_buffer() {
     use egui_kittest::kittest::Queryable;
-    let tmp =
-        std::env::temp_dir().join(format!("grammata-test-outline-{}", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("grammata-test-outline-{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
     // SAFETY: único test que toca el entorno; se fija antes de crear la app.
     unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
@@ -823,7 +822,10 @@ fn fijar_vista_previa_y_autoguardado() {
     .unwrap();
     let mut h = harness();
     h.run_steps(5);
-    h.state_mut().st.actions.push(Action::OpenPath(main.clone()));
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::OpenPath(main.clone()));
     h.run_steps(3);
     let main_id = h.state().st.docs.cur_id();
     h.state_mut().st.actions.push(Action::TogglePin);
@@ -842,7 +844,10 @@ fn fijar_vista_previa_y_autoguardado() {
     }
     wait(&mut h, "autoguardado y recompilación", |a| {
         a.st.disk_gen > 0
-            && a.st.preview.loaded.is_some_and(|k| k.doc == main_id && k.disk == a.st.disk_gen)
+            && a.st
+                .preview
+                .loaded
+                .is_some_and(|k| k.doc == main_id && k.disk == a.st.disk_gen)
             && rendered_pages(a)
     });
     assert!(std::fs::read_to_string(&cap).unwrap().contains("Añadido"));
@@ -858,7 +863,11 @@ fn fijar_vista_previa_y_autoguardado() {
     let p = svg.canonicalize().unwrap();
     h.state_mut().st.actions.push(Action::InsertImage(p));
     h.run_steps(3);
-    assert!(cur_text(&h).contains("#image(\"figura.svg\")"), "{}", cur_text(&h));
+    assert!(
+        cur_text(&h).contains("#image(\"figura.svg\")"),
+        "{}",
+        cur_text(&h)
+    );
     // Ajuste de línea (activo por defecto) con sangría colgante.
     {
         let d = h.state_mut().st.docs.cur_mut();
@@ -901,4 +910,110 @@ fn dialogo_de_exportacion() {
     // Un rango inválido no exporta (el botón está desactivado).
     assert!(h.state().st.actions.is_empty());
     assert!(matches!(h.state().st.modal, Some(Modal::Export(_))));
+}
+
+/// Plugin de ejemplo: el formulario de su plantilla crea un documento que
+/// compila contra el paquete del plugin, y su tema se aplica.
+#[test]
+#[ignore]
+fn plugin_formulario_y_tema() {
+    use egui_kittest::kittest::Queryable;
+    let tmp = std::env::temp_dir().join(format!("grammata-test-plug-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("cfg")).unwrap();
+    // SAFETY: se fija antes de crear la app; la sesión y los plugins del
+    // usuario no se tocan.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Plugins));
+    h.run_steps(5);
+    h.get_by_label_contains("Ejemplo: paquete").click();
+    h.run_steps(5);
+    assert!(h.state().st.docs.cur().fname().contains("plugin.toml"));
+    h.get_by_label_contains("Tarjeta de cita").click();
+    h.run_steps(5);
+    shot(&mut h, "plugins-formulario");
+    h.get_by_label_contains("Nuevo documento").click();
+    h.run_steps(5);
+    let text = h.state().st.docs.cur().text.clone();
+    assert!(
+        text.starts_with("#import \"@local/tarjetas:0.1.0\": tarjeta") && !text.contains("autor:"),
+        "{text}"
+    );
+    wait(&mut h, "compilar la tarjeta", |a| {
+        a.st.compiler.is_built(a.st.main_key())
+    });
+    let key = h.state().st.main_key();
+    let built = &h.state().st.compiler.built[&key.doc];
+    assert!(built.diagnostics.is_empty(), "la tarjeta no compila");
+    shot(&mut h, "plugins-documento");
+    h.get_by_label("Sepia").click();
+    h.run_steps(5);
+    assert_eq!(h.state().st.prefs.theme.as_deref(), Some("ejemplo/Sepia"));
+    assert!(!h.state().st.prefs.dark);
+    shot(&mut h, "plugins-tema");
+    h.state_mut().st.actions.push(Action::SetTheme(None));
+    h.run_steps(3);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Plugin de Pandoc: importa un Markdown como documento nuevo (el programa
+/// corre en un hilo) y un comando de plugin transforma la selección.
+#[test]
+#[ignore]
+fn plugin_importa_markdown_y_ejecuta_comando() {
+    use egui_kittest::kittest::Queryable;
+    if std::process::Command::new("pandoc").arg("--version").output().is_err() {
+        eprintln!("sin pandoc: prueba omitida");
+        return;
+    }
+    let tmp = std::env::temp_dir().join(format!("grammata-test-pandoc-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let plug = tmp.join("cfg/grammata/plugins/mayus");
+    std::fs::create_dir_all(&plug).unwrap();
+    std::fs::write(
+        plug.join("plugin.toml"),
+        "name = \"Mayúsculas\"\n[[command]]\nid = \"mayus\"\nname = \"A mayúsculas\"\nrun = [\"tr\", \"a-z\", \"A-Z\"]\n",
+    )
+    .unwrap();
+    // SAFETY: se fija antes de crear la app; la sesión y los plugins del
+    // usuario no se tocan.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let md = tmp.join("nota.md");
+    std::fs::write(&md, "# Hola\n\nUn *texto* con **negrita**.\n\n- uno\n- dos\n").unwrap();
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Plugins));
+    h.run_steps(5);
+    // Sin permiso, el comando no se ofrece.
+    assert!(h.query_by_label_contains("A mayúsculas").is_none());
+    shot(&mut h, "plugins-permiso");
+    h.get_by_label_contains("Permitir sus programas").click();
+    h.run_steps(5);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::PluginInstall("pandoc"));
+    h.run_steps(5);
+    h.state_mut().st.actions.push(Action::ImportPath(md));
+    wait(&mut h, "importar el markdown", |a| {
+        a.st.docs.cur().text.starts_with("= Hola")
+    });
+    let text = h.state().st.docs.cur().text.clone();
+    assert!(text.contains("#strong[negrita]") && text.contains("- uno"), "{text}");
+    assert!(h.state().st.docs.cur().modified(), "lo importado está sin guardar");
+    shot(&mut h, "plugins-importado");
+    // Comando sobre el documento entero (sin selección).
+    h.get_by_label_contains("A mayúsculas").click();
+    wait(&mut h, "comando del plugin", |a| {
+        a.st.docs.cur().text.starts_with("= HOLA")
+    });
+    let _ = std::fs::remove_dir_all(&tmp);
 }

@@ -103,6 +103,7 @@ pub struct State {
     pub docs: Docs,
     pub prefs: Prefs,
     pub compiler: Compiler,
+    pub ide: crate::ide::Ide,
     pub preview: Preview,
     pub editor: EditorUi,
     pub outline: OutlineCache,
@@ -125,6 +126,8 @@ pub struct State {
     pub user_snippets: Vec<UserSnippet>,
     /// Bibliotecas `snippets.typ` (global y del proyecto).
     pub snippet_libs: crate::snippet_lib::Libs,
+    /// Plugins instalados (paquetes, snippets, temas y plantillas).
+    pub plugins: crate::plugins::Plugins,
     pub fmt: FormatBar,
     force_compile: bool,
     /// Documento fijado en la vista previa: se compila y muestra él aunque
@@ -137,6 +140,29 @@ pub struct State {
     /// Exportación en curso (hilo) y última carpeta elegida.
     export_rx: Option<std::sync::mpsc::Receiver<Result<PathBuf, String>>>,
     last_export_dir: Option<PathBuf>,
+    /// Programa de un plugin en marcha (hilo) y qué hacer con su salida.
+    plugin_job: Option<PluginJob>,
+}
+
+struct PluginJob {
+    rx: std::sync::mpsc::Receiver<Result<crate::plugins::run::Done, String>>,
+    then: Then,
+    /// Para la barra de estado: «Importar Markdown».
+    label: String,
+}
+
+/// Destino del resultado de un programa de plugin.
+enum Then {
+    NewDoc,
+    /// El texto se escribe en ese archivo.
+    Write(PathBuf),
+    /// El programa ya escribió el archivo.
+    Wrote(PathBuf),
+    Replace {
+        doc: DocId,
+        start: usize,
+        expect: String,
+    },
 }
 
 impl State {
@@ -280,12 +306,24 @@ impl App {
             session.prefs.scratch_equation,
             session.prefs.scratch_block,
         );
-        let prefs = session.prefs;
+        let mut prefs = session.prefs;
+        // Antes de tocar las fuentes del motor: los plugins aportan las suyas.
+        let plugins = crate::plugins::Plugins::load();
+        match prefs.theme.as_deref().map(|t| plugins.theme(t)) {
+            Some(Some(p)) => {
+                prefs.dark = p.dark;
+                theme::set_custom(Some(p));
+            }
+            // El plugin del tema ya no está.
+            Some(None) => prefs.theme = None,
+            None => {}
+        }
         theme::apply(&ctx, prefs.dark);
         let mut st = State {
             docs,
             prefs,
             compiler: Compiler::new(ctx.clone()),
+            ide: crate::ide::Ide::new(ctx.clone()),
             preview: Preview::new(ctx.clone()),
             editor: EditorUi::default(),
             outline: OutlineCache::default(),
@@ -304,6 +342,7 @@ impl App {
             snippet_query: String::new(),
             user_snippets: snippets::load_user(),
             snippet_libs: crate::snippet_lib::Libs::default(),
+            plugins,
             template: templates::Options::default(),
             template_font_filter: String::new(),
             template_dir: None,
@@ -313,6 +352,7 @@ impl App {
             force_compile: false,
             export_rx: None,
             last_export_dir: None,
+            plugin_job: None,
             pinned: None,
             disk_gen: 0,
             images: crate::image_view::Images::new(ctx.clone()),
@@ -419,6 +459,9 @@ impl App {
             }
             if k(cs, K::B) {
                 a.push(Action::TogglePanel(Panel::Scratch))
+            }
+            if k(cs, K::U) {
+                a.push(Action::TogglePanel(Panel::Plugins))
             }
             if k(M::SHIFT, K::F3) {
                 self.st.editor.pending_step = Some(-1)
@@ -530,6 +573,7 @@ impl App {
 
     fn compile_tick(&mut self, ctx: &egui::Context) {
         let st = &mut self.st;
+        st.ide.poll();
         for key in st.compiler.poll() {
             if key.doc == st.main_doc().id
                 && let Some(e) = st.compiler.built.get(&key.doc).and_then(|b| {
@@ -614,6 +658,40 @@ impl App {
                 self.switch_to_id(id);
                 self.st.needs_persist = true;
             }
+            Action::NewDocWith(text) => {
+                let id = self.st.docs.push(None, text);
+                // Sin guardar: al cerrar pregunta, como cualquier texto nuevo.
+                if let Some(d) = self.st.docs.get_mut(id) {
+                    d.saved.clear();
+                }
+                layout::add_doc(&mut self.dock, id, cur);
+                self.switch_to_id(id);
+                self.st.needs_persist = true;
+            }
+            Action::PluginsReload => {
+                self.st.plugins.reload();
+                self.plugins_changed(ctx);
+                let n = self.st.plugins.list.len();
+                self.st.set_status(format!("Plugins: {n}"), StatusKind::Info);
+            }
+            Action::PluginEnable(id, on) => {
+                self.st.plugins.set_enabled(&id, on);
+                self.plugins_changed(ctx);
+            }
+            Action::PluginInstall(id) => match self.st.plugins.install(id) {
+                Ok(manifest) => {
+                    self.plugins_changed(ctx);
+                    self.open_path(manifest);
+                }
+                Err(e) => self
+                    .st
+                    .set_status(format!("No se pudo crear el plugin: {e}"), StatusKind::Err),
+            },
+            Action::PluginAllow(id, on) => self.st.plugins.set_allowed(&id, on),
+            Action::Import => self.import_dialog(),
+            Action::ImportPath(p) => self.import_path(ctx, p),
+            Action::PluginRun { plugin, kind, id } => self.plugin_run(ctx, &plugin, kind, &id),
+            Action::SetTheme(key) => self.set_theme(ctx, key),
             Action::NewProject => {
                 let np = crate::project::NewProject::new(self.st.prefs.files_root.as_deref());
                 self.st.modal = Some(Modal::NewProject(np));
@@ -802,8 +880,12 @@ impl App {
                 self.st.needs_persist = true;
             }
             Action::ToggleTheme => {
+                // Alternar claro/oscuro deja el tema de plugin, si lo había.
+                self.st.prefs.theme = None;
+                theme::set_custom(None);
                 self.st.prefs.dark = !self.st.prefs.dark;
                 theme::apply(ctx, self.st.prefs.dark);
+                self.dock_style = None;
                 self.st.needs_persist = true;
             }
             Action::FontDelta(d) => {
@@ -1091,11 +1173,12 @@ impl App {
             .get(doc)
             .and_then(|d| text::nearest_occurrence(&d.text, expect, start));
         let Some(start) = found else {
-            self.st.scratch.editing = None;
-            self.st.set_status(
-                "La ecuación ya no está en el documento: el borrador deja de editarla",
-                StatusKind::Info,
-            );
+            let msg = if self.st.scratch.editing.take().is_some() {
+                "La ecuación ya no está en el documento: el borrador deja de editarla"
+            } else {
+                "El texto cambió mientras tanto: no se reemplazó"
+            };
+            self.st.set_status(msg, StatusKind::Info);
             return;
         };
         let end = start + expect.chars().count();
@@ -1454,6 +1537,220 @@ impl App {
         }
     }
 
+    // ---------- Programas de plugins ----------
+
+    fn import_dialog(&mut self) {
+        use crate::plugins::run::Kind;
+        let mut dlg = rfd::FileDialog::new();
+        let mut any = false;
+        for (_, t) in self.st.plugins.tools(Kind::Import) {
+            dlg = dlg.add_filter(&t.name, &t.extensions);
+            any = true;
+        }
+        if !any {
+            self.st.set_status(
+                "Ningún plugin activo sabe importar: añade el de Pandoc en el panel Plugins",
+                StatusKind::Err,
+            );
+            self.st.actions.push(Action::ShowPanel(Panel::Plugins));
+            return;
+        }
+        if let Some(dir) = self.st.docs.cur().path.as_deref().and_then(Path::parent) {
+            dlg = dlg.set_directory(dir);
+        }
+        if let Some(p) = dlg.pick_file() {
+            self.st.actions.push(Action::ImportPath(p));
+        }
+    }
+
+    fn import_path(&mut self, ctx: &egui::Context, path: PathBuf) {
+        use crate::plugins::run::Kind;
+        let plugins = &self.st.plugins;
+        let Some((plugin, tool)) = plugins.importer(&path) else {
+            self.st.set_status(
+                format!("Ningún plugin activo importa {}", path.display()),
+                StatusKind::Err,
+            );
+            return;
+        };
+        // Con `{input}` lo lee el programa (puede ser binario).
+        let text = if tool.reads_file() {
+            Ok(String::new())
+        } else {
+            std::fs::read_to_string(&path)
+        };
+        let label = format!("Importar {}", tool.name);
+        match text {
+            Ok(text) => {
+                let job = plugins.job(plugin.id(), Kind::Import, &tool.id, text, Some(path), None);
+                self.start_job(ctx, job, Then::NewDoc, label);
+            }
+            Err(e) => self.st.set_status(
+                format!("No se pudo leer {}: {e}", path.display()),
+                StatusKind::Err,
+            ),
+        }
+    }
+
+    /// Exportador o comando de un plugin sobre el documento actual.
+    fn plugin_run(&mut self, ctx: &egui::Context, plugin: &str, kind: crate::plugins::run::Kind, id: &str) {
+        use crate::plugins::run::{Input, Kind, Output};
+        let Some((_, tool)) = self
+            .st
+            .plugins
+            .tools(kind)
+            .find(|(p, t)| p.id() == plugin && t.id == id)
+        else {
+            return;
+        };
+        let tool = tool.clone();
+        let doc = self.st.docs.cur();
+        let (doc_id, doc_path) = (doc.id, doc.path.clone());
+        if kind == Kind::Export {
+            let ext = tool.extensions.first().cloned().unwrap_or_default();
+            let stem = doc_path
+                .as_deref()
+                .and_then(Path::file_stem)
+                .map_or("documento".into(), |s| s.to_string_lossy().into_owned());
+            let mut dlg = rfd::FileDialog::new()
+                .add_filter(&tool.name, &[&ext])
+                .set_file_name(format!("{stem}.{ext}"));
+            let dir = self
+                .st
+                .last_export_dir
+                .clone()
+                .or_else(|| doc_path.as_deref().and_then(Path::parent).map(Path::to_path_buf));
+            if let Some(dir) = dir {
+                dlg = dlg.set_directory(dir);
+            }
+            let Some(out) = dlg.save_file() else {
+                return;
+            };
+            self.st.last_export_dir = out.parent().map(Path::to_path_buf);
+            let then = if tool.writes_file() {
+                Then::Wrote(out.clone())
+            } else {
+                Then::Write(out.clone())
+            };
+            let text = self.st.docs.cur().text.clone();
+            let job = self.st.plugins.job(plugin, kind, id, text, doc_path, Some(out));
+            self.start_job(ctx, job, then, format!("Exportar {}", tool.name));
+            return;
+        }
+        let selected = self.selected_text();
+        let whole = tool.input == Input::Document || selected.is_empty();
+        let (start, text) = match self.st.editor.selection {
+            Some((a, _)) if !whole => (a, selected),
+            _ => (0, self.st.docs.cur().text.clone()),
+        };
+        let then = match tool.output {
+            Output::Replace => Then::Replace {
+                doc: doc_id,
+                start,
+                expect: text.clone(),
+            },
+            Output::New => Then::NewDoc,
+        };
+        let job = self.st.plugins.job(plugin, kind, id, text, doc_path, None);
+        self.start_job(ctx, job, then, tool.name.clone());
+    }
+
+    /// Lanza el programa en un hilo; `plugin_tick` recoge el resultado.
+    fn start_job(
+        &mut self,
+        ctx: &egui::Context,
+        job: Option<crate::plugins::run::Job>,
+        then: Then,
+        label: String,
+    ) {
+        let Some(job) = job else {
+            return;
+        };
+        if self.st.plugin_job.is_some() {
+            self.st
+                .set_status("Hay otro plugin trabajando: espera a que termine", StatusKind::Err);
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::Builder::new()
+            .name("plugin".into())
+            .spawn(move || {
+                let _ = tx.send(job.run());
+                ctx.request_repaint();
+            })
+            .expect("hilo plugin");
+        self.st.set_status(format!("{label}…"), StatusKind::Info);
+        self.st.plugin_job = Some(PluginJob { rx, then, label });
+    }
+
+    /// Recoge el resultado del programa de plugin, si ya terminó.
+    fn plugin_tick(&mut self) {
+        use std::sync::mpsc::TryRecvError;
+        let st = &mut self.st;
+        let Some(job) = &st.plugin_job else {
+            return;
+        };
+        let result = match job.rx.try_recv() {
+            Ok(r) => r,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => Err("el programa se interrumpió".to_string()),
+        };
+        let PluginJob { then, label, .. } = st.plugin_job.take().expect("trabajo");
+        let done = match result {
+            Ok(d) => d,
+            Err(e) => {
+                st.set_status(format!("{label}: {e}"), StatusKind::Err);
+                return;
+            }
+        };
+        let mut status = done.message.unwrap_or_else(|| format!("{label}: hecho"));
+        match then {
+            Then::NewDoc => st.actions.push(Action::NewDocWith(done.text)),
+            Then::Replace { doc, start, expect } => st.actions.push(Action::ReplaceText {
+                doc,
+                start,
+                expect,
+                text: done.text,
+            }),
+            Then::Wrote(path) => status = format!("Exportado {}", path.display()),
+            Then::Write(path) => match std::fs::write(&path, done.text) {
+                Ok(()) => status = format!("Exportado {}", path.display()),
+                Err(e) => {
+                    st.set_status(
+                        format!("No se pudo escribir {}: {e}", path.display()),
+                        StatusKind::Err,
+                    );
+                    return;
+                }
+            },
+        }
+        st.set_status(status, StatusKind::Info);
+    }
+
+    /// Pone el tema `plugin/nombre` (o vuelve a los de serie con `None`).
+    fn set_theme(&mut self, ctx: &egui::Context, key: Option<String>) {
+        let pal = key.as_deref().and_then(|k| self.st.plugins.theme(k));
+        self.st.prefs.theme = key.filter(|_| pal.is_some());
+        if let Some(p) = pal {
+            self.st.prefs.dark = p.dark;
+        }
+        theme::set_custom(pal);
+        theme::apply(ctx, self.st.prefs.dark);
+        self.dock_style = None;
+        self.st.needs_persist = true;
+    }
+
+    /// Tras activar, desactivar o recargar plugins: sus paquetes y fuentes
+    /// ya están en el motor; falta recompilar y soltar el tema que ya no esté.
+    fn plugins_changed(&mut self, ctx: &egui::Context) {
+        self.st.fmt.reload_fonts(ctx);
+        self.st.force_compile = true;
+        if let Some(key) = self.st.prefs.theme.clone() {
+            self.set_theme(ctx, Some(key));
+        }
+    }
+
     fn dock_style(&mut self, ctx: &egui::Context) -> egui_dock::Style {
         let dark = self.st.prefs.dark;
         match &self.dock_style {
@@ -1525,6 +1822,7 @@ impl eframe::App for App {
         if let Some(dir) = self.st.editor.pending_step.take() {
             editor::find_step(&mut self.st, dir);
         }
+        self.plugin_tick();
         self.run_actions(&ctx);
         self.autosave(&ctx);
         self.compile_tick(&ctx);
@@ -1672,6 +1970,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Panel(Panel::Templates) => templates::panel(st, ui),
             Tab::Panel(Panel::Files) => files::panel(st, ui),
             Tab::Panel(Panel::Scratch) => scratch::panel(st, ui),
+            Tab::Panel(Panel::Plugins) => crate::plugins::panel(st, ui),
             Tab::Image(id) => crate::image_view::tab(st, ui, id),
         }
     }

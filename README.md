@@ -55,6 +55,9 @@ Sesión (pestañas, preferencias y diseño del dock) en
   `~/.config/grammata/snippets.json` (botón + crea uno desde la selección).
   Marcadores: `${sel}` selección · `${sel:x}` selección o `x` · `${x}` relleno que queda
   seleccionado para escribir encima · `${}` cursor.
+- **Plugins**: carpetas en `~/.config/grammata/plugins/` con un `plugin.toml`: paquete typst con
+  formulario, fuentes, snippets, temas y programas externos (importar y exportar Markdown con pandoc). Formato en [`docs/plugins.md`](docs/plugins.md);
+  arquitectura en [`docs/plugins-arquitectura.md`](docs/plugins-arquitectura.md).
 - **Plantillas**: builder de Artículo en el panel lateral (título, autor, fecha,
   idioma, papel, márgenes, fuente, numeración, índice, resumen) que abre el
   documento en una pestaña nueva; todo lo generado compila (`Ctrl+Mayús+T`).
@@ -115,6 +118,7 @@ afiliado a ella.
 | `engine.rs` | `World` typst embebido: archivos, paquetes, fuentes, PDF/PNG/SVG |
 | `panels.rs` | paneles Esquema y Problemas |
 | `symbols.rs` | panel de símbolos (tabla validada contra typst) |
+| `plugins.rs` | plugins: manifiesto, plantillas con formulario, panel (`plugins/panel.rs`) |
 | `snippets.rs` | panel de snippets, marcadores `${…}`, snippets del usuario |
 | `templates.rs` | builders de plantillas (Artículo): opciones → `.typ` que compila |
 | `files.rs` | gestor de archivos: árbol, abrir, crear, renombrar, eliminar |

@@ -1,0 +1,7 @@
+[package]
+name = "tarjetas"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["Grammata"]
+license = "MIT"
+description = "Tarjetas de texto sobre fondo de color (ejemplo de plugin de Grammata)."

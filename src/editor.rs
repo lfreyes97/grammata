@@ -93,6 +93,7 @@ fn hash_prefix(text: &str, cursor: usize) -> Option<(usize, String)> {
 }
 
 fn insert_completion(st: &mut State, di: usize, hash_byte: usize, c: &AcItem) {
+    let hash_byte = c.from.unwrap_or(hash_byte);
     let cursor = st.editor.cursor.unwrap_or(0);
     let doc = &mut st.docs.list[di];
     let cb = text::char_to_byte(&doc.text, cursor);
@@ -100,7 +101,7 @@ fn insert_completion(st: &mut State, di: usize, hash_byte: usize, c: &AcItem) {
         return;
     }
     // Los propios son markup arbitrario: van tal cual, sin `#` automático.
-    let raw = if c.user {
+    let raw = if c.user || c.ide {
         c.snippet.clone()
     } else {
         completion_replacement(&c.snippet)
@@ -122,7 +123,7 @@ fn insert_completion(st: &mut State, di: usize, hash_byte: usize, c: &AcItem) {
     let start = doc.text[..hash_byte].chars().count();
     let (sel_start, sel_end) = match sel {
         Some((sa, sb)) => (start + sa, start + sb),
-        None => match replacement.find("..") {
+        None => match replacement.find("..").filter(|_| !c.ide) {
             Some(b) => {
                 let s = start + replacement[..b].chars().count();
                 (s, s + 2)
@@ -161,6 +162,10 @@ struct AcItem {
     detail: String,
     /// Snippet propio: su cuerpo se inserta literal.
     user: bool,
+    /// Viene de `typst-ide`: se inserta literal y `from` marca el inicio.
+    ide: bool,
+    /// Byte donde empieza el tramo que reemplaza (solo `typst-ide`).
+    from: Option<usize>,
 }
 
 /// De serie por prefijo/subcadena (como `syntax::matching`) + propios por
@@ -174,6 +179,8 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
             snippet: c.snippet.to_string(),
             detail: c.detail.to_string(),
             user: false,
+            ide: false,
+            from: None,
         })
         .collect();
     if !p.is_empty() {
@@ -188,6 +195,8 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
                     snippet: s.body.clone(),
                     detail: "snippet propio".to_string(),
                     user: true,
+                    ide: false,
+                    from: None,
                 }),
         );
     } else {
@@ -197,9 +206,77 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
             snippet: s.body.clone(),
             detail: "snippet propio".to_string(),
             user: true,
+            ide: false,
+            from: None,
         }));
     }
     out
+}
+
+/// Completados de `typst-ide` para el cursor (byte `cb`): la respuesta
+/// vigente o, mientras llega la nueva, la anterior filtrada por lo tecleado.
+/// Devuelve (inicio del tramo, ítems); `None` si no hay nada que ofrecer.
+fn ide_candidates(st: &State, di: usize, cb: usize) -> Option<(usize, Vec<AcItem>)> {
+    let doc = &st.docs.list[di];
+    let r = st.ide.last.as_ref().filter(|r| r.doc == doc.id)?;
+    let fresh = r.rev == doc.rev && r.cursor == cb;
+    if r.from > cb || !doc.text.is_char_boundary(r.from) || !doc.text.is_char_boundary(cb) {
+        return None;
+    }
+    let typed = &doc.text[r.from..cb];
+    // typst-ide devuelve los candidatos sin filtrar: aquí se filtran por lo
+    // tecleado (primero por prefijo, luego por subcadena).
+    let plain = |s: &str| s.trim_matches('"').to_lowercase();
+    let t = plain(typed);
+    let mut starts: Vec<AcItem> = Vec::new();
+    let mut inside: Vec<AcItem> = Vec::new();
+    if fresh
+        || typed
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
+        for i in &r.items {
+            let l = plain(&i.label);
+            let item = || AcItem {
+                name: i.label.clone(),
+                snippet: i.apply.clone().unwrap_or_else(|| i.label.clone()),
+                detail: i.detail.clone().unwrap_or_default(),
+                user: false,
+                ide: true,
+                from: Some(r.from),
+            };
+            if l.starts_with(&t) {
+                starts.push(item());
+            } else if fresh && l.contains(&t) {
+                inside.push(item());
+            }
+        }
+    }
+    // Más corto primero (`table` antes que `target`), luego alfabético.
+    starts.sort_by(|a, b| (a.name.len(), &a.name).cmp(&(b.name.len(), &b.name)));
+    let mut items = starts;
+    items.append(&mut inside);
+    items.truncate(80);
+    if items.is_empty() {
+        return None;
+    }
+    if !typed.is_empty() {
+        let p = typed.to_lowercase();
+        items.extend(
+            st.user_snippets
+                .iter()
+                .filter(|s| s.name.to_lowercase().contains(&p))
+                .map(|s| AcItem {
+                    name: s.name.clone(),
+                    snippet: s.body.clone(),
+                    detail: "snippet propio".to_string(),
+                    user: true,
+                    ide: false,
+                    from: Some(r.from),
+                }),
+        );
+    }
+    Some((r.from, items))
 }
 
 pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
@@ -219,18 +296,52 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
     } else {
         None
     };
-    if let (Some((h, _)), Some(d)) = (&prefix, st.editor.ac.dismissed) {
-        if d != (id, *h) {
-            st.editor.ac.dismissed = None;
-        }
-    } else if prefix.is_none() {
-        st.editor.ac.dismissed = None;
+    // typst-ide: se pregunta por el cursor y la respuesta llega en un frame
+    // posterior (hilo aparte).
+    let cursor_b = if is_current && had_focus {
+        st.editor
+            .cursor
+            .filter(|_| st.editor.selection.is_none_or(|(a, b)| a == b))
+            .map(|c| text::char_to_byte(&st.docs.list[di].text, c))
+    } else {
+        None
+    };
+    let mut ide = None;
+    if let Some(cb) = cursor_b {
+        let root = st.main_root();
+        let doc = &st.docs.list[di];
+        let filename = crate::engine::EngineWorld::filename_for_job(doc.path.as_deref(), &root);
+        st.ide.request(
+            id,
+            doc.rev,
+            cb,
+            st.editor.ac.forced,
+            &doc.text,
+            root,
+            filename,
+        );
+        ide = ide_candidates(st, di, cb);
+    }
+    let anchor = ide
+        .as_ref()
+        .map(|(f, _)| *f)
+        .or(prefix.as_ref().map(|(h, _)| *h));
+    match (anchor, st.editor.ac.dismissed) {
+        (Some(a), Some(d)) if d != (id, a) => st.editor.ac.dismissed = None,
+        (None, _) => st.editor.ac.dismissed = None,
+        _ => {}
     }
     let dismissed = st.editor.ac.dismissed.is_some();
-    let items: Vec<AcItem> = match &prefix {
-        Some((_, p)) if !dismissed => ac_items(st, p),
-        _ if st.editor.ac.forced && had_focus => ac_items(st, ""),
-        _ => Vec::new(),
+    let items: Vec<AcItem> = if let Some((_, v)) = ide
+        && !dismissed
+    {
+        v
+    } else {
+        match &prefix {
+            Some((_, p)) if !dismissed => ac_items(st, p),
+            _ if st.editor.ac.forced && had_focus => ac_items(st, ""),
+            _ => Vec::new(),
+        }
     };
     let popup = !items.is_empty();
     if popup {
@@ -254,8 +365,8 @@ pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
         }
         if esc {
             st.editor.ac.forced = false;
-            if let Some((h, _)) = prefix {
-                st.editor.ac.dismissed = Some((id, h));
+            if let Some(a) = anchor {
+                st.editor.ac.dismissed = Some((id, a));
             }
         } else if accept {
             let c = &items[*sel];
@@ -465,9 +576,16 @@ fn completion_popup(
                                 let sel = i == *selected;
                                 let r = ui
                                     .horizontal(|ui| {
-                                        let name = RichText::new(format!("#{}", c.name))
-                                            .monospace()
-                                            .color(if sel { pal.accent } else { pal.text });
+                                        let shown = if c.ide {
+                                            c.name.clone()
+                                        } else {
+                                            format!("#{}", c.name)
+                                        };
+                                        let name = RichText::new(shown).monospace().color(if sel {
+                                            pal.accent
+                                        } else {
+                                            pal.text
+                                        });
                                         let resp = ui.add(
                                             egui::Button::new(name)
                                                 .selected(sel)

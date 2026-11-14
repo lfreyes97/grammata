@@ -9,6 +9,29 @@ use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub enum Action {
     NewDoc,
+    /// Documento nuevo sin guardar con ese texto (plantilla de un plugin).
+    NewDocWith(String),
+    /// Vuelve a leer la carpeta de plugins.
+    PluginsReload,
+    /// Activa o desactiva el plugin con ese id.
+    PluginEnable(String, bool),
+    /// Escribe un plugin de serie (`plugins::BUNDLED`) y abre su `plugin.toml`.
+    PluginInstall(&'static str),
+    /// Permite o retira el permiso de ejecutar los programas del plugin.
+    PluginAllow(String, bool),
+    /// Elige un archivo que algún plugin sepa importar.
+    Import,
+    /// Convierte ese archivo a typst con el importador de su extensión y
+    /// lo abre como documento nuevo.
+    ImportPath(PathBuf),
+    /// Ejecuta un exportador o un comando de un plugin sobre el documento.
+    PluginRun {
+        plugin: String,
+        kind: crate::plugins::run::Kind,
+        id: String,
+    },
+    /// Tema `plugin/nombre` de un plugin (`None` = los de serie).
+    SetTheme(Option<String>),
     /// Snippet de una biblioteca `snippets.typ`: `preamble` (el `#import`
     /// o la definición) va al principio del documento si hace falta.
     InsertLibSnippet {

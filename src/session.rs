@@ -36,6 +36,8 @@ pub enum FitMode {
 #[serde(default)]
 pub struct Prefs {
     pub dark: bool,
+    /// Tema de un plugin (`plugin/nombre`); manda sobre `dark`.
+    pub theme: Option<String>,
     pub font_size: f32,
     pub wrap: bool,
     pub auto_compile: bool,
@@ -61,6 +63,7 @@ impl Default for Prefs {
     fn default() -> Self {
         Self {
             dark: true,
+            theme: None,
             font_size: 14.0,
             wrap: true,
             auto_compile: true,
