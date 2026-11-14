@@ -8,7 +8,7 @@ Actualizado el 2026-11-06. Marcar con `[x]` al terminar.
 
 ## 2. Para poder publicar
 - [ ] **Argumentos de línea de comandos**: abrir archivos y carpetas, `--version`, `--help`. Hoy se ignoran, así que `Exec=grammata %F` del `.desktop` no abre el archivo.
-- [ ] Repositorio en GitHub; sustituir `OWNER` en `nix/package.nix` y `README.md`; añadir `repository` a `Cargo.toml`.
+- [x] Repositorio en GitHub (`lfreyes97/grammata`), con `OWNER` sustituido y `repository` en `Cargo.toml`.
 - [ ] Workflow de GitHub Actions al subir una etiqueta `v*`: compilar Linux y Windows, y adjuntar los binarios a la release.
   - [ ] Linux: `.tar.gz` (ya existe el script), `.deb` y AppImage.
   - [ ] Windows: `.zip` e instalador MSI.

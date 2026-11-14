@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Grammata: editor de Typst con vista previa del PDF real"
 license = "GPL-3.0-or-later"
+repository = "https://github.com/lfreyes97/grammata"
 
 [dependencies]
 eframe = { version = "0.36", features = ["default"] }

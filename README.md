@@ -97,7 +97,7 @@ fuentes embebidas de typst. El nombre viene del griego γράμματα, «letra
 - **Linux (tar.gz):** `packaging/build-linux.sh` compila y genera
   `dist/grammata-<versión>-linux-<arquitectura>.tar.gz`; dentro, `./install.sh [PREFIX]`
   (por defecto `~/.local`) instala el binario `grammata`, los iconos y el lanzador.
-- **Nix:** `nix run github:OWNER/grammata` o `nix profile install` (ver `flake.nix`).
+- **Nix:** `nix run github:lfreyes97/grammata` o `nix profile install` (ver `flake.nix`).
 - **Desde el código:** `cargo install --path .`
 
 ## Licencia

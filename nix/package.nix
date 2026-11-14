@@ -93,7 +93,7 @@ rustPlatform.buildRustPackage {
 
   meta = {
     description = cargoToml.package.description;
-    homepage = "https://github.com/OWNER/grammata";
+    homepage = "https://github.com/lfreyes97/grammata";
     license = lib.licenses.gpl3Plus;
     mainProgram = "grammata";
     platforms = lib.platforms.linux;

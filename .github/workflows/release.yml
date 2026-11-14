@@ -1,0 +1,92 @@
+name: Release
+
+# Al subir una etiqueta `v*` compila los paquetes y los adjunta a una release.
+on:
+  push:
+    tags: ['v*']
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    # Ubuntu 22.04: la glibc más antigua que soportamos.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: La etiqueta coincide con Cargo.toml
+        run: |
+          ver="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          [ "v$ver" = "$GITHUB_REF_NAME" ] || { echo "etiqueta $GITHUB_REF_NAME, Cargo.toml $ver" >&2; exit 1; }
+      - name: Dependencias del sistema
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev libfontconfig1-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: tar.gz
+        run: packaging/build-linux.sh
+      - name: .deb
+        run: SKIP_BUILD=1 packaging/build-deb.sh
+      - name: AppImage
+        run: |
+          url=https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          curl -fsSL -o "$RUNNER_TEMP/appimagetool.AppImage" "$url"
+          chmod +x "$RUNNER_TEMP/appimagetool.AppImage"
+          # Sin FUSE en el runner: se ejecuta extrayéndose.
+          printf '#!/bin/sh\nexec "%s" --appimage-extract-and-run "$@"\n' "$RUNNER_TEMP/appimagetool.AppImage" > "$RUNNER_TEMP/appimagetool"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          SKIP_BUILD=1 APPIMAGETOOL="$RUNNER_TEMP/appimagetool" packaging/build-appimage.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.AppImage
+            dist/*.sha256
+
+  windows:
+    runs-on: windows-latest
+    # Sin pruebas manuales: si falla, la release sale sin el .zip.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked
+      - name: zip
+        shell: pwsh
+        run: |
+          $name = "grammata-$($env:GITHUB_REF_NAME.TrimStart('v'))-windows-x86_64"
+          New-Item -ItemType Directory dist/$name | Out-Null
+          Copy-Item target/release/grammata.exe, LICENSE dist/$name
+          Compress-Archive dist/$name "dist/$name.zip"
+          (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLower() + "  $name.zip" | Set-Content "dist/$name.zip.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.zip
+            dist/*.sha256
+
+  release:
+    needs: [linux, windows]
+    # Aunque Windows falle, se publica lo de Linux.
+    if: ${{ !cancelled() && needs.linux.result == 'success' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefactos
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artefactos/*
+          generate_release_notes: true
+          body: |
+            Linux es la plataforma probada. El `.zip` de Windows se compila en CI sin pruebas manuales; macOS no se ofrece.
