@@ -21,6 +21,19 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                 {
                     acts.push(Action::PluginsReload);
                 }
+                widgets::icon_menu(ui, icon::PLUS, "Añadir un plugin de serie", |ui| {
+                    for b in super::BUNDLED {
+                        let have = st.plugins.list.iter().any(|p| p.id() == b.id);
+                        if ui
+                            .add_enabled(!have, egui::Button::new(b.name))
+                            .on_hover_text(b.about)
+                            .clicked()
+                        {
+                            acts.push(Action::PluginInstall(b.id));
+                            ui.close();
+                        }
+                    }
+                });
                 let dir = st.plugins.dir.display().to_string();
                 if widgets::icon_button(ui, icon::COPY, &format!("Copiar la ruta de la carpeta\n{dir}"))
                     .clicked()
@@ -57,15 +70,19 @@ fn body(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, acts: &mut Vec<
             pal,
             &format!(
                 "Un plugin es una carpeta con un plugin.toml dentro de {}. Puede traer un \
-                 paquete typst con su formulario, fuentes, snippets y temas.",
+                 paquete typst con su formulario, fuentes, snippets, temas y programas \
+                 que importan, exportan o transforman el texto.",
                 plugins.dir.display()
             ),
         );
-        if ui
-            .button(format!("{}  Crear plugin de ejemplo", icon::PUZZLE_PIECE))
-            .clicked()
-        {
-            acts.push(Action::PluginExample);
+        for b in super::BUNDLED {
+            if ui
+                .button(format!("{}  {}", icon::PLUS, b.name))
+                .on_hover_text(b.about)
+                .clicked()
+            {
+                acts.push(Action::PluginInstall(b.id));
+            }
         }
         return;
     }
@@ -108,6 +125,7 @@ fn body(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, acts: &mut Vec<
                     return;
                 }
                 contents(ui, pal, p);
+                programs(ui, pal, p, acts);
                 if !p.themes.is_empty() {
                     ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new("Temas").small().color(pal.text_dim));
@@ -239,6 +257,73 @@ fn contents(ui: &mut egui::Ui, pal: &theme::Palette, p: &Plugin) {
     }
     if !parts.is_empty() {
         note(ui, pal, &format!("Aporta: {}", parts.join(", ")));
+    }
+}
+
+/// Programas externos: permiso, qué importa y exporta, y sus comandos.
+fn programs(ui: &mut egui::Ui, pal: &theme::Palette, p: &Plugin, acts: &mut Vec<Action>) {
+    use super::run::Kind;
+    if !p.has_programs() {
+        return;
+    }
+    let m = &p.manifest;
+    let lines = m.programs().join("\n");
+    if !p.allowed {
+        ui.add(
+            egui::Label::new(
+                RichText::new(format!(
+                    "{}  Este plugin ejecuta programas en tu equipo. Permítelo solo si \
+                     confías en él.",
+                    icon::WARNING
+                ))
+                .small()
+                .color(pal.warn),
+            )
+            .wrap(),
+        );
+        ui.label(RichText::new(&lines).small().monospace().color(pal.text_dim));
+        if ui.button("Permitir sus programas").clicked() {
+            acts.push(Action::PluginAllow(p.id().to_string(), true));
+        }
+        return;
+    }
+    let names = |kind| {
+        m.tools(kind)
+            .iter()
+            .map(|t| format!("{} (.{})", t.name, t.extensions.join(", .")))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(format!("{}  Ejecuta programas", icon::TERMINAL)).small().color(pal.text_dim))
+            .on_hover_text(lines);
+        if ui.small_button("Retirar permiso").clicked() {
+            acts.push(Action::PluginAllow(p.id().to_string(), false));
+        }
+    });
+    if !m.imports.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            note(ui, pal, &format!("Importa: {}", names(Kind::Import)));
+            if ui.small_button("Importar…").clicked() {
+                acts.push(Action::Import);
+            }
+        });
+    }
+    if !m.exports.is_empty() {
+        note(ui, pal, &format!("Exporta (menú Exportar): {}", names(Kind::Export)));
+    }
+    for t in &m.commands {
+        if ui
+            .button(format!("{}  {}", icon::PLAY, t.name))
+            .on_hover_text(&t.description)
+            .clicked()
+        {
+            acts.push(Action::PluginRun {
+                plugin: p.id().to_string(),
+                kind: Kind::Command,
+                id: t.id.clone(),
+            });
+        }
     }
 }
 

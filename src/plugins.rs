@@ -8,9 +8,14 @@
 //!   cuerpo y el resultado se abre como documento o se inserta. Es el
 //!   «frontend» del paquete.
 //!
+//! Además puede declarar **programas externos** (`[[import]]`, `[[export]]`,
+//! `[[command]]`): ver el protocolo en `plugins/run.rs`. Esos sí ejecutan
+//! código, en un proceso aparte, y el usuario tiene que permitirlo.
+//!
 //! El formato está descrito en `docs/plugins.md`. La licencia del plugin es
-//! cosa suya (los datos no son obra derivada del editor): el editor solo
-//! guarda la clave que escribe el usuario.
+//! cosa suya (ni los datos ni un programa aparte son obra derivada del
+//! editor): el editor guarda la clave que escribe el usuario y se la pasa
+//! a los programas con `protocol = "json"`.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Component, Path, PathBuf};
@@ -23,7 +28,10 @@ use crate::theme::Palette;
 
 #[path = "plugins/panel.rs"]
 mod panel;
+#[path = "plugins/run.rs"]
+pub mod run;
 pub use panel::panel;
+use run::{Job, Kind, Tool};
 
 pub const MANIFEST: &str = "plugin.toml";
 
@@ -52,6 +60,35 @@ pub struct Manifest {
     pub themes: Vec<String>,
     #[serde(rename = "template")]
     pub templates: Vec<Template>,
+    /// Programas que convierten un archivo a typst.
+    #[serde(rename = "import")]
+    pub imports: Vec<Tool>,
+    /// Programas que convierten el documento a otro formato.
+    #[serde(rename = "export")]
+    pub exports: Vec<Tool>,
+    /// Programas que transforman el texto del editor.
+    #[serde(rename = "command")]
+    pub commands: Vec<Tool>,
+}
+
+impl Manifest {
+    pub fn tools(&self, kind: Kind) -> &[Tool] {
+        match kind {
+            Kind::Import => &self.imports,
+            Kind::Export => &self.exports,
+            Kind::Command => &self.commands,
+        }
+    }
+
+    /// Las líneas de comando que ejecuta: lo que el usuario autoriza. Si
+    /// el manifiesto las cambia, hay que volver a permitirlas.
+    pub fn programs(&self) -> Vec<String> {
+        [Kind::Import, Kind::Export, Kind::Command]
+            .into_iter()
+            .flat_map(|k| self.tools(k))
+            .map(Tool::command_line)
+            .collect()
+    }
 }
 
 /// Paquete typst que trae el plugin: la carpeta con su `typst.toml`.
@@ -257,6 +294,8 @@ pub struct Plugin {
     /// El manifiesto no se pudo leer: no aporta nada.
     pub broken: bool,
     pub enabled: bool,
+    /// El usuario permitió sus programas (los de ahora).
+    pub allowed: bool,
     /// Problemas al cargar (archivos que faltan, temas mal escritos…).
     pub errors: Vec<String>,
     pub package: Option<PackageDir>,
@@ -304,6 +343,7 @@ impl Plugin {
             manifest: Manifest::default(),
             broken: false,
             enabled,
+            allowed: false,
             errors: Vec::new(),
             package: None,
             font_dirs: Vec::new(),
@@ -373,6 +413,18 @@ impl Plugin {
                 Err(e) => self.errors.push(e),
             }
         }
+        for kind in [Kind::Import, Kind::Export, Kind::Command] {
+            for t in m.tools(kind) {
+                if t.id.is_empty() || t.run.is_empty() {
+                    self.errors
+                        .push(format!("herramienta {:?}: faltan `id` o `run`", t.name));
+                }
+                if kind != Kind::Command && t.extensions.is_empty() {
+                    self.errors
+                        .push(format!("herramienta {}: faltan las `extensions`", t.id));
+                }
+            }
+        }
         for t in &m.templates {
             if t.id.is_empty() || t.body.trim().is_empty() {
                 self.errors
@@ -395,6 +447,16 @@ impl Plugin {
     pub fn active(&self) -> bool {
         self.enabled && !self.broken
     }
+
+    /// Declara programas externos.
+    pub fn has_programs(&self) -> bool {
+        !self.manifest.programs().is_empty()
+    }
+
+    /// Sus programas se pueden ejecutar.
+    pub fn runnable(&self) -> bool {
+        self.active() && self.allowed
+    }
 }
 
 // ---------- Estado guardado ----------
@@ -407,10 +469,30 @@ pub struct Saved {
     /// Claves de licencia por plugin (texto plano, como el resto de la
     /// configuración).
     pub keys: BTreeMap<String, String>,
+    /// Plugins con permiso para ejecutar programas, con las líneas de
+    /// comando que se autorizaron.
+    pub allowed: BTreeMap<String, Vec<String>>,
 }
 
 pub fn plugins_dir() -> PathBuf {
     crate::session::config_dir().join("plugins")
+}
+
+/// Escribe el archivo legible solo por el usuario (guarda claves).
+fn write_private(path: &Path, text: &str) {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        opts.mode(0o600);
+        // Si ya existía con otros permisos, también se corrigen.
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    }
+    if let Ok(mut f) = opts.open(path) {
+        let _ = f.write_all(text.as_bytes());
+    }
 }
 
 fn saved_path() -> PathBuf {
@@ -472,6 +554,7 @@ impl Plugins {
         for dir in dirs {
             let mut p = Plugin::load(dir, true);
             p.enabled = !self.saved.disabled.contains(p.id());
+            p.allowed = self.saved.allowed.get(p.id()) == Some(&p.manifest.programs());
             if self.list.iter().any(|o| o.id() == p.id()) {
                 p.broken = true;
                 p.errors.push(format!("id repetido: {}", p.id()));
@@ -503,13 +586,66 @@ impl Plugins {
         self.publish();
     }
 
+    /// Permite (o retira el permiso a) los programas del plugin.
+    pub fn set_allowed(&mut self, id: &str, on: bool) {
+        for p in self.list.iter_mut().filter(|p| p.id() == id) {
+            p.allowed = on;
+            if on {
+                self.saved.allowed.insert(id.to_string(), p.manifest.programs());
+            }
+        }
+        if !on {
+            self.saved.allowed.remove(id);
+        }
+        self.save();
+    }
+
+    /// Herramientas de ese tipo de los plugins que pueden ejecutar.
+    pub fn tools(&self, kind: Kind) -> impl Iterator<Item = (&Plugin, &Tool)> {
+        self.list
+            .iter()
+            .filter(|p| p.runnable())
+            .flat_map(move |p| p.manifest.tools(kind).iter().map(move |t| (p, t)))
+    }
+
+    /// El importador de un archivo, por su extensión.
+    pub fn importer(&self, path: &Path) -> Option<(&Plugin, &Tool)> {
+        let ext = path.extension()?.to_string_lossy().to_lowercase();
+        self.tools(Kind::Import)
+            .find(|(_, t)| t.extensions.iter().any(|e| e.to_lowercase() == ext))
+    }
+
+    /// Prepara la ejecución de una herramienta.
+    pub fn job(
+        &self,
+        plugin: &str,
+        kind: Kind,
+        id: &str,
+        text: String,
+        file: Option<PathBuf>,
+        output: Option<PathBuf>,
+    ) -> Option<Job> {
+        let (p, tool) = self
+            .tools(kind)
+            .find(|(p, t)| p.id() == plugin && t.id == id)?;
+        Some(Job {
+            plugin_dir: p.dir.clone(),
+            tool: tool.clone(),
+            kind,
+            text,
+            file,
+            output,
+            key: self.saved.keys.get(plugin).cloned(),
+        })
+    }
+
     pub fn save(&self) {
         if !self.persist {
             return;
         }
         if let Ok(json) = serde_json::to_string_pretty(&self.saved) {
             let _ = std::fs::create_dir_all(crate::session::config_dir());
-            let _ = std::fs::write(saved_path(), json);
+            write_private(&saved_path(), &json);
         }
     }
 
@@ -531,11 +667,27 @@ impl Plugins {
         }
     }
 
-    /// Escribe el plugin de ejemplo (si no existe) y devuelve su manifiesto.
-    pub fn create_example(&mut self) -> std::io::Result<PathBuf> {
-        let dir = self.dir.join("ejemplo");
-        if !dir.join(MANIFEST).exists() {
-            for (rel, text) in EXAMPLE {
+    /// Escribe uno de los plugins de serie (si no existe) y devuelve su
+    /// manifiesto. Sus programas quedan permitidos: lo pidió el usuario.
+    pub fn install(&mut self, id: &str) -> std::io::Result<PathBuf> {
+        let files = BUNDLED
+            .iter()
+            .find(|b| b.id == id)
+            .map(|b| b.files)
+            .ok_or(std::io::ErrorKind::NotFound)?;
+        let dir = self.dir.join(id);
+        let manifest = dir.join(MANIFEST);
+        if manifest.exists() {
+            // No se autoriza lo que no es el plugin de serie.
+            let bundled = files.iter().find(|(rel, _)| *rel == MANIFEST).map(|(_, t)| *t);
+            if std::fs::read_to_string(&manifest).ok().as_deref() != bundled {
+                return Err(std::io::Error::other(format!(
+                    "ya hay otro plugin en {}: bórralo para instalar el de serie",
+                    dir.display()
+                )));
+            }
+        } else {
+            for (rel, text) in files {
                 let path = dir.join(rel);
                 if let Some(parent) = path.parent() {
                     std::fs::create_dir_all(parent)?;
@@ -544,17 +696,38 @@ impl Plugins {
             }
         }
         self.reload();
+        self.set_allowed(id, true);
         Ok(dir.join(MANIFEST))
     }
 }
 
-/// Plugin de ejemplo: un paquete con su formulario, snippets y un tema.
-const EXAMPLE: &[(&str, &str)] = &[
-    (MANIFEST, include_str!("plugins/ejemplo/plugin.toml")),
-    ("typst.toml", include_str!("plugins/ejemplo/typst.toml")),
-    ("lib.typ", include_str!("plugins/ejemplo/lib.typ")),
-    ("snippets.typ", include_str!("plugins/ejemplo/snippets.typ")),
-    ("temas/sepia.toml", include_str!("plugins/ejemplo/temas/sepia.toml")),
+/// Plugin que viene con el editor y se instala desde el panel.
+pub struct Bundled {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub about: &'static str,
+    files: &'static [(&'static str, &'static str)],
+}
+
+pub const BUNDLED: &[Bundled] = &[
+    Bundled {
+        id: "pandoc",
+        name: "Pandoc: importar y exportar Markdown",
+        about: "Ejecuta el programa pandoc, que tiene que estar instalado",
+        files: &[(MANIFEST, include_str!("plugins/pandoc/plugin.toml"))],
+    },
+    Bundled {
+        id: "ejemplo",
+        name: "Ejemplo: paquete con formulario, snippets y tema",
+        about: "Para copiarlo y hacer el tuyo",
+        files: &[
+            (MANIFEST, include_str!("plugins/ejemplo/plugin.toml")),
+            ("typst.toml", include_str!("plugins/ejemplo/typst.toml")),
+            ("lib.typ", include_str!("plugins/ejemplo/lib.typ")),
+            ("snippets.typ", include_str!("plugins/ejemplo/snippets.typ")),
+            ("temas/sepia.toml", include_str!("plugins/ejemplo/temas/sepia.toml")),
+        ],
+    },
 ];
 
 #[cfg(test)]
@@ -579,7 +752,7 @@ mod tests {
     fn example(name: &str) -> (PathBuf, Plugins) {
         let d = tmp(name);
         let mut p = Plugins::at(d.clone(), Saved::default());
-        p.create_example().unwrap();
+        p.install("ejemplo").unwrap();
         (d, p)
     }
 
@@ -701,5 +874,65 @@ default = true
         }
         let _ = std::fs::remove_dir_all(&d);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn los_programas_piden_permiso() {
+        let _engine = engine();
+        let d = tmp("permiso");
+        std::fs::create_dir_all(d.join("x")).unwrap();
+        let manifest = |cmd: &str| {
+            format!("[[import]]\nid = \"m\"\nextensions = [\"MD\"]\nrun = [\"{cmd}\"]\n")
+        };
+        std::fs::write(d.join("x").join(MANIFEST), manifest("cat")).unwrap();
+        let mut p = Plugins::at(d.clone(), Saved::default());
+        let md = Path::new("/a/nota.md");
+        assert!(p.list[0].errors.is_empty() && p.list[0].has_programs());
+        assert!(p.importer(md).is_none(), "sin permiso no se ofrece");
+        p.set_allowed("x", true);
+        assert!(p.importer(md).is_some() && p.importer(Path::new("/a/nota.txt")).is_none());
+        let job = p.job("x", Kind::Import, "m", "hola".into(), None, None).unwrap();
+        #[cfg(unix)]
+        assert_eq!(job.run().unwrap().text, "hola");
+        // Si el manifiesto cambia el programa, el permiso ya no vale.
+        std::fs::write(d.join("x").join(MANIFEST), manifest("rm")).unwrap();
+        p.reload();
+        assert!(!p.list[0].allowed && p.importer(md).is_none());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Markdown → typst con el plugin de pandoc: lo importado compila.
+    #[test]
+    fn pandoc_importa_y_exporta_markdown() {
+        if std::process::Command::new("pandoc").arg("--version").output().is_err() {
+            eprintln!("sin pandoc: prueba omitida");
+            return;
+        }
+        let _engine = engine();
+        let d = tmp("pandoc");
+        let mut p = Plugins::at(d.clone(), Saved::default());
+        p.install("pandoc").unwrap();
+        assert_eq!(p.list[0].errors, Vec::<String>::new());
+        let md = "# Hola\n\nUn *texto* con **negrita** y [enlace](https://typst.app).\n\n\
+                  - uno\n- dos\n\n> cita\n\n---\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n$$x^2$$\n";
+        let (plugin, tool) = p.importer(Path::new("nota.md")).unwrap();
+        let (plugin, tool) = (plugin.id().to_string(), tool.id.clone());
+        let typ = p
+            .job(&plugin, Kind::Import, &tool, md.into(), None, None)
+            .unwrap()
+            .run()
+            .unwrap()
+            .text;
+        assert!(typ.starts_with("= Hola\n") && typ.contains("#strong[negrita]"), "{typ}");
+        let out = crate::engine::compile_pdf(&typ, &d, "main.typ");
+        assert!(out.pdf.is_some(), "{typ}\n{:?}", out.diags);
+        let back = p
+            .job(&plugin, Kind::Export, "markdown", "= Hola\n\nUn *texto* y $x^2$.\n".into(), None, None)
+            .unwrap()
+            .run()
+            .unwrap()
+            .text;
+        assert_eq!(back, "# Hola\n\nUn **texto** y $x^{2}$.\n");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

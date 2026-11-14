@@ -140,6 +140,29 @@ pub struct State {
     /// Exportación en curso (hilo) y última carpeta elegida.
     export_rx: Option<std::sync::mpsc::Receiver<Result<PathBuf, String>>>,
     last_export_dir: Option<PathBuf>,
+    /// Programa de un plugin en marcha (hilo) y qué hacer con su salida.
+    plugin_job: Option<PluginJob>,
+}
+
+struct PluginJob {
+    rx: std::sync::mpsc::Receiver<Result<crate::plugins::run::Done, String>>,
+    then: Then,
+    /// Para la barra de estado: «Importar Markdown».
+    label: String,
+}
+
+/// Destino del resultado de un programa de plugin.
+enum Then {
+    NewDoc,
+    /// El texto se escribe en ese archivo.
+    Write(PathBuf),
+    /// El programa ya escribió el archivo.
+    Wrote(PathBuf),
+    Replace {
+        doc: DocId,
+        start: usize,
+        expect: String,
+    },
 }
 
 impl State {
@@ -329,6 +352,7 @@ impl App {
             force_compile: false,
             export_rx: None,
             last_export_dir: None,
+            plugin_job: None,
             pinned: None,
             disk_gen: 0,
             images: crate::image_view::Images::new(ctx.clone()),
@@ -654,16 +678,19 @@ impl App {
                 self.st.plugins.set_enabled(&id, on);
                 self.plugins_changed(ctx);
             }
-            Action::PluginExample => match self.st.plugins.create_example() {
+            Action::PluginInstall(id) => match self.st.plugins.install(id) {
                 Ok(manifest) => {
                     self.plugins_changed(ctx);
                     self.open_path(manifest);
                 }
-                Err(e) => self.st.set_status(
-                    format!("No se pudo crear el plugin de ejemplo: {e}"),
-                    StatusKind::Err,
-                ),
+                Err(e) => self
+                    .st
+                    .set_status(format!("No se pudo crear el plugin: {e}"), StatusKind::Err),
             },
+            Action::PluginAllow(id, on) => self.st.plugins.set_allowed(&id, on),
+            Action::Import => self.import_dialog(),
+            Action::ImportPath(p) => self.import_path(ctx, p),
+            Action::PluginRun { plugin, kind, id } => self.plugin_run(ctx, &plugin, kind, &id),
             Action::SetTheme(key) => self.set_theme(ctx, key),
             Action::NewProject => {
                 let np = crate::project::NewProject::new(self.st.prefs.files_root.as_deref());
@@ -1146,11 +1173,12 @@ impl App {
             .get(doc)
             .and_then(|d| text::nearest_occurrence(&d.text, expect, start));
         let Some(start) = found else {
-            self.st.scratch.editing = None;
-            self.st.set_status(
-                "La ecuación ya no está en el documento: el borrador deja de editarla",
-                StatusKind::Info,
-            );
+            let msg = if self.st.scratch.editing.take().is_some() {
+                "La ecuación ya no está en el documento: el borrador deja de editarla"
+            } else {
+                "El texto cambió mientras tanto: no se reemplazó"
+            };
+            self.st.set_status(msg, StatusKind::Info);
             return;
         };
         let end = start + expect.chars().count();
@@ -1509,6 +1537,197 @@ impl App {
         }
     }
 
+    // ---------- Programas de plugins ----------
+
+    fn import_dialog(&mut self) {
+        use crate::plugins::run::Kind;
+        let mut dlg = rfd::FileDialog::new();
+        let mut any = false;
+        for (_, t) in self.st.plugins.tools(Kind::Import) {
+            dlg = dlg.add_filter(&t.name, &t.extensions);
+            any = true;
+        }
+        if !any {
+            self.st.set_status(
+                "Ningún plugin activo sabe importar: añade el de Pandoc en el panel Plugins",
+                StatusKind::Err,
+            );
+            self.st.actions.push(Action::ShowPanel(Panel::Plugins));
+            return;
+        }
+        if let Some(dir) = self.st.docs.cur().path.as_deref().and_then(Path::parent) {
+            dlg = dlg.set_directory(dir);
+        }
+        if let Some(p) = dlg.pick_file() {
+            self.st.actions.push(Action::ImportPath(p));
+        }
+    }
+
+    fn import_path(&mut self, ctx: &egui::Context, path: PathBuf) {
+        use crate::plugins::run::Kind;
+        let plugins = &self.st.plugins;
+        let Some((plugin, tool)) = plugins.importer(&path) else {
+            self.st.set_status(
+                format!("Ningún plugin activo importa {}", path.display()),
+                StatusKind::Err,
+            );
+            return;
+        };
+        // Con `{input}` lo lee el programa (puede ser binario).
+        let text = if tool.reads_file() {
+            Ok(String::new())
+        } else {
+            std::fs::read_to_string(&path)
+        };
+        let label = format!("Importar {}", tool.name);
+        match text {
+            Ok(text) => {
+                let job = plugins.job(plugin.id(), Kind::Import, &tool.id, text, Some(path), None);
+                self.start_job(ctx, job, Then::NewDoc, label);
+            }
+            Err(e) => self.st.set_status(
+                format!("No se pudo leer {}: {e}", path.display()),
+                StatusKind::Err,
+            ),
+        }
+    }
+
+    /// Exportador o comando de un plugin sobre el documento actual.
+    fn plugin_run(&mut self, ctx: &egui::Context, plugin: &str, kind: crate::plugins::run::Kind, id: &str) {
+        use crate::plugins::run::{Input, Kind, Output};
+        let Some((_, tool)) = self
+            .st
+            .plugins
+            .tools(kind)
+            .find(|(p, t)| p.id() == plugin && t.id == id)
+        else {
+            return;
+        };
+        let tool = tool.clone();
+        let doc = self.st.docs.cur();
+        let (doc_id, doc_path) = (doc.id, doc.path.clone());
+        if kind == Kind::Export {
+            let ext = tool.extensions.first().cloned().unwrap_or_default();
+            let stem = doc_path
+                .as_deref()
+                .and_then(Path::file_stem)
+                .map_or("documento".into(), |s| s.to_string_lossy().into_owned());
+            let mut dlg = rfd::FileDialog::new()
+                .add_filter(&tool.name, &[&ext])
+                .set_file_name(format!("{stem}.{ext}"));
+            let dir = self
+                .st
+                .last_export_dir
+                .clone()
+                .or_else(|| doc_path.as_deref().and_then(Path::parent).map(Path::to_path_buf));
+            if let Some(dir) = dir {
+                dlg = dlg.set_directory(dir);
+            }
+            let Some(out) = dlg.save_file() else {
+                return;
+            };
+            self.st.last_export_dir = out.parent().map(Path::to_path_buf);
+            let then = if tool.writes_file() {
+                Then::Wrote(out.clone())
+            } else {
+                Then::Write(out.clone())
+            };
+            let text = self.st.docs.cur().text.clone();
+            let job = self.st.plugins.job(plugin, kind, id, text, doc_path, Some(out));
+            self.start_job(ctx, job, then, format!("Exportar {}", tool.name));
+            return;
+        }
+        let selected = self.selected_text();
+        let whole = tool.input == Input::Document || selected.is_empty();
+        let (start, text) = match self.st.editor.selection {
+            Some((a, _)) if !whole => (a, selected),
+            _ => (0, self.st.docs.cur().text.clone()),
+        };
+        let then = match tool.output {
+            Output::Replace => Then::Replace {
+                doc: doc_id,
+                start,
+                expect: text.clone(),
+            },
+            Output::New => Then::NewDoc,
+        };
+        let job = self.st.plugins.job(plugin, kind, id, text, doc_path, None);
+        self.start_job(ctx, job, then, tool.name.clone());
+    }
+
+    /// Lanza el programa en un hilo; `plugin_tick` recoge el resultado.
+    fn start_job(
+        &mut self,
+        ctx: &egui::Context,
+        job: Option<crate::plugins::run::Job>,
+        then: Then,
+        label: String,
+    ) {
+        let Some(job) = job else {
+            return;
+        };
+        if self.st.plugin_job.is_some() {
+            self.st
+                .set_status("Hay otro plugin trabajando: espera a que termine", StatusKind::Err);
+            return;
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::Builder::new()
+            .name("plugin".into())
+            .spawn(move || {
+                let _ = tx.send(job.run());
+                ctx.request_repaint();
+            })
+            .expect("hilo plugin");
+        self.st.set_status(format!("{label}…"), StatusKind::Info);
+        self.st.plugin_job = Some(PluginJob { rx, then, label });
+    }
+
+    /// Recoge el resultado del programa de plugin, si ya terminó.
+    fn plugin_tick(&mut self) {
+        use std::sync::mpsc::TryRecvError;
+        let st = &mut self.st;
+        let Some(job) = &st.plugin_job else {
+            return;
+        };
+        let result = match job.rx.try_recv() {
+            Ok(r) => r,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => Err("el programa se interrumpió".to_string()),
+        };
+        let PluginJob { then, label, .. } = st.plugin_job.take().expect("trabajo");
+        let done = match result {
+            Ok(d) => d,
+            Err(e) => {
+                st.set_status(format!("{label}: {e}"), StatusKind::Err);
+                return;
+            }
+        };
+        let mut status = done.message.unwrap_or_else(|| format!("{label}: hecho"));
+        match then {
+            Then::NewDoc => st.actions.push(Action::NewDocWith(done.text)),
+            Then::Replace { doc, start, expect } => st.actions.push(Action::ReplaceText {
+                doc,
+                start,
+                expect,
+                text: done.text,
+            }),
+            Then::Wrote(path) => status = format!("Exportado {}", path.display()),
+            Then::Write(path) => match std::fs::write(&path, done.text) {
+                Ok(()) => status = format!("Exportado {}", path.display()),
+                Err(e) => {
+                    st.set_status(
+                        format!("No se pudo escribir {}: {e}", path.display()),
+                        StatusKind::Err,
+                    );
+                    return;
+                }
+            },
+        }
+        st.set_status(status, StatusKind::Info);
+    }
+
     /// Pone el tema `plugin/nombre` (o vuelve a los de serie con `None`).
     fn set_theme(&mut self, ctx: &egui::Context, key: Option<String>) {
         let pal = key.as_deref().and_then(|k| self.st.plugins.theme(k));
@@ -1603,6 +1822,7 @@ impl eframe::App for App {
         if let Some(dir) = self.st.editor.pending_step.take() {
             editor::find_step(&mut self.st, dir);
         }
+        self.plugin_tick();
         self.run_actions(&ctx);
         self.autosave(&ctx);
         self.compile_tick(&ctx);

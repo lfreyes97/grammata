@@ -53,7 +53,11 @@ Actualizado el 2026-11-06. Marcar con `[x]` al terminar.
 
 ## 9. Plugins
 - [x] Fase 1 (declarativa): `plugin.toml` con paquete typst, plantillas con formulario, fuentes, snippets y temas; panel «Plugins»; clave de licencia guardada. Ver `docs/plugins.md`.
-- [ ] Fase 2: plugins con **proceso externo** (ejecutable que habla JSON por stdin/stdout): comandos y eventos, y entrega de la clave de licencia para que el plugin la verifique.
+- [x] Protocolo 1 de programas externos (`[[import]]`, `[[export]]`, `[[command]]`; texto o JSON por stdin/stdout, con permiso del usuario) y plugin de Pandoc para Markdown.
+- [ ] Protocolo: proceso persistente con eventos (guardar, compilar), comandos en un menú o paleta, y cancelar un programa en marcha.
+- [ ] Importar al abrir o arrastrar un `.md`; probar a mano el diálogo de exportar de los plugins (las pruebas no cubren el diálogo nativo).
+- [ ] Seguridad de plugins: el permiso no cubre el contenido de los `./programa` ni `protocol`/`timeout`; la salida de un programa no tiene límite de tamaño y al vencer el tiempo solo se mata el proceso hijo (no su grupo).
+- [ ] Pandoc: Word y otros formatos (ya están comentados en su manifiesto).
 - [ ] Vista previa en vivo del formulario (hoy crea el documento o inserta el código) y volver a editar una llamada ya insertada.
 - [ ] Instalar un plugin desde un `.zip` y botón para abrir la carpeta.
 - [ ] Los temas no cambian aún el fondo de los campos de texto ni el color de selección (`theme::apply`).

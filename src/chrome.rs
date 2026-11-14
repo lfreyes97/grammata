@@ -1,5 +1,6 @@
 //! Barra superior (menús + herramientas), barra de estado y diálogos.
 
+use crate::plugins::run::Kind;
 use crate::actions::Action;
 use crate::app::{Modal, State, StatusKind};
 use crate::diagnostics;
@@ -25,7 +26,7 @@ fn menu_check(ui: &mut egui::Ui, on: bool, text: &str, shortcut: &str) -> bool {
 }
 
 /// Entradas de exportación, comunes al menú Archivo y al botón de la barra.
-fn export_items(ui: &mut egui::Ui, a: &mut Vec<Action>) {
+fn export_items(ui: &mut egui::Ui, a: &mut Vec<Action>, plugins: &[PluginExport]) {
     if menu_item(ui, icon::FILE_PDF, "PDF…", "Ctrl+E") {
         a.push(Action::Export("pdf".into()))
     }
@@ -38,10 +39,30 @@ fn export_items(ui: &mut egui::Ui, a: &mut Vec<Action>) {
     if menu_item(ui, icon::FILE_SVG, "SVG…", "") {
         a.push(Action::Export("svg".into()))
     }
+    if !plugins.is_empty() {
+        ui.separator();
+    }
+    for (plugin, id, name) in plugins {
+        if menu_item(ui, icon::PUZZLE_PIECE, &format!("{name}…"), "") {
+            a.push(Action::PluginRun {
+                plugin: plugin.clone(),
+                kind: Kind::Export,
+                id: id.clone(),
+            })
+        }
+    }
 }
+
+/// Exportador de un plugin: (plugin, id, nombre).
+type PluginExport = (String, String, String);
 
 pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
+    let exports: Vec<PluginExport> = st
+        .plugins
+        .tools(Kind::Export)
+        .map(|(p, t)| (p.id().to_string(), t.id.clone(), t.name.clone()))
+        .collect();
     let a = &mut st.actions;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
@@ -65,6 +86,9 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             if menu_item(ui, icon::FOLDER, "Abrir carpeta…", "") {
                 a.push(Action::PickFolder)
             }
+            if menu_item(ui, icon::DOWNLOAD_SIMPLE, "Importar…", "") {
+                a.push(Action::Import)
+            }
             ui.separator();
             if menu_item(ui, icon::FLOPPY_DISK, "Guardar", "Ctrl+S") {
                 a.push(Action::Save)
@@ -73,7 +97,7 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                 a.push(Action::SaveAs)
             }
             ui.separator();
-            export_items(ui, a);
+            export_items(ui, a, &exports);
             ui.separator();
             if menu_item(ui, icon::X, "Cerrar pestaña", "Ctrl+W") {
                 a.push(Action::CloseCurrent)
@@ -179,7 +203,7 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
         }
         ui.menu_button(RichText::new(format!("{}  Exportar", icon::EXPORT)), |ui| {
             ui.set_min_width(220.0);
-            export_items(ui, a);
+            export_items(ui, a, &exports);
         });
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

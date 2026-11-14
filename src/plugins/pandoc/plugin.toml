@@ -1,0 +1,41 @@
+# Importar y exportar con pandoc (https://pandoc.org), que tiene que estar
+# instalado. Cada herramienta lanza el programa de `run`: recibe el texto
+# por stdin y devuelve el resultado por stdout (docs/plugins.md).
+id = "pandoc"
+name = "Pandoc"
+version = "0.1.0"
+description = "Importa y exporta Markdown con pandoc (tiene que estar instalado)."
+authors = ["Grammata"]
+license = "MIT"
+homepage = "https://pandoc.org"
+
+[[import]]
+id = "markdown"
+name = "Markdown"
+extensions = ["md", "markdown"]
+# Sin typst/HTML/TeX en crudo y con --sandbox: un .md ajeno no puede colar
+# código typst ni leer archivos.
+run = ["pandoc", "--sandbox", "-f", "markdown-auto_identifiers-raw_attribute-raw_html-raw_tex", "-t", "typst", "--wrap=none"]
+
+# pandoc lee typst sin evaluarlo: el texto, los títulos, las listas, las
+# tablas y las ecuaciones pasan; las funciones propias y los paquetes, no.
+[[export]]
+id = "markdown"
+name = "Markdown"
+extensions = ["md"]
+run = ["pandoc", "--sandbox", "-f", "typst", "-t", "commonmark_x", "--wrap=none"]
+
+# Otros formatos son una entrada más. Los binarios usan {input} / {output}
+# en vez de stdin / stdout:
+#
+# [[import]]
+# id = "docx"
+# name = "Word"
+# extensions = ["docx"]
+# run = ["pandoc", "-f", "docx", "-t", "typst", "--wrap=none", "{input}"]
+#
+# [[export]]
+# id = "docx"
+# name = "Word"
+# extensions = ["docx"]
+# run = ["pandoc", "-f", "typst", "-o", "{output}"]

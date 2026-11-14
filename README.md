@@ -56,7 +56,8 @@ Sesión (pestañas, preferencias y diseño del dock) en
   Marcadores: `${sel}` selección · `${sel:x}` selección o `x` · `${x}` relleno que queda
   seleccionado para escribir encima · `${}` cursor.
 - **Plugins**: carpetas en `~/.config/grammata/plugins/` con un `plugin.toml`: paquete typst con
-  formulario, fuentes, snippets y temas. Formato en [`docs/plugins.md`](docs/plugins.md).
+  formulario, fuentes, snippets, temas y programas externos (importar y exportar Markdown con pandoc). Formato en [`docs/plugins.md`](docs/plugins.md);
+  arquitectura en [`docs/plugins-arquitectura.md`](docs/plugins-arquitectura.md).
 - **Plantillas**: builder de Artículo en el panel lateral (título, autor, fecha,
   idioma, papel, márgenes, fuente, numeración, índice, resumen) que abre el
   documento en una pestaña nueva; todo lo generado compila (`Ctrl+Mayús+T`).

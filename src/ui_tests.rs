@@ -931,7 +931,7 @@ fn plugin_formulario_y_tema() {
         .actions
         .push(Action::ShowPanel(Panel::Plugins));
     h.run_steps(5);
-    h.get_by_label_contains("Crear plugin de ejemplo").click();
+    h.get_by_label_contains("Ejemplo: paquete").click();
     h.run_steps(5);
     assert!(h.state().st.docs.cur().fname().contains("plugin.toml"));
     h.get_by_label_contains("Tarjeta de cita").click();
@@ -958,5 +958,62 @@ fn plugin_formulario_y_tema() {
     shot(&mut h, "plugins-tema");
     h.state_mut().st.actions.push(Action::SetTheme(None));
     h.run_steps(3);
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// Plugin de Pandoc: importa un Markdown como documento nuevo (el programa
+/// corre en un hilo) y un comando de plugin transforma la selección.
+#[test]
+#[ignore]
+fn plugin_importa_markdown_y_ejecuta_comando() {
+    use egui_kittest::kittest::Queryable;
+    if std::process::Command::new("pandoc").arg("--version").output().is_err() {
+        eprintln!("sin pandoc: prueba omitida");
+        return;
+    }
+    let tmp = std::env::temp_dir().join(format!("grammata-test-pandoc-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let plug = tmp.join("cfg/grammata/plugins/mayus");
+    std::fs::create_dir_all(&plug).unwrap();
+    std::fs::write(
+        plug.join("plugin.toml"),
+        "name = \"Mayúsculas\"\n[[command]]\nid = \"mayus\"\nname = \"A mayúsculas\"\nrun = [\"tr\", \"a-z\", \"A-Z\"]\n",
+    )
+    .unwrap();
+    // SAFETY: se fija antes de crear la app; la sesión y los plugins del
+    // usuario no se tocan.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let md = tmp.join("nota.md");
+    std::fs::write(&md, "# Hola\n\nUn *texto* con **negrita**.\n\n- uno\n- dos\n").unwrap();
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ShowPanel(Panel::Plugins));
+    h.run_steps(5);
+    // Sin permiso, el comando no se ofrece.
+    assert!(h.query_by_label_contains("A mayúsculas").is_none());
+    shot(&mut h, "plugins-permiso");
+    h.get_by_label_contains("Permitir sus programas").click();
+    h.run_steps(5);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::PluginInstall("pandoc"));
+    h.run_steps(5);
+    h.state_mut().st.actions.push(Action::ImportPath(md));
+    wait(&mut h, "importar el markdown", |a| {
+        a.st.docs.cur().text.starts_with("= Hola")
+    });
+    let text = h.state().st.docs.cur().text.clone();
+    assert!(text.contains("#strong[negrita]") && text.contains("- uno"), "{text}");
+    assert!(h.state().st.docs.cur().modified(), "lo importado está sin guardar");
+    shot(&mut h, "plugins-importado");
+    // Comando sobre el documento entero (sin selección).
+    h.get_by_label_contains("A mayúsculas").click();
+    wait(&mut h, "comando del plugin", |a| {
+        a.st.docs.cur().text.starts_with("= HOLA")
+    });
     let _ = std::fs::remove_dir_all(&tmp);
 }
