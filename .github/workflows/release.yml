@@ -15,6 +15,11 @@ jobs:
   linux:
     # Ubuntu 22.04: la glibc más antigua que soportamos.
     runs-on: ubuntu-22.04
+    env:
+      # .cargo/config.toml fuerza clang+mold (solo para desarrollo local); en el
+      # runner no hay mold, así que se anula con el linker por defecto.
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: cc
+      RUSTFLAGS: -C link-arg=-fuse-ld=bfd
     steps:
       - uses: actions/checkout@v4
       - name: La etiqueta coincide con Cargo.toml
