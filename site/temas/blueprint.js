@@ -4,13 +4,14 @@
   const laminas = pista ? [...pista.children] : [];
   if (laminas.length < 2) return;
 
+  const es = document.documentElement.lang === "es";
   const reducir = matchMedia("(prefers-reduced-motion: reduce)");
   const dos = (n) => String(n).padStart(2, "0");
 
   pista.tabIndex = 0;
   pista.setAttribute("role", "group");
-  pista.setAttribute("aria-roledescription", "carrusel");
-  pista.setAttribute("aria-label", "Capturas de pantalla");
+  pista.setAttribute("aria-roledescription", es ? "carrusel" : "carousel");
+  pista.setAttribute("aria-label", es ? "Capturas de pantalla" : "Screenshots");
 
   const boton = (texto, etiqueta, paso) => {
     const b = document.createElement("button");
@@ -20,8 +21,8 @@
     b.addEventListener("click", () => ir(actual() + paso));
     return b;
   };
-  const anterior = boton("←", "Lámina anterior", -1);
-  const siguiente = boton("→", "Lámina siguiente", 1);
+  const anterior = boton("←", es ? "Lámina anterior" : "Previous plate", -1);
+  const siguiente = boton("→", es ? "Lámina siguiente" : "Next plate", 1);
   const cuenta = document.createElement("output");
   const nav = document.createElement("div");
   nav.className = "pasar";

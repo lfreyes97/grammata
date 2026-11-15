@@ -140,7 +140,16 @@ code {
 }
 
 /* ---------- Portada ---------- */
-.portada { padding-block: var(--e-5) var(--e-6); }
+.portada { position: relative; padding-block: var(--e-5) var(--e-6); }
+
+/* Enlace a la otra versión del idioma, arriba a la derecha. */
+.idioma {
+  position: absolute;
+  top: var(--e-5);
+  right: 0;
+  font-size: var(--t-menor);
+  line-height: 3rem;
+}
 
 .marca { display: inline-block; line-height: 0; border-radius: 4px; }
 .marca img { display: block; width: auto; height: 3rem; aspect-ratio: 372.4 / 108; }

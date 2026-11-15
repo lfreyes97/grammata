@@ -1,9 +1,13 @@
 #!/bin/sh
-# Genera site/_out/ (HTML, CSS e imágenes) a partir de site/index.typ.
+# Genera site/_out/ (HTML, CSS e imágenes) a partir de site/index.typ:
+# inglés en la raíz y español en _out/es/.
 set -eu
 cd "$(dirname "$0")"
-rm -rf _out && mkdir -p _out/img
-typst compile --features html --format html --root .. index.typ _out/index.html
+rm -rf _out && mkdir -p _out/img _out/es
+for lang in en es; do
+  out=_out/index.html; [ "$lang" = en ] || out=_out/es/index.html
+  typst compile --features html --format html --root .. --input "lang=$lang" index.typ "$out"
+done
 # El tema por defecto es blueprint (temas/blueprint.css sobre style.css);
 # `TEMA= ./build.sh` compila solo style.css.
 TEMA="${TEMA-blueprint}"

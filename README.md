@@ -5,31 +5,33 @@
   </picture>
 </p>
 
-# Grammata — editor de Typst en Rust + egui
+# Grammata — a Typst editor in Rust + egui
 
-Grammata es un editor de escritorio nativo para [Typst](https://typst.app), escrito en Rust con
-egui: pestañas, paneles acoplables, autocompletado, plugins y vista previa del **PDF real** en vivo.
+**English** · [Español](README.es.md) · [Website](https://lfreyes97.github.io/grammata/)
 
-> **Estado:** probado en Linux. macOS no se ha probado y Windows solo se compilaría en CI,
-> sin pruebas manuales.
+Grammata is a native desktop editor for [Typst](https://typst.app), written in Rust with
+egui: tabs, dockable panels, autocompletion, plugins and a live preview of the **real PDF**.
 
-## Capturas
+> **Status:** tested on Linux. macOS has not been tested, and Windows is only built in CI,
+> with no manual testing.
 
-Documentos de muestra (en [`site/samples`](site/samples)), con el tema claro u oscuro
-según tu configuración. Las capturas se regeneran con `site/capturas.sh`.
+## Screenshots
+
+Sample documents (in [`site/samples`](site/samples)), shown with the light or dark theme
+depending on your settings. Regenerate the screenshots with `site/capturas.sh`.
 
 <table>
   <tr>
     <td width="50%">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="site/img/ensayo-oscuro.webp">
-      <img alt="Un ensayo con capitular ornamentada" src="site/img/ensayo-claro.webp" width="100%">
+      <img alt="An essay with an ornamental drop cap" src="site/img/ensayo-claro.webp" width="100%">
     </picture>
     </td>
     <td width="50%">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="site/img/cartel-epigrafe-oscuro.webp">
-      <img alt="Un cartel editorial con una cita" src="site/img/cartel-epigrafe-claro.webp" width="100%">
+      <img alt="An editorial poster with a quotation" src="site/img/cartel-epigrafe-claro.webp" width="100%">
     </picture>
     </td>
   </tr>
@@ -37,150 +39,149 @@ según tu configuración. Las capturas se regeneran con `site/capturas.sh`.
     <td width="50%">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="site/img/cartel-suizo-oscuro.webp">
-      <img alt="Un cartel de estilo suizo" src="site/img/cartel-suizo-claro.webp" width="100%">
+      <img alt="A Swiss-style poster" src="site/img/cartel-suizo-claro.webp" width="100%">
     </picture>
     </td>
     <td width="50%">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="site/img/fondo-topografico-oscuro.webp">
-      <img alt="Un fondo de marca con curvas de nivel" src="site/img/fondo-topografico-claro.webp" width="100%">
+      <img alt="A brand background with contour lines" src="site/img/fondo-topografico-claro.webp" width="100%">
     </picture>
     </td>
   </tr>
 </table>
 
-## Uso
+## Usage
 
 ```bash
 cd grammata
 cargo run
 ```
 
-Sin dependencias externas: el compilador typst 0.15.1 va embebido
-(no hace falta el CLI en el PATH).
+No external dependencies: the Typst 0.15.1 compiler is embedded
+(the CLI doesn't need to be on your `PATH`).
 
-Atajos: `Ctrl+N` nuevo, `Ctrl+O` abrir (o arrastrar `.typ`), `Ctrl+S` / `Ctrl+Mayús+S`
-guardar, `Ctrl+W` cerrar, `Ctrl+Tab` / `Ctrl+RePág/AvPág` / `Ctrl+1..9` cambiar de
-pestaña, `F5` compilar, `Ctrl+E` exportar PDF, `Ctrl+F` buscar (`Enter`/`F3` siguiente,
-`Mayús+Enter`/`Mayús+F3` anterior), `Ctrl+G` ir a línea, `Ctrl+Espacio` completar
-(`Tab`/`Enter` acepta), `Ctrl+= / - / 0` fuente, `Alt+Z` ajuste de línea,
-`Ctrl+Mayús+O / V / M` esquema · vista previa · problemas, `Ctrl+Mayús+Y / I / T / F / B` símbolos ·
-snippets · plantillas · archivos · borrador, `Ctrl+rueda` zoom del PDF.
+Shortcuts: `Ctrl+N` new, `Ctrl+O` open (or drag a `.typ` in), `Ctrl+S` / `Ctrl+Shift+S`
+save, `Ctrl+W` close, `Ctrl+Tab` / `Ctrl+PageUp/PageDown` / `Ctrl+1..9` switch tabs,
+`F5` compile, `Ctrl+E` export PDF, `Ctrl+F` find (`Enter`/`F3` next,
+`Shift+Enter`/`Shift+F3` previous), `Ctrl+G` go to line, `Ctrl+Space` complete
+(`Tab`/`Enter` accepts), `Ctrl+= / - / 0` font size, `Alt+Z` line wrap,
+`Ctrl+Shift+O / V / M` outline · preview · problems, `Ctrl+Shift+Y / I / T / F / B` symbols ·
+snippets · templates · files · scratchpad, `Ctrl+wheel` zooms the PDF.
 
-Sesión (pestañas, preferencias y diseño del dock) en
-`~/.config/grammata/session.json`. Las sesiones del formato anterior se migran solas.
+Session (tabs, preferences and dock layout) in
+`~/.config/grammata/session.json`. Sessions from the previous format migrate on their own.
 
-## Qué hace
+## What it does
 
-- **Vista previa PDF**: el compilador embebido (`engine.rs`: crates `typst` /
-  `typst-pdf` 0.15.1, sin CLI) compila el buffer vivo a PDF en un hilo aparte
-  (`--root` = carpeta del gestor si contiene al documento, si no la del
-  documento; así `#image`/`#include` relativos y paquetes `@preview` funcionan) y
-  [`hayro`](https://crates.io/crates/hayro) lo rasteriza en otro hilo. Solo se
-  pintan las páginas visibles (+1 pantalla), a la resolución exacta de zoom × densidad
-  de pantalla; mientras llega el render nuevo se muestra el anterior escalado (sin
-  parpadeo). Ajustar al ancho / página completa / zoom manual, navegación de páginas,
-  `RePág/AvPág`. Exportar PDF copia el de la vista previa si está al día.
-- **Paneles**: Esquema, Símbolos, Snippets, Vista previa y Problemas son pestañas de `egui_dock` (arrastrar,
-  dividir, cerrar, reabrir desde la barra o el menú Ver). Diseños predefinidos: clásico,
-  editor + vista previa, vista previa amplia, solo escritura.
-- **Símbolos**: 136 símbolos (griegas, operadores, relaciones, conjuntos y lógica, flechas,
-  otros) y 22 estructuras (`frac`, `sqrt`, `sum`, `mat`, `cases`…), con buscador y
-  recientes. Fuera de una ecuación se insertan como `$…$` y el cursor queda dentro; dentro,
-  se separan con espacios de los identificadores vecinos. Con texto seleccionado, las
-  estructuras lo envuelven (`abs(sel)`).
-- **Snippets**: biblioteca de serie (documento, texto, listas, figuras y tablas,
-  matemáticas, cálculo con `calc`, código, diseño, referencias) y snippets propios guardados en
-  `~/.config/grammata/snippets.json` (botón + crea uno desde la selección).
-  Marcadores: `${sel}` selección · `${sel:x}` selección o `x` · `${x}` relleno que queda
-  seleccionado para escribir encima · `${}` cursor.
-- **Plugins**: carpetas en `~/.config/grammata/plugins/` con un `plugin.toml`: paquete typst con
-  formulario, fuentes, snippets, temas y programas externos (importar y exportar Markdown con
-  pandoc, que debe estar instalado). Los programas externos son código que se ejecuta en tu
-  máquina: solo corren si los permites en el panel, y el permiso se pierde si cambia su línea de
-  comando. El plugin de Pandoc usa `--sandbox` y no deja pasar typst, HTML ni TeX en crudo.
-  Formato en [`docs/plugins.md`](docs/plugins.md); arquitectura en
-  [`docs/plugins-arquitectura.md`](docs/plugins-arquitectura.md).
-- **Plantillas**: builder de Artículo en el panel lateral (título, autor, fecha,
-  idioma, papel, márgenes, fuente, numeración, índice, resumen) que abre el
-  documento en una pestaña nueva; todo lo generado compila (`Ctrl+Mayús+T`).
-- **Archivos**: gestor de una carpeta elegible (persistida) con árbol (guías de
-  jerarquía, migas de pan, menú contextual), abrir, crear, renombrar y eliminar
-  con confirmación; las pestañas abiertas siguen al renombrado (`Ctrl+Mayús+F`).
-- **Borrador**: buffer temporal con vista previa en vivo para construir
-  ecuaciones (toda la biblioteca de snippets + inserción rápida, modo `$…$`)
-  o probar fragmentos y gráficos; se inserta en el cursor y persiste en la
-  sesión (`Ctrl+Mayús+B`).
-- **Problemas**: diagnósticos del compilador embebido con ubicación exacta
-  (errores, advertencias, pistas); clic salta a la línea, también en archivos incluidos. Con errores se conserva
-  la última vista previa válida y se avisa con un banner.
-- **Editor**: widget propio (`code_view.rs`) con resaltado del analizador oficial
-  `typst-syntax` (entiende marcado, código y matemáticas como el compilador), números de
-  línea compatibles con el ajuste de línea y resalte de la línea actual; autocompletado
-  de `#funciones` en un popup junto al cursor (el snippet deja seleccionado el hueco
-  `..`); búsqueda con coincidencias resaltadas; cerrar con cambios pide confirmación.
-- **Estilo**: paleta propia claro/oscuro (`theme.rs`), Inter + monoespaciada del sistema
-  vía `fc-match`, iconos [Phosphor](https://phosphoricons.com).
+- **PDF preview**: the embedded compiler (`engine.rs`: the `typst` / `typst-pdf` 0.15.1
+  crates, no CLI) compiles the live buffer to PDF on a separate thread (`--root` = the file
+  manager's folder if it contains the document, otherwise the document's folder, so relative
+  `#image`/`#include` and `@preview` packages work) and
+  [`hayro`](https://crates.io/crates/hayro) rasterizes it on another thread. Only the visible
+  pages are painted (+1 screen), at the exact resolution of zoom × screen density; while the
+  new render arrives, the previous one is shown scaled (no flicker). Fit to width / full page /
+  manual zoom, page navigation, `PageUp/PageDown`. Export PDF copies the preview's PDF if it
+  is up to date.
+- **Panels**: Outline, Symbols, Snippets, Preview and Problems are `egui_dock` tabs (drag,
+  split, close, reopen from the bar or the View menu). Preset layouts: classic, editor +
+  preview, wide preview, writing only.
+- **Symbols**: 136 symbols (Greek letters, operators, relations, sets and logic, arrows,
+  others) and 22 structures (`frac`, `sqrt`, `sum`, `mat`, `cases`…), with search and recents.
+  Outside an equation they are inserted as `$…$` with the cursor left inside; inside one, they
+  are separated by spaces from neighbouring identifiers. With text selected, the structures
+  wrap it (`abs(sel)`).
+- **Snippets**: a built-in library (document, text, lists, figures and tables, math,
+  calculation with `calc`, code, layout, references) and your own snippets stored in
+  `~/.config/grammata/snippets.json` (the + button creates one from the selection).
+  Placeholders: `${sel}` selection · `${sel:x}` selection or `x` · `${x}` filler left
+  selected so you can type over it · `${}` cursor.
+- **Plugins**: folders in `~/.config/grammata/plugins/` with a `plugin.toml`: a Typst package
+  with a form, fonts, snippets, themes and external programs (import and export Markdown with
+  pandoc, which must be installed). External programs are code that runs on your machine: they
+  only run if you allow them in the panel, and the permission is lost if their command line
+  changes. The Pandoc plugin uses `--sandbox` and doesn't let raw Typst, HTML or TeX through.
+  Format in [`docs/plugins.md`](docs/plugins.md) and architecture in
+  [`docs/plugins-arquitectura.md`](docs/plugins-arquitectura.md) (both in Spanish).
+- **Templates**: an Article builder in the side panel (title, author, date, language, paper,
+  margins, font, numbering, table of contents, abstract) that opens the document in a new tab;
+  everything it generates compiles (`Ctrl+Shift+T`).
+- **Files**: a manager for a chosen folder (persisted) with a tree (hierarchy guides,
+  breadcrumbs, context menu), open, create, rename and delete with confirmation; open tabs
+  follow a rename (`Ctrl+Shift+F`).
+- **Scratchpad**: a temporary buffer with live preview for building equations (the whole
+  snippet library + quick insertion, `$…$` mode) or trying out fragments and charts; it is
+  inserted at the cursor and persists in the session (`Ctrl+Shift+B`).
+- **Problems**: diagnostics from the embedded compiler with exact locations (errors,
+  warnings, hints); a click jumps to the line, also in included files. With errors the last
+  valid preview is kept and a banner says so.
+- **Editor**: a custom widget (`code_view.rs`) with highlighting from the official
+  `typst-syntax` parser (it understands markup, code and math like the compiler does), line
+  numbers that work with line wrap, and current-line highlight; `#function` autocompletion in
+  a popup next to the cursor (the snippet leaves the `..` slot selected); search with
+  highlighted matches; closing with unsaved changes asks for confirmation.
+- **Style**: its own light/dark palette (`theme.rs`), Inter + the system monospace font via
+  `fc-match`, [Phosphor](https://phosphoricons.com) icons.
 
-## Marca
+## Brand
 
-El logo (una Γ con cursor de texto) está hecho en Typst: `assets/logo.typ`.
-`assets/build-logo.sh` regenera los SVG y los PNG de `assets/icons/`; solo usa
-fuentes embebidas de typst. El nombre viene del griego γράμματα, «letras».
+The logo (a Γ with a text cursor) is made in Typst: `assets/logo.typ`.
+`assets/build-logo.sh` regenerates the SVGs and the PNGs in `assets/icons/`; it only uses
+fonts embedded in Typst. The name comes from the Greek γράμματα, “letters”.
 
-## Instalación
+## Installation
 
-- **Linux (tar.gz):** `packaging/build-linux.sh` compila y genera
-  `dist/grammata-<versión>-linux-<arquitectura>.tar.gz`; dentro, `./install.sh [PREFIX]`
-  (por defecto `~/.local`) instala el binario `grammata`, los iconos y el lanzador.
-- **Nix:** `nix run github:lfreyes97/grammata` o `nix profile install` (ver `flake.nix`).
-- **Desde el código:** `cargo install --path .`
+- **Linux (tar.gz):** `packaging/build-linux.sh` builds and produces
+  `dist/grammata-<version>-linux-<architecture>.tar.gz`; inside, `./install.sh [PREFIX]`
+  (default `~/.local`) installs the `grammata` binary, the icons and the launcher.
+- **Nix:** `nix run github:lfreyes97/grammata` or `nix profile install` (see `flake.nix`).
+- **From source:** `cargo install --path .`
 
-## Licencia
+## License
 
-Grammata es software libre bajo la **GNU GPL v3 o posterior** (`LICENSE`).
-Usa typst (Apache-2.0) y otras dependencias con licencias compatibles.
-«Typst» es una marca de Typst GmbH; este proyecto es independiente y no está
-afiliado a ella.
+Grammata is free software under the **GNU GPL v3 or later** (`LICENSE`).
+It uses Typst (Apache-2.0) and other dependencies with compatible licenses.
+“Typst” is a trademark of Typst GmbH; this project is independent and not
+affiliated with that company.
 
-## Estructura
+## Structure
 
-| Archivo | Qué contiene |
+| File | What it contains |
 |---|---|
-| `main.rs` | arranque de eframe |
-| `app.rs` | estado (`State`), bucle por frame, atajos y ejecución de `Action`s, viewer del dock |
-| `actions.rs` | `Action`: lo que pueden pedir menús, barras, atajos y paneles |
-| `chrome.rs` | barra superior, barra de estado y diálogos |
-| `editor.rs` | pestaña de documento, autocompletado, barra de búsqueda |
-| `code_view.rs` | widget de edición: `TextEdit` + números de línea + resaltado cacheado |
-| `highlight.rs` | resaltado y detección de ecuaciones con `typst-syntax` |
-| `preview.rs` | lienzo PDF virtualizado, zoom, navegación |
-| `pdf_render.rs` | hilo de rasterizado con `hayro` |
-| `compile.rs` | hilo de compilación (buffer → PDF en proceso) |
-| `diagnostics.rs` | diagnósticos del compilador (spans → línea/columna) |
-| `engine.rs` | `World` typst embebido: archivos, paquetes, fuentes, PDF/PNG/SVG |
-| `panels.rs` | paneles Esquema y Problemas |
-| `symbols.rs` | panel de símbolos (tabla validada contra typst) |
-| `plugins.rs` | plugins: manifiesto, plantillas con formulario, panel (`plugins/panel.rs`), programas externos (`plugins/run.rs`) |
-| `snippets.rs` | panel de snippets, marcadores `${…}`, snippets del usuario |
-| `templates.rs` | builders de plantillas (Artículo): opciones → `.typ` que compila |
-| `files.rs` | gestor de archivos: árbol, abrir, crear, renombrar, eliminar |
-| `scratch.rs` | borrador con vista previa en vivo e inserción en el documento |
-| `layout.rs` | pestañas del dock, paneles, diseños predefinidos |
-| `session.rs` | sesión persistente |
-| `theme.rs` | paleta, estilos de egui/dock/editor, fuentes |
-| `widgets.rs` | botones e iconos reutilizables |
-| `doc.rs`, `text.rs`, `outline.rs`, `syntax.rs` | documentos, utilidades de texto, esquema, snippets del autocompletado |
+| `main.rs` | eframe startup |
+| `app.rs` | state (`State`), per-frame loop, shortcuts and `Action` execution, the dock viewer |
+| `actions.rs` | `Action`: what menus, bars, shortcuts and panels can request |
+| `chrome.rs` | top bar, status bar and dialogs |
+| `editor.rs` | document tab, autocompletion, search bar |
+| `code_view.rs` | editing widget: `TextEdit` + line numbers + cached highlighting |
+| `highlight.rs` | highlighting and equation detection with `typst-syntax` |
+| `preview.rs` | virtualized PDF canvas, zoom, navigation |
+| `pdf_render.rs` | rasterizing thread with `hayro` |
+| `compile.rs` | compile thread (buffer → in-process PDF) |
+| `diagnostics.rs` | compiler diagnostics (spans → line/column) |
+| `engine.rs` | embedded Typst `World`: files, packages, fonts, PDF/PNG/SVG |
+| `panels.rs` | Outline and Problems panels |
+| `symbols.rs` | symbols panel (table validated against Typst) |
+| `plugins.rs` | plugins: manifest, templates with a form, panel (`plugins/panel.rs`), external programs (`plugins/run.rs`) |
+| `snippets.rs` | snippets panel, `${…}` placeholders, user snippets |
+| `templates.rs` | template builders (Article): options → a `.typ` that compiles |
+| `files.rs` | file manager: tree, open, create, rename, delete |
+| `scratch.rs` | scratchpad with live preview and insertion into the document |
+| `layout.rs` | dock tabs, panels, preset layouts |
+| `session.rs` | persistent session |
+| `theme.rs` | palette, egui/dock/editor styles, fonts |
+| `widgets.rs` | reusable buttons and icons |
+| `doc.rs`, `text.rs`, `outline.rs`, `syntax.rs` | documents, text utilities, outline, autocompletion snippets |
 
-## Pruebas
+## Tests
 
 ```bash
-cargo test                      # unitarias
-cargo test -- --include-ignored # + recorrido de la UI con egui_kittest (necesita typst y GPU)
-                                #   y compilación de todos los símbolos, estructuras y snippets
-SHOT_DIR=/tmp/capturas cargo test -- --include-ignored   # guarda capturas de cada paso
+cargo test                      # unit tests
+cargo test -- --include-ignored # + UI walkthrough with egui_kittest (needs typst and a GPU)
+                                #   and compilation of every symbol, structure and snippet
+SHOT_DIR=/tmp/capturas cargo test -- --include-ignored   # saves a screenshot of each step
 ```
 
-> Nota de fuentes: Inter y Adwaita Sans tienen glifos en el área de uso privado, la misma
-> que Phosphor. `theme::icons_only` desactiva las letras de Phosphor en su `cmap` para
-> poder ponerla delante sin que se coma el texto.
+> Font note: Inter and Adwaita Sans have glyphs in the Private Use Area, the same one
+> Phosphor uses. `theme::icons_only` turns off Phosphor's letters in its `cmap` so it can
+> be placed in front without eating the text.

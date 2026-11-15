@@ -71,7 +71,7 @@ body {
 }
 
 /* ---------- Tipografía técnica ---------- */
-h2, thead th, .captura figcaption, footer, .boton, .acciones .nota {
+h2, thead th, .captura figcaption, footer, .boton, .acciones .nota, .idioma {
   font-family: var(--mono);
   font-style: normal;
 }
@@ -271,3 +271,17 @@ footer p + p {
   padding-top: var(--e-2);
   border-top: 1px dashed var(--filete-fuerte);
 }
+
+/* Selector de idioma: una etiqueta de plano. */
+.idioma {
+  padding: 0 0.9em;
+  border: 1px solid var(--tinta);
+  font-size: var(--t-pie);
+  line-height: 2.2rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--tinta);
+}
+.idioma:hover { background: var(--tinta); color: var(--fondo); text-decoration: none; }
+.idioma:focus-visible { outline: 2px solid var(--tinta); outline-offset: 3px; }
