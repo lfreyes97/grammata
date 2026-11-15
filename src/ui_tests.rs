@@ -1017,3 +1017,95 @@ fn plugin_importa_markdown_y_ejecuta_comando() {
     });
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+/// Capturas para la web: abre cada `.typ` de `$WEB_SAMPLES` con editor y vista
+/// previa, y guarda `$SHOT_DIR/<nombre>-<tema>.png` con `$WEB_TEMA` = `claro`
+/// u `oscuro`. Lo ejecuta `site/capturas.sh`, una vez por tema.
+///
+/// Un tema por proceso: alternarlo dentro del harness deja corrupto el texto
+/// del editor, y una segunda app en el mismo proceso hereda estado global del
+/// tema anterior (en la app real no pasa).
+#[test]
+#[ignore = "necesita GPU y escribe en SHOT_DIR"]
+fn capturas_web() {
+    let (Ok(samples), Ok(_), Ok(tema)) = (
+        std::env::var("WEB_SAMPLES"),
+        std::env::var("SHOT_DIR"),
+        std::env::var("WEB_TEMA"),
+    ) else {
+        return;
+    };
+    let dark = match tema.as_str() {
+        "oscuro" => true,
+        "claro" => false,
+        otro => panic!("WEB_TEMA debe ser claro u oscuro, no {otro}"),
+    };
+    let wait_ms: u64 = std::env::var("WEB_WAIT_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3000);
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&samples)
+        .expect("leer WEB_SAMPLES")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|e| e == "typ"))
+        .collect();
+    files.sort();
+    assert!(!files.is_empty(), "sin .typ en {samples}");
+
+    let tmp = std::env::temp_dir().join(format!("grammata-web-{}", std::process::id()));
+    std::fs::create_dir_all(tmp.join("cfg/grammata")).unwrap();
+    std::fs::write(
+        tmp.join("cfg/grammata/session.json"),
+        format!(r#"{{"prefs":{{"dark":{dark}}}}}"#),
+    )
+    .unwrap();
+    // SAFETY: único test que toca el entorno; se fija antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1600.0, 1000.0))
+        .wgpu()
+        .build_eframe(|cc| App::new(cc));
+    assert_eq!(h.state().st.prefs.dark, dark, "la sesión no fijó el tema");
+    // `set_theme` actúa en el fotograma siguiente: se reaplica ya con el tema
+    // activo para que el estilo se escriba en el tema correcto.
+    h.run_steps(3);
+    theme::apply(&h.ctx, dark);
+    h.run_steps(3);
+    h.state_mut()
+        .st
+        .actions
+        .push(Action::ApplyPreset(layout::Preset::SideBySide));
+    h.run_steps(3);
+
+    for file in files {
+        let name = file.file_stem().unwrap().to_string_lossy().into_owned();
+        // Los carteles son altos: se ven enteros; el resto, a todo el ancho.
+        let cartel = name.starts_with("cartel") || name.starts_with("fondo");
+        h.state_mut().st.prefs.fit = if cartel {
+            session::FitMode::Page
+        } else {
+            session::FitMode::Width
+        };
+        h.state_mut().st.actions.push(Action::OpenPath(file));
+        h.run_steps(3);
+        wait(&mut h, "compilación de la muestra", |a| {
+            let d = a.st.docs.cur();
+            a.st.compiler.in_flight.is_none()
+                && a.st.compiler.built.get(&d.id).is_some_and(|b| b.key.rev == d.rev)
+                && a.st.preview.fresh_pages() >= 1
+        });
+        // Tiempo real extra (WEB_WAIT_MS, 3000 por defecto) para que el
+        // editor termine de pintarse; se pinta en cada paso.
+        let t0 = Instant::now();
+        while t0.elapsed() < Duration::from_millis(wait_ms) {
+            h.step();
+            let _ = h.render();
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        shot(&mut h, &format!("{name}-{tema}"));
+        h.state_mut().st.actions.push(Action::CloseCurrent);
+        h.run_steps(3);
+    }
+    let _ = std::fs::remove_dir_all(&tmp);
+}

@@ -1,0 +1,273 @@
+/* Tema «blueprint»: papel cuadriculado de plano técnico, en grises.
+   Se aplica sobre style.css (solo redefine tokens y adornos), con
+   `TEMA=blueprint ./build.sh`. */
+
+:root {
+  --fondo: #f3f3f3;
+  --tinta: #1a1a1a;
+  --tinta-2: #565656;           /* 6.9:1 sobre el fondo */
+  --filete: #d0d0d0;
+  --filete-fuerte: #8c8c8c;
+  --superficie: #e6e6e6;
+  --acento: #2a2a2a;
+  --acento-texto: #1a1a1a;      /* 15:1 sobre el fondo */
+  --acento-hover: #000000;
+  --sobre-acento: #ffffff;
+  --seleccion: #d2d2d2;
+  --azul: #239dad;              /* el turquesa de Typst; 2.9:1: solo adornos y el titular */
+  --azul-texto: #177a88;        /* el mismo, oscurecido para texto: 4.5:1 */
+
+  --malla-fina: rgba(0, 0, 0, 0.06);
+  --malla-gruesa: rgba(0, 0, 0, 0.14);
+  --paso: 20px;                 /* la malla gruesa cae cada 5 pasos */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #1b1b1b;
+    --tinta: #ececec;
+    --tinta-2: #a9a9a9;         /* 7.4:1 sobre el fondo */
+    --filete: #383838;
+    --filete-fuerte: #707070;
+    --superficie: #262626;
+    --acento: #d6d6d6;
+    --acento-texto: #e8e8e8;    /* 14:1 sobre el fondo */
+    --acento-hover: #ffffff;
+    --sobre-acento: #111111;    /* 15:1 sobre --acento-texto */
+    --seleccion: #474747;
+    --azul: #239dad;            /* 5.3:1 sobre el fondo */
+    --azul-texto: #239dad;
+
+    --malla-fina: rgba(255, 255, 255, 0.05);
+    --malla-gruesa: rgba(255, 255, 255, 0.12);
+  }
+}
+
+/* ---------- Papel ---------- */
+html {
+  background-color: var(--fondo);
+  background-image:
+    linear-gradient(var(--malla-gruesa) 1px, transparent 1px),
+    linear-gradient(90deg, var(--malla-gruesa) 1px, transparent 1px),
+    linear-gradient(var(--malla-fina) 1px, transparent 1px),
+    linear-gradient(90deg, var(--malla-fina) 1px, transparent 1px);
+  background-size:
+    calc(var(--paso) * 5) calc(var(--paso) * 5),
+    calc(var(--paso) * 5) calc(var(--paso) * 5),
+    var(--paso) var(--paso),
+    var(--paso) var(--paso);
+  background-position: center top;
+}
+body { background: none; }
+
+/* Marco del plano: una línea doble alrededor del área útil. */
+body {
+  position: relative;
+  max-width: calc(var(--pagina) + 2 * var(--gutter));
+  margin-inline: auto;
+  background: color-mix(in srgb, var(--fondo) 78%, transparent);
+  border-inline: 1px solid var(--filete-fuerte);
+  box-shadow: inset 0 0 0 4px var(--fondo), inset 0 0 0 5px var(--filete);
+}
+
+/* ---------- Tipografía técnica ---------- */
+h2, thead th, .captura figcaption, footer, .boton, .acciones .nota {
+  font-family: var(--mono);
+  font-style: normal;
+}
+
+h1 { font-weight: 500; letter-spacing: -0.02em; }
+
+/* Titulares de sección numerados como las hojas de un plano. */
+main { counter-reset: hoja; }
+.seccion { counter-increment: hoja; border-top-style: dashed; }
+h2 {
+  font-size: var(--t-pie);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--acento-texto);
+  border-top-style: solid;
+}
+h2::before {
+  content: counter(hoja, decimal-leading-zero) " / ";
+  color: var(--tinta-2);
+}
+@media (min-width: 62rem) {
+  h2 { border-top: 2px solid var(--acento); }
+}
+
+code {
+  border-radius: 0;
+  border: 1px solid var(--filete);
+}
+
+/* ---------- Botón y enlaces ---------- */
+.boton {
+  border-radius: 0;
+  border: 1px solid var(--acento-texto);
+  font-size: var(--t-pie);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  box-shadow: 4px 4px 0 var(--filete-fuerte);
+  transition: background-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+.boton:hover { box-shadow: 2px 2px 0 var(--filete-fuerte); transform: translate(2px, 2px); }
+.boton:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--filete-fuerte); }
+
+.marca { border-radius: 0; }
+
+/* ---------- Capturas: láminas con marcas de esquina y cajetín ---------- */
+.captura { margin: var(--e-6) 0; }
+.captura picture { position: relative; }
+.captura img {
+  border-radius: 0;
+  border-color: var(--tinta);
+  outline: 1px solid var(--filete-fuerte);
+  outline-offset: 8px;
+  box-shadow: 10px 10px 0 var(--filete);
+}
+.captura picture::before,
+.captura picture::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border: 0 solid var(--tinta);
+  pointer-events: none;
+}
+.captura picture::before { top: -16px; left: -16px; border-width: 2px 0 0 2px; }
+.captura picture::after { bottom: -16px; right: -16px; border-width: 0 2px 2px 0; }
+
+/* Cajetín bajo la lámina: número, título y nota en una sola tira. */
+.captura figcaption {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  max-width: none;
+  margin: var(--e-5) 0 0;
+  border: 1px solid var(--tinta);
+  font-size: var(--t-pie);
+  line-height: 1.45;
+  color: var(--tinta-2);
+}
+.captura.ancha figcaption { margin-left: 0; }
+.captura figcaption b {
+  padding: 0.55em 1em;
+  border-right: 1px solid var(--tinta);
+  background: var(--tinta);
+  color: var(--fondo);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.captura figcaption span { padding: 0.55em 1em; }
+@media (max-width: 39.99rem) {
+  .captura figcaption { grid-template-columns: 1fr; }
+  .captura figcaption b { border-right: 0; }
+}
+
+/* ---------- Lista y tabla ---------- */
+.lista li::before { content: "+"; font-family: var(--mono); color: var(--acento-texto); }
+
+thead th {
+  font-size: var(--t-pie);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+th, td { border-bottom-style: dashed; }
+thead th { border-bottom-style: solid; }
+
+/* ---------- Pie: cajetín ---------- */
+footer {
+  border-top: 2px solid var(--acento);
+  letter-spacing: 0.02em;
+}
+
+
+/* ---------- Carrusel de láminas ----------
+   Las láminas se deslizan en horizontal con snap; tema.js añade los botones
+   y el contador. Sin JS sigue siendo desplazable. */
+.capturas { position: relative; }
+.capturas .cuerpo {
+  display: flex;
+  gap: var(--e-6);
+  /* El relleno deja sitio a marcas y sombra, que el overflow recortaría. */
+  margin-inline: -20px;
+  padding: 24px 20px 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: var(--filete-fuerte) transparent;
+}
+.capturas .cuerpo:focus-visible { outline: 2px solid var(--tinta); outline-offset: -2px; }
+.capturas .captura {
+  flex: 0 0 100%;
+  min-width: 0;
+  margin: 0;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+.pasar {
+  display: flex;
+  align-items: stretch;
+  margin-top: var(--e-3);
+  font-family: var(--mono);
+  font-size: var(--t-pie);
+  letter-spacing: 0.08em;
+}
+.pasar output { display: flex; align-items: center; padding: 0 1em; color: var(--tinta-2); }
+.pasar button {
+  width: 2.6em;
+  height: 2.6em;
+  border: 1px solid var(--tinta);
+  border-radius: 0;
+  background: transparent;
+  color: var(--tinta);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.pasar button:hover:not(:disabled) { background: var(--tinta); color: var(--fondo); }
+.pasar button:focus-visible { outline: 2px solid var(--tinta); outline-offset: 3px; }
+.pasar button:disabled { border-color: var(--filete-fuerte); color: var(--filete-fuerte); cursor: default; }
+
+@media (min-width: 62rem) {
+  .capturas h2 { grid-column: 1 / -1; margin-bottom: 0; }
+  .capturas .cuerpo { grid-column: 1 / -1; padding-top: 32px; }
+  .capturas .captura.ancha { margin-left: 0; }
+  .pasar { position: absolute; top: calc(var(--e-6) + var(--e-2)); right: 0; margin: 0; }
+}
+
+/* Pantallas estrechas: marcas y sombra más cerca para no salirse del margen. */
+@media (max-width: 61.99rem) {
+  .captura img { outline-offset: 5px; box-shadow: 6px 6px 0 var(--filete); }
+  .captura picture::before { top: -10px; left: -10px; }
+  .captura picture::after { bottom: -10px; right: -10px; }
+}
+
+/* ---------- Turquesa de Typst: su nombre y el cursor del titular ---------- */
+/* El logotipo de Typst en minúsculas y negrita, como el TeX de LaTeX. */
+.typst {
+  color: var(--azul-texto);
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-transform: lowercase;
+}
+h1 .typst { font-weight: 600; color: var(--azul); }
+h1::after {
+  background:
+    linear-gradient(var(--azul), var(--azul)) center / 0.055em 100% no-repeat,
+    linear-gradient(var(--azul), var(--azul)) top / 100% 0.045em no-repeat,
+    linear-gradient(var(--azul), var(--azul)) bottom / 100% 0.045em no-repeat;
+}
+
+/* Pie: cada línea es una nota aparte. */
+footer p + p {
+  margin-top: var(--e-2);
+  padding-top: var(--e-2);
+  border-top: 1px dashed var(--filete-fuerte);
+}

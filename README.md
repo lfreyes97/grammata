@@ -13,6 +13,42 @@ egui: pestañas, paneles acoplables, autocompletado, plugins y vista previa del 
 > **Estado:** probado en Linux. macOS no se ha probado y Windows solo se compilaría en CI,
 > sin pruebas manuales.
 
+## Capturas
+
+Documentos de muestra (en [`site/samples`](site/samples)), con el tema claro u oscuro
+según tu configuración. Las capturas se regeneran con `site/capturas.sh`.
+
+<table>
+  <tr>
+    <td width="50%">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="site/img/ensayo-oscuro.webp">
+      <img alt="Un ensayo con capitular ornamentada" src="site/img/ensayo-claro.webp" width="100%">
+    </picture>
+    </td>
+    <td width="50%">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="site/img/cartel-epigrafe-oscuro.webp">
+      <img alt="Un cartel editorial con una cita" src="site/img/cartel-epigrafe-claro.webp" width="100%">
+    </picture>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="site/img/cartel-suizo-oscuro.webp">
+      <img alt="Un cartel de estilo suizo" src="site/img/cartel-suizo-claro.webp" width="100%">
+    </picture>
+    </td>
+    <td width="50%">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="site/img/fondo-topografico-oscuro.webp">
+      <img alt="Un fondo de marca con curvas de nivel" src="site/img/fondo-topografico-claro.webp" width="100%">
+    </picture>
+    </td>
+  </tr>
+</table>
+
 ## Uso
 
 ```bash

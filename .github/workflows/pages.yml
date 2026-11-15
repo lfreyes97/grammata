@@ -1,0 +1,41 @@
+name: Pages
+
+# Compila site/ (landing en Typst + CSS) y la publica en GitHub Pages.
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', 'assets/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  TYPST_VERSION: 0.15.1
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Typst
+        run: |
+          curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" \
+            | tar -xJ --strip-components=1 -C "$RUNNER_TEMP" --wildcards '*/typst'
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - run: site/build.sh
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/_out
+      - id: pages
+        uses: actions/deploy-pages@v4
