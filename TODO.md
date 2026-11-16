@@ -1,6 +1,6 @@
 # Pendientes de Grammata
 
-Actualizado el 2026-11-06. Marcar con `[x]` al terminar.
+Actualizado el 2026-11-16. Marcar con `[x]` al terminar.
 
 ## 1. Estado del árbol
 - [x] Commits de rendimiento del editor, licencia GPL-3.0-or-later, renombrado a `grammata`, empaquetado y flake de Nix.
@@ -63,6 +63,26 @@ Actualizado el 2026-11-06. Marcar con `[x]` al terminar.
 - [ ] Los temas no cambian aún el fondo de los campos de texto ni el color de selección (`theme::apply`).
 - [ ] Empaquetar Instatypst como plugin (manifiesto con sus presets de `carteles`).
 - [ ] Arrancar con el tema claro guardado sale con colores mezclados en las pruebas de UI (ya pasaba antes de los plugins): comprobar en la app real.
+
+## 10. Hacia estable
+Criterio propuesto: sin pérdida de datos, formatos compatibles hacia atrás y soporte declarado solo en Linux. Orden sugerido: argumentos de línea de comandos (2) → recuperación (abajo) → memoria del editor (4) → seguridad de plugins (9) → `--compile-worker` (4) → versionar formatos → etiquetar.
+- [ ] **Recuperación tras un cierre brusco.** La sesión ya guarda el texto sin guardar (a los 3 s de un cambio, con escritura atómica). Falta revisar el recorte: `session::tab_text` limita a 200 KB (`MAX_UNSAVED_BYTES`) **también** los archivos con ruta y cambios sin guardar. Comprobar si, al restaurar y guardar, se sobrescribe el archivo con el texto recortado; si es así, no recortar los que tienen ruta o avisar antes de guardar.
+- [ ] **Versionar los formatos** (sesión, `plugin.toml`, snippets de usuario) con una política de compatibilidad. La sesión ya migra sola; plugins y snippets no tienen plan.
+- [ ] **Pruebas de ida y vuelta de la sesión sin GPU** (guardar, cerrar, reabrir, restaurar texto sin guardar) para que corran en el CI.
+- [ ] **CI de Windows como requisito** cuando alguien lo pruebe a mano (hoy `continue-on-error`).
+- [ ] **Definir «estable»** y qué versión lo declara (0.2 o 0.9): escribirlo en el README.
+
+## Hito 0.2 (objetivo: 2026-11-30)
+Lo que entra: la primera versión que se pueda usar a diario en Linux. Memoria del editor, `--compile-worker` y `typst-ide` quedan fuera.
+- [ ] Argumentos de línea de comandos: abrir archivos y carpetas, `--version`, `--help` (sección 2). Días 1–4.
+- [ ] Recorte de 200 KB de la sesión: comprobar y corregir o avisar antes de guardar (sección 10). Días 1–4.
+- [ ] Límites de plugins: tope de tamaño de la salida y matar el grupo de procesos al vencer el tiempo (sección 9). Días 5–8.
+- [ ] Prueba de ida y vuelta de la sesión sin GPU, ejecutada en el CI (sección 10). Días 5–8.
+- [ ] Medir la memoria del editor con un libro grande y documentarla como límite conocido en las notas de la versión. Días 9–11.
+- [ ] Instalar a mano el `.deb` (AppImage probado) y comprobar que abre, y que el icono y el lanzador aparecen. Días 9–11.
+- [ ] Cierre: `Cargo.toml` a 0.2.0 (el workflow exige que coincida con la etiqueta), `CHANGELOG`, README y la web con la versión nueva. Días 12–13; dos días de colchón.
+- [ ] **Traducir la interfaz al inglés** (rama `feat/i18n`, urgente).
+- [ ] **Compilar/exportar:** comprobar que exportar PDF deja un archivo (no se reprodujo) y valorar guardar el PDF junto al fuente al compilar.
 
 ## Límites conocidos
 - Solo se puede probar Linux (GNOME/Wayland). macOS no se puede probar nunca desde aquí; Windows solo compila en el CI.
