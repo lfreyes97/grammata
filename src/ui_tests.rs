@@ -1144,3 +1144,31 @@ fn barras_en_ventana_estrecha() {
         shot(&mut h, &format!("barras-{ancho}"));
     }
 }
+
+/// Con «Guardar el PDF junto al fuente», compilar bien deja `doc.pdf` al lado.
+#[test]
+#[ignore = "necesita GPU"]
+fn pdf_junto_al_fuente() {
+    let tmp = std::env::temp_dir().join(format!("grammata-pdf-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let doc = tmp.join("informe.typ");
+    std::fs::write(&doc, "= Hola\n").unwrap();
+    // SAFETY: como los demás tests de UI, aísla la sesión antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    let mut h = harness();
+    h.run_steps(5);
+    h.state_mut().st.actions.push(Action::OpenPath(doc));
+    h.state_mut().st.actions.push(Action::TogglePdfAlongside);
+    wait(&mut h, "PDF junto al fuente", |_| tmp.join("informe.pdf").exists());
+    let pdf = std::fs::read(tmp.join("informe.pdf")).unwrap();
+    assert!(pdf.starts_with(b"%PDF"), "no es un PDF");
+    assert!(!tmp.join("informe.pdf.tmp").exists(), "queda el temporal");
+    // Apagada, no escribe: se borra y se compila de nuevo (F5).
+    h.state_mut().st.actions.push(Action::TogglePdfAlongside);
+    h.run_steps(2);
+    std::fs::remove_file(tmp.join("informe.pdf")).unwrap();
+    h.state_mut().st.actions.push(Action::Compile);
+    h.run_steps(30);
+    assert!(!tmp.join("informe.pdf").exists());
+}

@@ -81,8 +81,10 @@ Lo que entra: la primera versión que se pueda usar a diario en Linux. Memoria d
 - [ ] Medir la memoria del editor con un libro grande y documentarla como límite conocido en las notas de la versión. Días 9–11.
 - [ ] Instalar a mano el `.deb` (AppImage probado) y comprobar que abre, y que el icono y el lanzador aparecen. Días 9–11.
 - [ ] Cierre: `Cargo.toml` a 0.2.0 (el workflow exige que coincida con la etiqueta), `CHANGELOG`, README y la web con la versión nueva. Días 12–13; dos días de colchón.
-- [ ] **Traducir la interfaz al inglés** (rama `feat/i18n`, urgente).
-- [ ] **Compilar/exportar:** comprobar que exportar PDF deja un archivo (no se reprodujo) y valorar guardar el PDF junto al fuente al compilar.
+- [x] Interfaz en inglés y español (`src/i18n.rs`; idioma en Ver o por `LANG`). Quedan sin traducir los cuerpos de los snippets y las descripciones de los `plugin.toml`.
+- [x] Barras que no se montan en ventanas y paneles estrechos (barra superior, vista previa, gestor de archivos y barra de estado).
+- [ ] Exportar PDF: se dijo que no dejaba archivo, pero no se pudo reproducir (las pruebas del motor pasan y los portales funcionan). Si vuelve a pasar, anotar el mensaje de la barra de estado.
+- [x] Preferencia «Guardar el PDF junto al fuente» (Ver): al compilar bien el documento principal escribe `doc.pdf` al lado, como mucho cada 10 s (F5 lo escribe al momento) y de forma atómica. Desactivada por defecto.
 
 ## Límites conocidos
 - Solo se puede probar Linux (GNOME/Wayland). macOS no se puede probar nunca desde aquí; Windows solo compila en el CI.

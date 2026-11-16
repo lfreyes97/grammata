@@ -154,6 +154,9 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             if menu_check(ui, st.prefs.auto_compile, tr("Compilar al escribir"), "") {
                 a.push(Action::ToggleAuto)
             }
+            if menu_check(ui, st.prefs.pdf_alongside, tr("Guardar el PDF junto al fuente"), "") {
+                a.push(Action::TogglePdfAlongside)
+            }
             if menu_check(ui, st.prefs.auto_save, tr("Autoguardar"), "") {
                 a.push(Action::ToggleAutoSave)
             }

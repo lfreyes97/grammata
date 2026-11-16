@@ -29,6 +29,8 @@ const DEFAULT_FONT: f32 = 14.0;
 const MAX_OPEN_BYTES: u64 = 5_000_000;
 /// Pausa al escribir antes de autoguardar.
 const AUTOSAVE_DELAY: Duration = Duration::from_millis(800);
+/// Intervalo mínimo entre dos escrituras del PDF junto al fuente.
+const PDF_EVERY: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum StatusKind {
@@ -131,6 +133,11 @@ pub struct State {
     pub plugins: crate::plugins::Plugins,
     pub fmt: FormatBar,
     force_compile: bool,
+    /// PDF junto al fuente: hay uno nuevo por escribir, cuándo se escribió el
+    /// último y si ya se avisó en la barra de estado.
+    pdf_pending: bool,
+    last_pdf: Option<std::time::Instant>,
+    pdf_announced: bool,
     /// Documento fijado en la vista previa: se compila y muestra él aunque
     /// se edite otro (p. ej. `main.typ` mientras se escribe un capítulo).
     pub pinned: Option<DocId>,
@@ -352,6 +359,9 @@ impl App {
             scratch: scratch::Scratch::from_session(scratch_text, scratch_equation, scratch_block),
             fmt: FormatBar::preloaded(&ctx),
             force_compile: false,
+            pdf_pending: false,
+            last_pdf: None,
+            pdf_announced: false,
             export_rx: None,
             last_export_dir: None,
             plugin_job: None,
@@ -587,6 +597,52 @@ impl App {
                 let msg = e.message.lines().next().unwrap_or("").to_string();
                 st.set_status(format!("{}: {msg}", e.location()), StatusKind::Err);
             }
+            // Compiló bien el principal: su PDF está listo para copiarse junto al fuente.
+            let main = st.main_doc();
+            if st.prefs.pdf_alongside
+                && key.doc == main.id
+                && main.path.is_some()
+                && st
+                    .compiler
+                    .built
+                    .get(&key.doc)
+                    .and_then(|b| b.pdf.as_ref())
+                    .is_some_and(|(k, _)| *k == key)
+            {
+                st.pdf_pending = true;
+            }
+        }
+        if st.pdf_pending {
+            let wait = st
+                .last_pdf
+                .map_or(Duration::ZERO, |t| PDF_EVERY.saturating_sub(t.elapsed()));
+            if !st.prefs.pdf_alongside {
+                st.pdf_pending = false;
+            } else if wait.is_zero() {
+                st.pdf_pending = false;
+                let main = st.main_doc();
+                let dest = main.path.as_deref().map(pdf_beside);
+                let data = st.compiler.built.get(&main.id).and_then(|b| b.pdf.clone());
+                if let (Some(dest), Some((_, data))) = (dest, data) {
+                    match write_atomic(&dest, &data) {
+                        Ok(()) => {
+                            st.last_pdf = Some(Instant::now());
+                            if !std::mem::replace(&mut st.pdf_announced, true) {
+                                st.set_status(
+                                    trf!("PDF guardado junto al fuente: {}", dest.display()),
+                                    StatusKind::Ok,
+                                );
+                            }
+                        }
+                        Err(e) => st.set_status(
+                            trf!("No se pudo guardar el PDF: {}", e),
+                            StatusKind::Err,
+                        ),
+                    }
+                }
+            } else {
+                ctx.request_repaint_after(wait);
+            }
         }
         // Vista previa ← último PDF válido del doc principal.
         let main = st.main_doc().id;
@@ -809,6 +865,8 @@ impl App {
             }
             Action::Compile => {
                 self.st.force_compile = true;
+                // F5 es una petición expresa: el PDF no espera al intervalo.
+                self.st.last_pdf = None;
             }
             Action::Export(fmt) => {
                 self.st.modal = Some(Modal::Export(ExportDlg {
@@ -916,6 +974,12 @@ impl App {
             }
             Action::ToggleAutoSave => {
                 self.st.prefs.auto_save = !self.st.prefs.auto_save;
+                self.st.needs_persist = true;
+            }
+            Action::TogglePdfAlongside => {
+                self.st.prefs.pdf_alongside = !self.st.prefs.pdf_alongside;
+                self.st.pdf_pending = self.st.prefs.pdf_alongside;
+                self.st.pdf_announced = false;
                 self.st.needs_persist = true;
             }
             Action::ToggleAuto => {
@@ -1771,6 +1835,20 @@ impl App {
     }
 }
 
+/// `dir/doc.typ` → `dir/doc.pdf`.
+fn pdf_beside(src: &Path) -> PathBuf {
+    src.with_extension("pdf")
+}
+
+/// Escritura atómica: quien tenga el PDF abierto no ve nunca uno a medias.
+fn write_atomic(dest: &Path, data: &[u8]) -> std::io::Result<()> {
+    let tmp = dest.with_extension("pdf.tmp");
+    std::fs::write(&tmp, data)?;
+    std::fs::rename(&tmp, dest).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
+
 fn debounce(len: usize) -> Duration {
     Duration::from_millis(match len {
         0..=50_000 => 350,
@@ -2025,6 +2103,30 @@ impl TabViewer for Viewer<'_> {
 
     fn scroll_bars(&self, _tab: &Tab) -> [bool; 2] {
         [false, false]
+    }
+}
+
+#[cfg(test)]
+mod pdf_junto_tests {
+    use super::*;
+
+    #[test]
+    fn el_pdf_va_junto_al_fuente() {
+        assert_eq!(pdf_beside(Path::new("/a/b/informe.typ")), Path::new("/a/b/informe.pdf"));
+        assert_eq!(pdf_beside(Path::new("sin-ext")), Path::new("sin-ext.pdf"));
+    }
+
+    #[test]
+    fn escribe_y_reemplaza_sin_dejar_temporales() {
+        let d = std::env::temp_dir().join(format!("grammata-wa-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let dest = d.join("x.pdf");
+        write_atomic(&dest, b"%PDF-1").unwrap();
+        write_atomic(&dest, b"%PDF-2").unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), b"%PDF-2");
+        assert!(!d.join("x.pdf.tmp").exists());
+        assert!(write_atomic(&d.join("no-existe").join("x.pdf"), b"x").is_err());
     }
 }
 

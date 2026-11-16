@@ -127,6 +127,7 @@ pub enum Action {
     FontReset,
     ToggleWrap,
     ToggleAuto,
+    TogglePdfAlongside,
     ToggleFormatBar,
     About,
     /// Inserta un símbolo o estructura matemática (envuelve en `$…$` si el

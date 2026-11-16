@@ -43,6 +43,8 @@ pub struct Prefs {
     pub font_size: f32,
     pub wrap: bool,
     pub auto_compile: bool,
+    /// Escribe el PDF junto al fuente (`doc.typ` → `doc.pdf`) al compilar bien.
+    pub pdf_alongside: bool,
     /// Guarda solo los documentos con ruta tras una pausa al escribir.
     pub auto_save: bool,
     /// Documento fijado en la vista previa (se restaura si sigue abierto).
@@ -70,6 +72,7 @@ impl Default for Prefs {
             font_size: 14.0,
             wrap: true,
             auto_compile: true,
+            pdf_alongside: false,
             auto_save: true,
             pinned: None,
             zoom: 1.0,
