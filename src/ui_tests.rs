@@ -1192,7 +1192,7 @@ fn command_line_paths() {
     let mut h = Harness::builder()
         .with_size(egui::vec2(1360.0, 840.0))
         .wgpu()
-        .build_eframe(move |cc| App::with_paths(cc, paths));
+        .build_eframe(move |cc| App::with_paths(cc, paths, crate::instance::Instance::solo()));
     h.run_steps(5);
     let st = &h.state().st;
     assert_eq!(st.prefs.files_root.as_deref(), Some(proj.as_path()));
@@ -1203,4 +1203,68 @@ fn command_line_paths() {
     assert!(new.is_some_and(|d| d.text.is_empty()), "{docs:?}");
     // The last path given is the one in front.
     assert_eq!(st.docs.cur().path.as_deref(), Some(missing.as_path()));
+}
+
+/// A second launch hands its paths to the running window instead of starting another.
+#[test]
+#[ignore = "needs a GPU"]
+fn second_launch_opens_in_the_running_window() {
+    let tmp = std::env::temp_dir().join(format!("grammata-single-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let file = tmp.join("sent.typ");
+    std::fs::write(&file, "= Sent\n").unwrap();
+    // SAFETY: like the other UI tests, isolates the session and the instance lock.
+    unsafe {
+        std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg"));
+        std::env::set_var("XDG_RUNTIME_DIR", tmp.join("run"));
+    }
+    crate::i18n::set(crate::i18n::Lang::Es);
+    let crate::instance::Claim::Owner(owner) = crate::instance::claim(&[]) else {
+        panic!("the first launch must own the session");
+    };
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1360.0, 840.0))
+        .wgpu()
+        .build_eframe(move |cc| {
+            let ctx = cc.egui_ctx.clone();
+            let instance = owner.serve(move || ctx.request_repaint());
+            App::with_paths(cc, vec![], instance)
+        });
+    h.run_steps(5);
+    let before = h.state().st.docs.list.len();
+    // The second launch, from another thread like another process would be.
+    let sent = file.clone();
+    let second = std::thread::spawn(move || crate::instance::claim(&[sent]));
+    wait(&mut h, "the file arrives", |a| a.st.docs.list.len() > before);
+    assert!(matches!(second.join().unwrap(), crate::instance::Claim::Forwarded));
+    let canon = std::fs::canonicalize(&file).unwrap();
+    assert_eq!(h.state().st.docs.cur().path.as_deref(), Some(canon.as_path()));
+}
+
+/// A guest window starts clean and never writes the owner's session.
+#[test]
+#[ignore = "needs a GPU"]
+fn guest_window_leaves_the_session_alone() {
+    let tmp = std::env::temp_dir().join(format!("grammata-guest-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    // SAFETY: like the other UI tests, isolates the session before creating the app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    crate::i18n::set(crate::i18n::Lang::Es);
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1360.0, 840.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_paths(cc, vec![], crate::instance::Instance::guest()));
+    h.run_steps(5);
+    h.state_mut().st.docs.cur_mut().text.push_str("unsaved\n");
+    h.state_mut().persist();
+    assert!(!crate::session::path().exists(), "a guest wrote the session");
+    // The owner does write it.
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1360.0, 840.0))
+        .wgpu()
+        .build_eframe(|cc| App::with_paths(cc, vec![], crate::instance::Instance::solo()));
+    h.run_steps(5);
+    h.state_mut().persist();
+    assert!(crate::session::path().exists());
 }

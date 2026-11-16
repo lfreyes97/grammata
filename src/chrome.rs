@@ -80,6 +80,9 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             if menu_item(ui, icon::FILE_PLUS, tr("Nuevo"), "Ctrl+N") {
                 a.push(Action::NewDoc)
             }
+            if menu_item(ui, icon::APP_WINDOW, tr("Nueva ventana"), "") {
+                a.push(Action::NewWindow)
+            }
             if menu_item(ui, icon::FOLDER_PLUS, tr("Nuevo proyecto…"), tr("Ctrl+Mayús+N")) {
                 a.push(Action::NewProject)
             }

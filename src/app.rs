@@ -270,13 +270,26 @@ pub struct App {
     title: String,
     /// Última rev de cada doc que el autoguardado ya revisó.
     autosave_seen: std::collections::HashMap<DocId, u64>,
+    /// Owns the session or not, and the paths later launches send.
+    instance: crate::instance::Instance,
 }
 
 impl App {
     /// Starts the app and opens the paths given on the command line, on top of
     /// the restored session.
-    pub fn with_paths(cc: &eframe::CreationContext, paths: Vec<PathBuf>) -> Self {
-        let mut app = Self::new(cc);
+    pub fn with_paths(
+        cc: &eframe::CreationContext,
+        paths: Vec<PathBuf>,
+        instance: crate::instance::Instance,
+    ) -> Self {
+        let mut app = Self::start(cc, instance);
+        app.open_paths(paths);
+        app
+    }
+
+    /// Opens what was asked on the command line (or by a later launch).
+    fn open_paths(&mut self, paths: Vec<PathBuf>) {
+        let app = self;
         for p in paths {
             if p.is_dir() {
                 files::set_root(&mut app.st, p);
@@ -293,16 +306,28 @@ impl App {
                     .set_status(trf!("Nuevo archivo {}", p.display()), StatusKind::Info);
             }
         }
-        app
     }
 
+    /// An app that owns the session and listens to nobody (tests).
+    #[allow(dead_code)]
     pub fn new(cc: &eframe::CreationContext) -> Self {
+        Self::start(cc, crate::instance::Instance::solo())
+    }
+
+    fn start(cc: &eframe::CreationContext, instance: crate::instance::Instance) -> Self {
         let ctx = cc.egui_ctx.clone();
         theme::install_fonts(&ctx);
         // Ctrl+= / Ctrl+- / Ctrl+0 son para la fuente del editor, no para el zoom de la UI.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
 
-        let session = session::load().unwrap_or_default();
+        let mut session = session::load().unwrap_or_default();
+        if !instance.owns_session {
+            // A guest takes the preferences but not the owner's tabs.
+            session.tabs.clear();
+            session.layout = None;
+            session.current = 0;
+            session.prefs.pinned = None;
+        }
         let mut docs = Docs::new();
         let mut ids: Vec<Option<DocId>> = Vec::new();
         for t in session.tabs.into_iter().take(session::MAX_TABS) {
@@ -406,12 +431,19 @@ impl App {
             last_persist: Instant::now(),
             title: String::new(),
             autosave_seen: Default::default(),
+            instance,
         }
     }
 
     // ---------- Sesión ----------
 
     fn persist(&mut self) {
+        if !self.instance.owns_session {
+            // Guests leave the owner's session alone.
+            self.st.needs_persist = false;
+            self.last_persist = Instant::now();
+            return;
+        }
         let docs = &self.st.docs.list;
         let order: Vec<DocId> = docs.iter().take(session::MAX_TABS).map(|d| d.id).collect();
         let tabs = docs
@@ -1004,6 +1036,22 @@ impl App {
                 self.st.pdf_pending = self.st.prefs.pdf_alongside;
                 self.st.pdf_announced = false;
                 self.st.needs_persist = true;
+            }
+            Action::NewWindow => {
+                let spawned = std::env::current_exe()
+                    .and_then(|exe| std::process::Command::new(exe).arg("--new-window").spawn());
+                match spawned {
+                    // Reaped in the background so it never lingers as a zombie.
+                    Ok(mut child) => {
+                        std::thread::spawn(move || {
+                            let _ = child.wait();
+                        });
+                    }
+                    Err(e) => self.st.set_status(
+                        trf!("No se pudo abrir otra ventana: {}", e),
+                        StatusKind::Err,
+                    ),
+                }
             }
             Action::ToggleAuto => {
                 self.st.prefs.auto_compile = !self.st.prefs.auto_compile;
@@ -1925,6 +1973,18 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         let pal = theme::palette_for(self.st.prefs.dark);
+
+        // Paths sent by a later launch: open them and bring the window forward.
+        let sent: Vec<Vec<PathBuf>> = self
+            .instance
+            .inbox
+            .as_ref()
+            .map(|rx| rx.try_iter().collect())
+            .unwrap_or_default();
+        for paths in sent {
+            self.open_paths(paths);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
 
         self.shortcuts(&ctx);
         if let Some(dir) = self.st.editor.pending_step.take() {

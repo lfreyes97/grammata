@@ -7,7 +7,7 @@ Actualizado el 2026-11-16. Marcar con `[x]` al terminar.
 - [ ] Reinstalar en `~/.local` el binario con el arreglo (`packaging/build-linux.sh` y `install.sh`).
 
 ## 2. Para poder publicar
-- [x] **Argumentos de línea de comandos** (`src/cli.rs`): archivos como pestañas, carpeta como raíz del gestor, ruta inexistente como archivo nuevo, `--version`, `--help`; `Exec=grammata %F` ya abre el archivo. Sin instancia única: abrir otro archivo lanza otra ventana con la misma sesión.
+- [x] **Argumentos de línea de comandos** (`src/cli.rs`): archivos como pestañas, carpeta como raíz del gestor, ruta inexistente como archivo nuevo, `--version`, `--help`; `Exec=grammata %F` ya abre el archivo. Instancia única: lanzar de nuevo pasa las rutas a la ventana abierta (`src/instance.rs`, bloqueo + socket en Unix); `--new-window` o Archivo → Nueva ventana abre una ventana invitada que no lee ni guarda la sesión. Sin instancia única en Windows. Sesiones por carpeta: para la 0.3.
 - [x] Repositorio en GitHub (`lfreyes97/grammata`), con `OWNER` sustituido y `repository` en `Cargo.toml`.
 - [ ] Workflow de GitHub Actions al subir una etiqueta `v*`: compilar Linux y Windows, y adjuntar los binarios a la release.
   - [ ] Linux: `.tar.gz` (ya existe el script), `.deb` y AppImage.

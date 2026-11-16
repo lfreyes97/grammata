@@ -59,7 +59,9 @@ cargo run
 ```
 
 Once installed, `grammata file.typ folder/ other.typ` opens the files as tabs
-and the folder in the file panel (`--help` and `--version` work as usual).
+and the folder in the file panel (`--help` and `--version` work as usual). Launching it again while it is
+running opens the paths in that window; `grammata --new-window` (or File → New
+window) starts an independent one that does not touch the saved session.
 
 No external dependencies: the Typst 0.15.1 compiler is embedded
 (the CLI doesn't need to be on your `PATH`).

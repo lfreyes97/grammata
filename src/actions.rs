@@ -127,6 +127,8 @@ pub enum Action {
     FontReset,
     ToggleWrap,
     ToggleAuto,
+    /// Starts an independent window (`grammata --new-window`).
+    NewWindow,
     TogglePdfAlongside,
     ToggleFormatBar,
     About,

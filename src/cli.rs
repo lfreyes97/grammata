@@ -13,13 +13,23 @@ Arguments:
              A path that does not exist yet opens as a new, empty file.
 
 Options:
-  -h, --help     Print this help and exit
-  -V, --version  Print the version and exit
+      --new-window  Start an independent window instead of sending the paths to the
+                    one already running. It does not read or save the session.
+  -h, --help        Print this help and exit
+  -V, --version     Print the version and exit
+
+Launching Grammata while it is already running opens the paths in that window.
 ";
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct Run {
+    pub paths: Vec<PathBuf>,
+    pub new_window: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum Parsed {
-    Run(Vec<PathBuf>),
+    Run(Run),
     Help,
     Version,
 }
@@ -28,6 +38,7 @@ pub enum Parsed {
 /// absolute against `cwd`. `--` ends the options.
 pub fn parse(args: impl IntoIterator<Item = OsString>, cwd: &Path) -> Result<Parsed, String> {
     let mut paths = Vec::new();
+    let mut new_window = false;
     let mut only_paths = false;
     for arg in args {
         let text = arg.to_string_lossy();
@@ -37,12 +48,13 @@ pub fn parse(args: impl IntoIterator<Item = OsString>, cwd: &Path) -> Result<Par
         }
         match text.as_ref() {
             "--" => only_paths = true,
+            "--new-window" => new_window = true,
             "-h" | "--help" => return Ok(Parsed::Help),
             "-V" | "--version" => return Ok(Parsed::Version),
             other => return Err(format!("unknown option '{other}'")),
         }
     }
-    Ok(Parsed::Run(paths))
+    Ok(Parsed::Run(Run { paths, new_window }))
 }
 
 pub fn version() -> String {
@@ -59,18 +71,29 @@ mod tests {
 
     #[test]
     fn without_arguments_it_just_runs() {
-        assert_eq!(run(&[]), Ok(Parsed::Run(vec![])));
+        assert_eq!(run(&[]), Ok(Parsed::Run(Run { paths: vec![], new_window: false })));
     }
 
     #[test]
     fn paths_become_absolute() {
         assert_eq!(
             run(&["a.typ", "/etc/b.typ", "sub/c.typ"]),
-            Ok(Parsed::Run(vec![
-                "/home/u/a.typ".into(),
-                "/etc/b.typ".into(),
-                "/home/u/sub/c.typ".into(),
-            ]))
+            Ok(Parsed::Run(Run {
+                paths: vec![
+                    "/home/u/a.typ".into(),
+                    "/etc/b.typ".into(),
+                    "/home/u/sub/c.typ".into(),
+                ],
+                new_window: false,
+            }))
+        );
+    }
+
+    #[test]
+    fn new_window_is_a_flag_next_to_the_paths() {
+        assert_eq!(
+            run(&["--new-window", "a.typ"]),
+            Ok(Parsed::Run(Run { paths: vec!["/home/u/a.typ".into()], new_window: true }))
         );
     }
 
@@ -91,7 +114,10 @@ mod tests {
     fn double_dash_allows_names_starting_with_a_dash() {
         assert_eq!(
             run(&["--", "-raro.typ"]),
-            Ok(Parsed::Run(vec!["/home/u/-raro.typ".into()]))
+            Ok(Parsed::Run(Run {
+                paths: vec!["/home/u/-raro.typ".into()],
+                new_window: false,
+            }))
         );
     }
 

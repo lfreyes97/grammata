@@ -60,7 +60,9 @@ cargo run
 
 Una vez instalado, `grammata archivo.typ carpeta/ otro.typ` abre los archivos
 como pestañas y la carpeta en el panel de archivos (`--help` y `--version`
-funcionan como siempre).
+funcionan como siempre). Si lo lanzas de nuevo mientras está abierto, las rutas
+se abren en esa ventana; `grammata --new-window` (o Archivo → Nueva ventana)
+abre una independiente que no toca la sesión guardada.
 
 Sin dependencias externas: el compilador typst 0.15.1 va embebido
 (no hace falta el CLI en el PATH).
