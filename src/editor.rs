@@ -1,5 +1,6 @@
 //! Pestaña de documento: editor de código, autocompletado y barra de búsqueda.
 
+use crate::i18n::{tr, trf};
 use crate::app::State;
 use crate::doc::DocId;
 use crate::syntax;
@@ -177,7 +178,7 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
         .map(|c| AcItem {
             name: c.name.to_string(),
             snippet: c.snippet.to_string(),
-            detail: c.detail.to_string(),
+            detail: crate::i18n::tr(c.detail).to_string(),
             user: false,
             ide: false,
             from: None,
@@ -193,7 +194,7 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
                 .map(|s| AcItem {
                     name: s.name.clone(),
                     snippet: s.body.clone(),
-                    detail: "snippet propio".to_string(),
+                    detail: tr("snippet propio").to_string(),
                     user: true,
                     ide: false,
                     from: None,
@@ -204,7 +205,7 @@ fn ac_items(st: &State, prefix: &str) -> Vec<AcItem> {
         out.extend(st.user_snippets.iter().map(|s| AcItem {
             name: s.name.clone(),
             snippet: s.body.clone(),
-            detail: "snippet propio".to_string(),
+            detail: tr("snippet propio").to_string(),
             user: true,
             ide: false,
             from: None,
@@ -269,7 +270,7 @@ fn ide_candidates(st: &State, di: usize, cb: usize) -> Option<(usize, Vec<AcItem
                 .map(|s| AcItem {
                     name: s.name.clone(),
                     snippet: s.body.clone(),
-                    detail: "snippet propio".to_string(),
+                    detail: tr("snippet propio").to_string(),
                     user: true,
                     ide: false,
                     from: Some(r.from),
@@ -281,7 +282,7 @@ fn ide_candidates(st: &State, di: usize, cb: usize) -> Option<(usize, Vec<AcItem
 
 pub fn doc_tab(st: &mut State, ui: &mut egui::Ui, id: DocId) {
     let Some(di) = st.docs.index_of(id) else {
-        ui.label("Documento cerrado.");
+        ui.label(tr("Documento cerrado."));
         return;
     };
     let pal = theme::palette(ui.ctx());
@@ -629,7 +630,7 @@ fn completion_popup(
                             .color(pal.text_dim),
                     );
                     ui.label(
-                        RichText::new("Tab/Enter inserta · Esc cierra")
+                        RichText::new(tr("Tab/Enter inserta · Esc cierra"))
                             .small()
                             .color(pal.text_faint),
                     );
@@ -656,7 +657,7 @@ pub fn find_bar(st: &mut State, ui: &mut egui::Ui) {
                 let f = &mut st.editor.find;
                 let resp = ui.add(
                     egui::TextEdit::singleline(&mut f.query)
-                        .hint_text("Buscar en el documento")
+                        .hint_text(tr("Buscar en el documento"))
                         .desired_width(260.0),
                 );
                 if f.want_focus {
@@ -698,19 +699,19 @@ pub fn find_bar(st: &mut State, ui: &mut egui::Ui) {
                         });
                     }
                 }
-                if widgets::icon_toggle(ui, f.match_case, icon::TEXT_AA, "Distinguir mayúsculas")
+                if widgets::icon_toggle(ui, f.match_case, icon::TEXT_AA, tr("Distinguir mayúsculas"))
                     .clicked()
                 {
                     f.match_case = !f.match_case;
                 }
                 let n = f.matches.len();
                 let label = match (n, f.current) {
-                    (0, _) if !f.query.is_empty() => "sin resultados".to_string(),
+                    (0, _) if !f.query.is_empty() => tr("sin resultados").to_string(),
                     (0, _) => String::new(),
                     (n, Some(c)) => {
-                        format!("{} de {}{}", c + 1, n, if n >= 10_000 { "+" } else { "" })
+                        trf!("{} de {}{}", c + 1, n, if n >= 10_000 { "+" } else { "" })
                     }
-                    (n, None) => format!("{n} resultados"),
+                    (n, None) => trf!("{} resultados", n),
                 };
                 ui.label(
                     RichText::new(label)
@@ -722,18 +723,18 @@ pub fn find_bar(st: &mut State, ui: &mut egui::Ui) {
                         }),
                 );
                 ui.add_enabled_ui(n > 0, |ui| {
-                    if widgets::icon_button(ui, icon::ARROW_UP, "Anterior  (Mayús+Enter)").clicked()
+                    if widgets::icon_button(ui, icon::ARROW_UP, tr("Anterior  (Mayús+Enter)")).clicked()
                     {
                         step = Some(-1);
                     }
-                    if widgets::icon_button(ui, icon::ARROW_DOWN, "Siguiente  (Enter / F3)")
+                    if widgets::icon_button(ui, icon::ARROW_DOWN, tr("Siguiente  (Enter / F3)"))
                         .clicked()
                     {
                         step = Some(1);
                     }
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if widgets::icon_button(ui, icon::X, "Cerrar  (Esc)").clicked() {
+                    if widgets::icon_button(ui, icon::X, tr("Cerrar  (Esc)")).clicked() {
                         st.editor.find.open = false;
                     }
                 });

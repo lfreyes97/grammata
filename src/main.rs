@@ -10,6 +10,7 @@ mod engine;
 mod files;
 mod formatbar;
 mod highlight;
+mod i18n;
 mod ide;
 mod image_view;
 mod layout;

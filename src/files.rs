@@ -4,6 +4,7 @@
 //! La raíz se elige con `Archivo → Abrir carpeta…` o desde el propio panel;
 //! el árbol se reescanea solo (cada 2 s) y tras cada operación.
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::app::{State, StatusKind};
 use crate::doc::Docs;
@@ -197,13 +198,13 @@ pub fn delete_path(st: &mut State, path: &Path) {
             st.files.refresh();
             st.needs_persist = true;
             let msg = if n > 0 {
-                format!("Eliminado {} ({n} pestaña(s) sin archivo)", path.display())
+                trf!("Eliminado {} ({} pestaña(s) sin archivo)", path.display(), n)
             } else {
-                format!("Eliminado {}", path.display())
+                trf!("Eliminado {}", path.display())
             };
             st.set_status(msg, StatusKind::Info);
         }
-        Err(e) => st.set_status(format!("No se pudo eliminar: {e}"), StatusKind::Err),
+        Err(e) => st.set_status(trf!("No se pudo eliminar: {}", e), StatusKind::Err),
     }
 }
 
@@ -256,7 +257,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     if !root.is_dir() {
         empty_state(st, ui, &pal);
         st.set_status(
-            format!("La carpeta {} ya no existe", root.display()),
+            trf!("La carpeta {} ya no existe", root.display()),
             StatusKind::Err,
         );
         return;
@@ -330,26 +331,26 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     .unwrap_or_else(|| root.display().to_string()),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, "Actualizar").clicked() {
+                if widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, tr("Actualizar")).clicked() {
                     st.files.refresh();
                 }
-                if widgets::icon_button(ui, icon::FOLDER_OPEN, "Abrir otra carpeta…").clicked() {
+                if widgets::icon_button(ui, icon::FOLDER_OPEN, tr("Abrir otra carpeta…")).clicked() {
                     pick_root(st);
                     return;
                 }
-                if widgets::icon_button(ui, icon::FILE_TEXT, "Usar la carpeta del documento actual")
+                if widgets::icon_button(ui, icon::FILE_TEXT, tr("Usar la carpeta del documento actual"))
                     .clicked()
                 {
                     use_doc_dir(st);
                     return;
                 }
-                if widgets::icon_button(ui, icon::FOLDER_PLUS, "Nueva carpeta").clicked() {
+                if widgets::icon_button(ui, icon::FOLDER_PLUS, tr("Nueva carpeta")).clicked() {
                     st.files.creating_dir = Some(true);
                     st.files.new_name = "nueva-carpeta".to_string();
                     st.files.create_focus = true;
                     st.files.renaming = None;
                 }
-                if widgets::icon_button(ui, icon::FILE_PLUS, "Nuevo archivo").clicked() {
+                if widgets::icon_button(ui, icon::FILE_PLUS, tr("Nuevo archivo")).clicked() {
                     st.files.creating_dir = Some(false);
                     st.files.new_name = "nuevo-archivo.typ".to_string();
                     st.files.create_focus = true;
@@ -365,7 +366,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     }
 
     if let Some(e) = &st.files.scan_error {
-        ui.label(RichText::new(format!("No se pudo leer: {e}")).color(pal.err));
+        ui.label(RichText::new(trf!("No se pudo leer: {}", e)).color(pal.err));
     }
     // Migas de pan de la selección (o la raíz): clic selecciona y despliega.
     breadcrumbs(st, ui, &pal, &root);
@@ -435,27 +436,27 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
 fn empty_state(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
     widgets::toolbar_frame(pal).show(ui, |ui| {
         ui.horizontal(|ui| {
-            widgets::section_label(ui, pal, "Archivos");
+            widgets::section_label(ui, pal, tr("Archivos"));
         });
     });
     egui::Frame::new().inner_margin(14).show(ui, |ui| {
-        ui.label(RichText::new("Sin carpeta todavía.").color(pal.text_dim));
+        ui.label(RichText::new(tr("Sin carpeta todavía.")).color(pal.text_dim));
         ui.label(
             RichText::new(
-                "El gestor muestra el árbol de una carpeta para abrir y organizar tus `.typ`.",
+                tr("El gestor muestra el árbol de una carpeta para abrir y organizar tus `.typ`."),
             )
             .small()
             .color(pal.text_faint),
         );
         ui.add_space(8.0);
-        if widgets::accent_button(ui, pal, &format!("{}  Abrir carpeta…", icon::FOLDER_OPEN))
+        if widgets::accent_button(ui, pal, &trf!("{}  Abrir carpeta…", icon::FOLDER_OPEN))
             .clicked()
         {
             pick_root(st);
         }
         if ui
-            .button(format!("{}  Usar la del documento", icon::FILE_TEXT))
-            .on_hover_text("Fija la carpeta del documento actual")
+            .button(trf!("{}  Usar la del documento", icon::FILE_TEXT))
+            .on_hover_text(tr("Fija la carpeta del documento actual"))
             .clicked()
         {
             use_doc_dir(st);
@@ -468,7 +469,7 @@ fn use_doc_dir(st: &mut State) {
     let dir = st.docs.cur().root_dir();
     if st.docs.cur().path.is_none() {
         st.set_status(
-            "Guarda el documento primero para usar su carpeta",
+            tr("Guarda el documento primero para usar su carpeta"),
             StatusKind::Info,
         );
         return;
@@ -639,7 +640,7 @@ fn row(
                 *open = Some(it.path.clone());
             } else {
                 st.set_status(
-                    "Solo se abren archivos de texto e imágenes",
+                    tr("Solo se abren archivos de texto e imágenes"),
                     StatusKind::Info,
                 );
             }
@@ -649,26 +650,26 @@ fn row(
             st.files.selected = Some(it.path.clone());
             ui.set_min_width(200.0);
             if it.is_dir {
-                if ui.button("Nuevo archivo aquí").clicked() {
+                if ui.button(tr("Nuevo archivo aquí")).clicked() {
                     *create_here = Some((false, it.path.clone()));
                     ui.close();
                 }
-                if ui.button("Nueva carpeta aquí").clicked() {
+                if ui.button(tr("Nueva carpeta aquí")).clicked() {
                     *create_here = Some((true, it.path.clone()));
                     ui.close();
                 }
                 ui.separator();
             } else if (openable(&it.path) || crate::image_view::is_viewable(&it.path))
-                && ui.button("Abrir").clicked()
+                && ui.button(tr("Abrir")).clicked()
             {
                 *open = Some(it.path.clone());
                 ui.close();
             }
-            if ui.button("Renombrar  (F2)").clicked() {
+            if ui.button(tr("Renombrar  (F2)")).clicked() {
                 *start_rename = Some((it.path.clone(), it.name.clone()));
                 ui.close();
             }
-            if ui.button("Eliminar  (Supr)").clicked() {
+            if ui.button(tr("Eliminar  (Supr)")).clicked() {
                 *ask_delete = Some(it.path.clone());
                 ui.close();
             }
@@ -725,7 +726,7 @@ fn create_row(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, root: &Pa
                 st.files.create_focus = false;
             }
             let live = r.has_focus() || r.lost_focus();
-            let go = ui.small_button("Crear").clicked()
+            let go = ui.small_button(tr("Crear")).clicked()
                 || (live && ui.input(|i| i.key_pressed(egui::Key::Enter)));
             if go {
                 commit_create(st, &parent);
@@ -746,12 +747,12 @@ fn commit_create(st: &mut State, parent: &Path) {
         name.push_str(".typ");
     }
     if !valid_name(&name) {
-        st.set_status("Nombre no válido", StatusKind::Err);
+        st.set_status(tr("Nombre no válido"), StatusKind::Err);
         return;
     }
     let dest = parent.join(&name);
     if dest.exists() {
-        st.set_status("Ya existe algo con ese nombre", StatusKind::Err);
+        st.set_status(tr("Ya existe algo con ese nombre"), StatusKind::Err);
         return;
     }
     let r = if is_dir {
@@ -765,12 +766,12 @@ fn commit_create(st: &mut State, parent: &Path) {
             st.files.selected = Some(dest.clone());
             st.files.creating_dir = None;
             st.files.refresh();
-            st.set_status(format!("Creado {}", dest.display()), StatusKind::Ok);
+            st.set_status(trf!("Creado {}", dest.display()), StatusKind::Ok);
             if !is_dir && openable(&dest) {
                 st.actions.push(Action::OpenPath(dest));
             }
         }
-        Err(e) => st.set_status(format!("No se pudo crear: {e}"), StatusKind::Err),
+        Err(e) => st.set_status(trf!("No se pudo crear: {}", e), StatusKind::Err),
     }
 }
 
@@ -780,7 +781,7 @@ fn commit_rename(st: &mut State) {
     };
     let name = st.files.rename_text.trim().to_string();
     if !valid_name(&name) {
-        st.set_status("Nombre no válido", StatusKind::Err);
+        st.set_status(tr("Nombre no válido"), StatusKind::Err);
         return;
     }
     let Some(parent) = old.parent().map(Path::to_path_buf) else {
@@ -792,7 +793,7 @@ fn commit_rename(st: &mut State) {
         return;
     }
     if dest.exists() {
-        st.set_status("Ya existe algo con ese nombre", StatusKind::Err);
+        st.set_status(tr("Ya existe algo con ese nombre"), StatusKind::Err);
         return;
     }
     match std::fs::rename(&old, &dest) {
@@ -807,14 +808,14 @@ fn commit_rename(st: &mut State) {
             st.needs_persist = true;
             st.set_status(
                 if n > 0 {
-                    format!("Renombrado ({n} pestaña(s) actualizada(s))")
+                    trf!("Renombrado ({} pestaña(s) actualizada(s))", n)
                 } else {
-                    "Renombrado".to_string()
+                    tr("Renombrado").to_string()
                 },
                 StatusKind::Ok,
             );
         }
-        Err(e) => st.set_status(format!("No se pudo renombrar: {e}"), StatusKind::Err),
+        Err(e) => st.set_status(trf!("No se pudo renombrar: {}", e), StatusKind::Err),
     }
 }
 

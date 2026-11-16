@@ -3,6 +3,7 @@
 //! Todos los colores salen de `Palette`: los paneles piden `palette(ctx)` y
 //! no definen colores propios.
 
+use crate::i18n::{tr, trf};
 use egui::{Color32, CornerRadius, FontFamily, FontId, Margin, Stroke, TextStyle, vec2};
 
 #[derive(Clone, Copy)]
@@ -164,7 +165,7 @@ pub fn parse_theme(src: &str) -> Result<(String, Palette), String> {
             for (k, v) in $table {
                 match k.as_str() {
                     $(stringify!($f) => $target.$f = color(k, v)?,)*
-                    _ => return Err(format!("color desconocido: {k}")),
+                    _ => return Err(trf!("color desconocido: {}", k)),
                 }
             }
         };
@@ -173,14 +174,14 @@ pub fn parse_theme(src: &str) -> Result<(String, Palette), String> {
     let name = t
         .get("name")
         .and_then(|v| v.as_str())
-        .ok_or("falta `name`")?
+        .ok_or(tr("falta `name`"))?
         .to_string();
     let dark = t.get("dark").and_then(|v| v.as_bool()).unwrap_or(true);
     let mut p = if dark { DARK } else { LIGHT };
     let empty = toml::Table::new();
     let table = |key: &str| match t.get(key) {
         None => Ok(&empty),
-        Some(v) => v.as_table().ok_or(format!("`{key}` debe ser una tabla")),
+        Some(v) => v.as_table().ok_or(trf!("`{}` debe ser una tabla", key)),
     };
     fill!(table("colors")?, p,
         chrome surface surface_hover surface_active border border_strong text text_dim

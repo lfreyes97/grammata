@@ -2,6 +2,7 @@
 //! fija como raíz del gestor de archivos y, según el tipo, abre `main.typ`
 //! (vacío) o el builder de plantillas apuntando a esa carpeta.
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::theme;
 use crate::widgets;
@@ -23,15 +24,15 @@ impl Kind {
     fn card(self) -> (&'static str, &'static str, &'static str) {
         use crate::templates::Kind as T;
         let desc = match self {
-            Kind::Empty => "Solo main.typ, para empezar desde cero.",
-            Kind::Template(T::Article) => "Portada, resumen e índice en la primera página.",
-            Kind::Template(T::Report) => "Portada a página completa y capítulos.",
-            Kind::Template(T::Book) => "Capítulos en página impar, doble cara.",
-            Kind::Template(T::Notes) => "Apuntes o ejercicios con cajas y soluciones.",
-            Kind::Template(T::Slides) => "Diapositivas 16:9.",
+            Kind::Empty => tr("Solo main.typ, para empezar desde cero."),
+            Kind::Template(T::Article) => tr("Portada, resumen e índice en la primera página."),
+            Kind::Template(T::Report) => tr("Portada a página completa y capítulos."),
+            Kind::Template(T::Book) => tr("Capítulos en página impar, doble cara."),
+            Kind::Template(T::Notes) => tr("Apuntes o ejercicios con cajas y soluciones."),
+            Kind::Template(T::Slides) => tr("Diapositivas 16:9."),
         };
         match self {
-            Kind::Empty => (icon::FILE, "Vacío", desc),
+            Kind::Empty => (icon::FILE, tr("Vacío"), desc),
             Kind::Template(k) => (k.icon(), k.name(), desc),
         }
     }
@@ -74,24 +75,24 @@ impl NewProject {
     pub fn create(&self) -> Result<PathBuf, String> {
         let name = self.name.trim();
         if name.is_empty() {
-            return Err("Escribe un nombre".into());
+            return Err(tr("Escribe un nombre").into());
         }
         if !crate::files::valid_name(name) {
-            return Err("Nombre no válido (sin / ni \\)".into());
+            return Err(tr("Nombre no válido (sin / ni \\)").into());
         }
         if !self.parent.is_dir() {
-            return Err(format!("No existe la carpeta {}", self.parent.display()));
+            return Err(trf!("No existe la carpeta {}", self.parent.display()));
         }
         let dir = self.target();
         if dir.exists() {
-            return Err(format!("Ya existe {}", dir.display()));
+            return Err(trf!("Ya existe {}", dir.display()));
         }
-        std::fs::create_dir(&dir).map_err(|e| format!("No se pudo crear la carpeta: {e}"))?;
+        std::fs::create_dir(&dir).map_err(|e| trf!("No se pudo crear la carpeta: {}", e))?;
         if self.kind == Kind::Empty {
             let main = dir.join(crate::templates::MAIN_FILE);
             if let Err(e) = std::fs::write(&main, "") {
                 let _ = std::fs::remove_dir(&dir);
-                return Err(format!("No se pudo crear {}: {e}", main.display()));
+                return Err(trf!("No se pudo crear {}: {}", main.display(), e));
             }
         }
         Ok(dir)
@@ -119,12 +120,12 @@ fn dialog(
         ui,
         pal,
         icon::FOLDER_PLUS,
-        "Nuevo proyecto",
-        Some("Una carpeta propia para el documento y sus recursos."),
+        tr("Nuevo proyecto"),
+        Some(tr("Una carpeta propia para el documento y sus recursos.")),
     );
 
     // Nombre.
-    widgets::section_label(ui, pal, "Nombre");
+    widgets::section_label(ui, pal, tr("Nombre"));
     let r = ui.add(
         egui::TextEdit::singleline(&mut np.name)
             .hint_text("mi-articulo")
@@ -141,12 +142,12 @@ fn dialog(
     ui.add_space(8.0);
 
     // Ubicación: ruta en un campo de solo lectura + botón.
-    widgets::section_label(ui, pal, "Ubicación");
+    widgets::section_label(ui, pal, tr("Ubicación"));
     ui.horizontal(|ui| {
         let pick = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let pick =
-                widgets::secondary_button(ui, pal, &format!("{}  Cambiar…", icon::FOLDER_OPEN))
-                    .on_hover_text("Elegir la carpeta donde se crea el proyecto");
+                widgets::secondary_button(ui, pal, &trf!("{}  Cambiar…", icon::FOLDER_OPEN))
+                    .on_hover_text(tr("Elegir la carpeta donde se crea el proyecto"));
             egui::Frame::new()
                 .fill(pal.chrome)
                 .stroke(Stroke::new(1.0, pal.border))
@@ -182,7 +183,7 @@ fn dialog(
     ui.add_space(8.0);
 
     // Tipo: vacío o una de las plantillas, en tarjetas de dos en dos.
-    widgets::section_label(ui, pal, "Tipo");
+    widgets::section_label(ui, pal, tr("Tipo"));
     let kinds: Vec<Kind> = std::iter::once(Kind::Empty)
         .chain(crate::templates::Kind::ALL.map(Kind::Template))
         .collect();
@@ -205,7 +206,7 @@ fn dialog(
     } else if !np.name.trim().is_empty() {
         ui.add(
             egui::Label::new(
-                RichText::new(format!("Se creará {}", np.target().display()))
+                RichText::new(trf!("Se creará {}", np.target().display()))
                     .small()
                     .color(pal.text_faint),
             )
@@ -218,7 +219,7 @@ fn dialog(
     let can = !np.name.trim().is_empty();
     widgets::modal_footer(ui, |ui| {
         let enter = can && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        if widgets::primary_button(ui, pal, "Crear", can).clicked() || enter {
+        if widgets::primary_button(ui, pal, tr("Crear"), can).clicked() || enter {
             match np.create() {
                 Ok(dir) => {
                     actions.push(Action::OpenProject { dir, kind: np.kind });
@@ -227,7 +228,7 @@ fn dialog(
                 Err(e) => np.error = Some(e),
             }
         }
-        if widgets::secondary_button(ui, pal, "Cancelar").clicked()
+        if widgets::secondary_button(ui, pal, tr("Cancelar")).clicked()
             || ui.input(|i| i.key_pressed(egui::Key::Escape))
         {
             close = true;

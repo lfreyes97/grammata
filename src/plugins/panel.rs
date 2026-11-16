@@ -1,6 +1,7 @@
 //! Panel «Plugins»: lista, activar/desactivar, clave de licencia, temas y
 //! las plantillas con su formulario.
 
+use crate::i18n::{tr, trf};
 use egui::RichText;
 use egui_phosphor::regular as icon;
 
@@ -14,19 +15,19 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     let mut acts: Vec<Action> = Vec::new();
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
-            widgets::section_label(ui, &pal, "Plugins");
+            widgets::section_label(ui, &pal, tr("Plugins"));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, "Volver a leer la carpeta de plugins")
+                if widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, tr("Volver a leer la carpeta de plugins"))
                     .clicked()
                 {
                     acts.push(Action::PluginsReload);
                 }
-                widgets::icon_menu(ui, icon::PLUS, "Añadir un plugin de serie", |ui| {
+                widgets::icon_menu(ui, icon::PLUS, tr("Añadir un plugin de serie"), |ui| {
                     for b in super::BUNDLED {
                         let have = st.plugins.list.iter().any(|p| p.id() == b.id);
                         if ui
-                            .add_enabled(!have, egui::Button::new(b.name))
-                            .on_hover_text(b.about)
+                            .add_enabled(!have, egui::Button::new(tr(b.name)))
+                            .on_hover_text(tr(b.about))
                             .clicked()
                         {
                             acts.push(Action::PluginInstall(b.id));
@@ -35,7 +36,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     }
                 });
                 let dir = st.plugins.dir.display().to_string();
-                if widgets::icon_button(ui, icon::COPY, &format!("Copiar la ruta de la carpeta\n{dir}"))
+                if widgets::icon_button(ui, icon::COPY, &trf!("Copiar la ruta de la carpeta\n{}", dir))
                     .clicked()
                 {
                     ui.ctx().copy_text(dir);
@@ -77,8 +78,8 @@ fn body(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, acts: &mut Vec<
         );
         for b in super::BUNDLED {
             if ui
-                .button(format!("{}  {}", icon::PLUS, b.name))
-                .on_hover_text(b.about)
+                .button(format!("{}  {}", icon::PLUS, tr(b.name)))
+                .on_hover_text(tr(b.about))
                 .clicked()
             {
                 acts.push(Action::PluginInstall(b.id));
@@ -88,7 +89,7 @@ fn body(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, acts: &mut Vec<
     }
     if prefs.theme.is_some()
         && ui
-            .small_button(format!("{}  Volver al tema de serie", icon::PALETTE))
+            .small_button(trf!("{}  Volver al tema de serie", icon::PALETTE))
             .clicked()
     {
         acts.push(Action::SetTheme(None));
@@ -111,12 +112,12 @@ fn body(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, acts: &mut Vec<
             .show(ui, |ui| {
                 header(ui, pal, p, acts);
                 if p.manifest.needs_key && !p.broken {
-                    ui.label(RichText::new("Clave de licencia").small().color(pal.text_dim));
+                    ui.label(RichText::new(tr("Clave de licencia")).small().color(pal.text_dim));
                     let key = saved.keys.entry(p.id().to_string()).or_default();
                     let r = ui.add(
                         egui::TextEdit::singleline(key)
                             .password(true)
-                            .hint_text("Pega aquí tu clave")
+                            .hint_text(tr("Pega aquí tu clave"))
                             .desired_width(f32::INFINITY),
                     );
                     key_changed |= r.lost_focus();
@@ -128,7 +129,7 @@ fn body(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette, acts: &mut Vec<
                 programs(ui, pal, p, acts);
                 if !p.themes.is_empty() {
                     ui.horizontal_wrapped(|ui| {
-                        ui.label(RichText::new("Temas").small().color(pal.text_dim));
+                        ui.label(RichText::new(tr("Temas")).small().color(pal.text_dim));
                         for (name, _) in &p.themes {
                             let key = format!("{}/{name}", p.id());
                             let on = prefs.theme.as_deref() == Some(key.as_str());
@@ -185,7 +186,7 @@ fn header(ui: &mut egui::Ui, pal: &theme::Palette, p: &Plugin, acts: &mut Vec<Ac
     ui.horizontal(|ui| {
         let mut on = p.enabled;
         if ui
-            .add_enabled(!p.broken, egui::Checkbox::new(&mut on, "Activo"))
+            .add_enabled(!p.broken, egui::Checkbox::new(&mut on, tr("Activo")))
             .changed()
         {
             acts.push(Action::PluginEnable(p.id().to_string(), on));
@@ -194,7 +195,7 @@ fn header(ui: &mut egui::Ui, pal: &theme::Palette, p: &Plugin, acts: &mut Vec<Ac
             ui.label(RichText::new(format!("v{}", m.version)).small().color(pal.text_faint));
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if widgets::icon_button(ui, icon::PENCIL_SIMPLE, "Abrir plugin.toml").clicked() {
+            if widgets::icon_button(ui, icon::PENCIL_SIMPLE, tr("Abrir plugin.toml")).clicked() {
                 acts.push(Action::OpenPath(p.dir.join(super::MANIFEST)));
             }
         });
@@ -207,7 +208,7 @@ fn header(ui: &mut egui::Ui, pal: &theme::Palette, p: &Plugin, acts: &mut Vec<Ac
         about.push(m.authors.join(", "));
     }
     if !m.license.is_empty() {
-        about.push(format!("Licencia: {}", m.license));
+        about.push(trf!("Licencia: {}", m.license));
     }
     if !about.is_empty() {
         note(ui, pal, &about.join(" · "));
@@ -241,7 +242,7 @@ fn contents(ui: &mut egui::Ui, pal: &theme::Palette, p: &Plugin) {
                 )
                 .frame_when_inactive(false),
             )
-            .on_hover_text(format!("Copiar: {import}"))
+            .on_hover_text(trf!("Copiar: {}", import))
             .clicked()
         {
             ui.ctx().copy_text(import);
@@ -250,13 +251,13 @@ fn contents(ui: &mut egui::Ui, pal: &theme::Palette, p: &Plugin) {
     let mut parts = Vec::new();
     let snippets: usize = p.snippets.iter().map(|l| l.items.len()).sum();
     if snippets > 0 {
-        parts.push(format!("{snippets} snippets (en su panel)"));
+        parts.push(trf!("{} snippets (en su panel)", snippets));
     }
     if !p.font_dirs.is_empty() {
         parts.push("fuentes".to_string());
     }
     if !parts.is_empty() {
-        note(ui, pal, &format!("Aporta: {}", parts.join(", ")));
+        note(ui, pal, &trf!("Aporta: {}", parts.join(", ")));
     }
 }
 
@@ -282,7 +283,7 @@ fn programs(ui: &mut egui::Ui, pal: &theme::Palette, p: &Plugin, acts: &mut Vec<
             .wrap(),
         );
         ui.label(RichText::new(&lines).small().monospace().color(pal.text_dim));
-        if ui.button("Permitir sus programas").clicked() {
+        if ui.button(tr("Permitir sus programas")).clicked() {
             acts.push(Action::PluginAllow(p.id().to_string(), true));
         }
         return;
@@ -295,22 +296,22 @@ fn programs(ui: &mut egui::Ui, pal: &theme::Palette, p: &Plugin, acts: &mut Vec<
             .join(", ")
     };
     ui.horizontal(|ui| {
-        ui.label(RichText::new(format!("{}  Ejecuta programas", icon::TERMINAL)).small().color(pal.text_dim))
+        ui.label(RichText::new(trf!("{}  Ejecuta programas", icon::TERMINAL)).small().color(pal.text_dim))
             .on_hover_text(lines);
-        if ui.small_button("Retirar permiso").clicked() {
+        if ui.small_button(tr("Retirar permiso")).clicked() {
             acts.push(Action::PluginAllow(p.id().to_string(), false));
         }
     });
     if !m.imports.is_empty() {
         ui.horizontal_wrapped(|ui| {
-            note(ui, pal, &format!("Importa: {}", names(Kind::Import)));
-            if ui.small_button("Importar…").clicked() {
+            note(ui, pal, &trf!("Importa: {}", names(Kind::Import)));
+            if ui.small_button(tr("Importar…")).clicked() {
                 acts.push(Action::Import);
             }
         });
     }
     if !m.exports.is_empty() {
-        note(ui, pal, &format!("Exporta (menú Exportar): {}", names(Kind::Export)));
+        note(ui, pal, &trf!("Exporta (menú Exportar): {}", names(Kind::Export)));
     }
     for t in &m.commands {
         if ui
@@ -355,19 +356,19 @@ fn form(
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if widgets::accent_button(ui, pal, &format!("{}  Nuevo documento", icon::FILE_PLUS))
+                if widgets::accent_button(ui, pal, &trf!("{}  Nuevo documento", icon::FILE_PLUS))
                     .clicked()
                 {
                     acts.push(Action::NewDocWith(t.render(values, p.package.as_ref())));
                 }
                 if ui
-                    .button("Insertar")
-                    .on_hover_text("Inserta el código en el cursor del documento actual")
+                    .button(tr("Insertar"))
+                    .on_hover_text(tr("Inserta el código en el cursor del documento actual"))
                     .clicked()
                 {
                     acts.push(Action::InsertSnippet(t.render(values, p.package.as_ref())));
                 }
-                if widgets::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, "Valores por defecto")
+                if widgets::icon_button(ui, icon::ARROW_COUNTER_CLOCKWISE, tr("Valores por defecto"))
                     .clicked()
                 {
                     *values = t.initial();
@@ -459,17 +460,17 @@ fn font_combo(
     filter: &mut String,
     font: &mut String,
 ) {
-    let shown = if font.is_empty() { "Elegir…" } else { font.as_str() };
+    let shown = if font.is_empty() { tr("Elegir…") } else { font.as_str() };
     let text = RichText::new(format!("{}  {shown}", icon::TEXT_AA)).small();
-    widgets::combo(ui, pal, text, 200.0, "Familia de fuente", |ui| {
+    widgets::combo(ui, pal, text, 200.0, tr("Familia de fuente"), |ui| {
         ui.set_min_width(240.0);
         let Some(fonts) = fonts else {
-            ui.label(RichText::new("Cargando fuentes…").small());
+            ui.label(RichText::new(tr("Cargando fuentes…")).small());
             return;
         };
         ui.add(
             egui::TextEdit::singleline(filter)
-                .hint_text("Filtrar…")
+                .hint_text(tr("Filtrar…"))
                 .desired_width(f32::INFINITY),
         );
         let q = filter.to_lowercase();

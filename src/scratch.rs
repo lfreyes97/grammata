@@ -2,6 +2,7 @@
 //! ecuaciones (modo ecuación) o probar fragmentos y gráficos con primitivas
 //! nativas. Se inserta en el documento con un clic. Persiste en la sesión.
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::app::State;
 use crate::doc::DocId;
@@ -110,7 +111,7 @@ impl Worker {
                     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         crate::engine::render_preview(&job.src, &job.root, SCALE)
                     }))
-                    .unwrap_or_else(|_| Err("error interno del compilador (panic)".into()));
+                    .unwrap_or_else(|_| Err(tr("error interno del compilador (panic)").into()));
                     if tx_out
                         .send(Done {
                             key: job.key,
@@ -220,7 +221,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
-            widgets::section_label(ui, &pal, "Borrador");
+            widgets::section_label(ui, &pal, tr("Borrador"));
         });
     });
     egui::ScrollArea::vertical()
@@ -250,16 +251,16 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     let root = st.compile_root();
                     let s = &mut st.scratch;
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut s.equation, "Como ecuación")
-                            .on_hover_text("La vista previa y la inserción envuelven en $…$");
+                        ui.checkbox(&mut s.equation, tr("Como ecuación"))
+                            .on_hover_text(tr("La vista previa y la inserción envuelven en $…$"));
                         if s.equation {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    ui.selectable_value(&mut s.block, true, "Bloque")
-                                        .on_hover_text("$ x $: centrada, en su propia línea");
-                                    ui.selectable_value(&mut s.block, false, "En línea")
-                                        .on_hover_text("$x$: dentro del párrafo");
+                                    ui.selectable_value(&mut s.block, true, tr("Bloque"))
+                                        .on_hover_text(tr("$ x $: centrada, en su propia línea"));
+                                    ui.selectable_value(&mut s.block, false, tr("En línea"))
+                                        .on_hover_text(tr("$x$: dentro del párrafo"));
                                 },
                             );
                         }
@@ -281,10 +282,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                                 ui.set_width(ui.available_width());
                                 ui.horizontal(|ui| {
                                     ui.label(
-                                        RichText::new(format!(
-                                            "{}  Editando una ecuación de «{name}»",
-                                            icon::PENCIL_SIMPLE
-                                        ))
+                                        RichText::new(trf!("{}  Editando una ecuación de «{}»", icon::PENCIL_SIMPLE, name))
                                         .small()
                                         .color(pal.text),
                                     );
@@ -294,7 +292,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                                             stop = ui
                                                 .small_button(icon::X)
                                                 .on_hover_text(
-                                                    "Dejar de editar: Insertar volverá a añadir en el cursor",
+                                                    tr("Dejar de editar: Insertar volverá a añadir en el cursor"),
                                                 )
                                                 .clicked();
                                         },
@@ -306,8 +304,8 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                         }
                     } else if let Some(eq) = &at
                         && ui
-                            .button(format!("{}  Editar la ecuación del cursor", icon::PENCIL_SIMPLE))
-                            .on_hover_text("La carga en el borrador; Insertar la reemplaza")
+                            .button(trf!("{}  Editar la ecuación del cursor", icon::PENCIL_SIMPLE))
+                            .on_hover_text(tr("La carga en el borrador; Insertar la reemplaza"))
                             .clicked()
                     {
                         let d = st.docs.cur();
@@ -345,7 +343,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     let eq = s.equation;
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
-                        ui.menu_button(format!("{}  Añadir snippet", icon::BRACKETS_CURLY), |ui| {
+                        ui.menu_button(trf!("{}  Añadir snippet", icon::BRACKETS_CURLY), |ui| {
                             for g in crate::snippets::BUILTIN {
                                 // En modo ecuación, solo lo que el parser ve
                                 // como ecuación (o código que acaba en una).
@@ -394,7 +392,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     }
                     if s.text.trim().is_empty() {
                         ui.label(
-                            RichText::new("Escribe una ecuación o un fragmento para verlo aquí.")
+                            RichText::new(tr("Escribe una ecuación o un fragmento para verlo aquí."))
                                 .small()
                                 .color(pal.text_faint),
                         );
@@ -462,9 +460,9 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     ui.horizontal(|ui| {
                         let can = insert_source(&s.text, s.equation, s.block).is_some();
                         let label = if s.editing.is_some() {
-                            "Reemplazar en el documento"
+                            tr("Reemplazar en el documento")
                         } else {
-                            "Insertar en el documento"
+                            tr("Insertar en el documento")
                         };
                         ui.add_enabled_ui(can, |ui| {
                             let go = widgets::accent_button(
@@ -473,9 +471,9 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                                 &format!("{}  {label}", icon::ARROW_BEND_DOWN_RIGHT),
                             )
                             .on_hover_text(if s.editing.is_some() {
-                                "Sustituye la ecuación que se está editando"
+                                tr("Sustituye la ecuación que se está editando")
                             } else {
-                                "Inserta en el cursor del editor"
+                                tr("Inserta en el cursor del editor")
                             })
                             .clicked();
                             if go && let Some(body) = insert_source(&s.text, s.equation, s.block)
@@ -492,8 +490,8 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                             }
                         });
                         if ui
-                            .small_button("Limpiar")
-                            .on_hover_text("Vacía el borrador")
+                            .small_button(tr("Limpiar"))
+                            .on_hover_text(tr("Vacía el borrador"))
                             .clicked()
                         {
                             s.text.clear();

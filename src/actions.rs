@@ -121,6 +121,8 @@ pub enum Action {
     ShowPanel(Panel),
     ApplyPreset(Preset),
     ToggleTheme,
+    /// Alterna entre español e inglés y lo guarda en las preferencias.
+    ToggleLang,
     FontDelta(f32),
     FontReset,
     ToggleWrap,

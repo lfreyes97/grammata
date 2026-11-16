@@ -19,6 +19,7 @@
 //! El programa es de su autor: se comunica por tuberías, no se enlaza con
 //! el editor, y solo se ejecuta si el usuario lo permitió en el panel.
 
+use crate::i18n::{tr, trf};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -164,7 +165,7 @@ const DEFAULT_TIMEOUT: u64 = 60;
 
 impl Job {
     fn program(&self) -> Result<PathBuf, String> {
-        let name = self.tool.run.first().filter(|n| !n.is_empty()).ok_or("falta `run`")?;
+        let name = self.tool.run.first().filter(|n| !n.is_empty()).ok_or(tr("falta `run`"))?;
         match name.strip_prefix("./") {
             Some(rel) => super::inside(&self.plugin_dir, rel),
             None => Ok(PathBuf::from(name)),
@@ -221,8 +222,8 @@ impl Job {
         }
         let shown = program.display().to_string();
         let mut child = cmd.spawn().map_err(|e| match e.kind() {
-            std::io::ErrorKind::NotFound => format!("no se encontró el programa «{shown}»: ¿está instalado?"),
-            _ => format!("no se pudo ejecutar «{shown}»: {e}"),
+            std::io::ErrorKind::NotFound => trf!("no se encontró el programa «{}»: ¿está instalado?", shown),
+            _ => trf!("no se pudo ejecutar «{}»: {}", shown, e),
         })?;
 
         // Las tres tuberías a la vez: si no, un programa que escribe mucho
@@ -249,7 +250,7 @@ impl Job {
                 None if start.elapsed() > limit => {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(format!("«{shown}» no terminó en {} s", limit.as_secs()));
+                    return Err(trf!("«{}» no terminó en {} s", shown, limit.as_secs()));
                 }
                 None => std::thread::sleep(Duration::from_millis(15)),
             }
@@ -260,7 +261,7 @@ impl Job {
         if !status.success() {
             let msg = stderr.trim();
             return Err(if msg.is_empty() {
-                format!("«{shown}» falló ({status})")
+                trf!("«{}» falló ({})", shown, status)
             } else {
                 msg.to_string()
             });
@@ -272,7 +273,7 @@ impl Job {
             }),
             Protocol::Json => {
                 let r: Response = serde_json::from_str(&stdout)
-                    .map_err(|e| format!("respuesta JSON no válida de «{shown}»: {e}"))?;
+                    .map_err(|e| trf!("respuesta JSON no válida de «{}»: {}", shown, e))?;
                 match r.error {
                     Some(e) => Err(e),
                     None => Ok(Done {

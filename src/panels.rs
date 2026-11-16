@@ -1,5 +1,6 @@
 //! Paneles Esquema y Problemas.
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::app::State;
 use crate::diagnostics::Severity;
@@ -50,9 +51,9 @@ pub fn outline(st: &mut State, ui: &mut egui::Ui) {
     });
     if items.is_empty() {
         egui::Frame::new().inner_margin(14).show(ui, |ui| {
-            ui.label(RichText::new("Sin encabezados todavía.").color(pal.text_dim));
+            ui.label(RichText::new(tr("Sin encabezados todavía.")).color(pal.text_dim));
             ui.label(
-                RichText::new("Escribe `= Encabezado 1` o `== Encabezado 2`.")
+                RichText::new(tr("Escribe `= Encabezado 1` o `== Encabezado 2`."))
                     .small()
                     .color(pal.text_faint),
             );
@@ -96,7 +97,7 @@ pub fn outline(st: &mut State, ui: &mut egui::Ui) {
                                         .frame_when_inactive(false)
                                         .min_size(egui::vec2(ui.available_width(), 24.0)),
                                 )
-                                .on_hover_text(format!("Línea {}", it.line));
+                                .on_hover_text(trf!("Línea {}", it.line));
                             if selected && want_scroll {
                                 r.scroll_to_me(Some(egui::Align::Center));
                             }
@@ -127,16 +128,16 @@ pub fn problems(st: &mut State, ui: &mut egui::Ui) {
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{} {errors}", icon::X_CIRCLE)).color(if errors > 0 { pal.err } else { pal.text_faint }))
-                .on_hover_text("Errores");
+                .on_hover_text(tr("Errores"));
             ui.label(RichText::new(format!("{} {warnings}", icon::WARNING)).color(if warnings > 0 { pal.warn } else { pal.text_faint }))
-                .on_hover_text("Advertencias");
+                .on_hover_text(tr("Advertencias"));
             if stale {
-                ui.label(RichText::new("(anterior)").small().color(pal.text_faint))
-                    .on_hover_text("Diagnósticos de la compilación anterior; el texto ha cambiado desde entonces");
+                ui.label(RichText::new(tr("(anterior)")).small().color(pal.text_faint))
+                    .on_hover_text(tr("Diagnósticos de la compilación anterior; el texto ha cambiado desde entonces"));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_enabled_ui(!diags.is_empty(), |ui| {
-                    if widgets::icon_button(ui, icon::COPY, "Copiar todo").clicked() {
+                    if widgets::icon_button(ui, icon::COPY, tr("Copiar todo")).clicked() {
                         let txt: Vec<String> = diags
                             .iter()
                             .map(|d| format!("{}: {}", d.location(), d.message))
@@ -151,9 +152,9 @@ pub fn problems(st: &mut State, ui: &mut egui::Ui) {
     if diags.is_empty() {
         egui::Frame::new().inner_margin(14).show(ui, |ui| {
             let msg = if built.is_some() {
-                "Sin problemas."
+                tr("Sin problemas.")
             } else {
-                "Aún no se ha compilado."
+                tr("Aún no se ha compilado.")
             };
             ui.label(RichText::new(format!("{}  {msg}", icon::CHECK_CIRCLE)).color(pal.text_dim));
         });

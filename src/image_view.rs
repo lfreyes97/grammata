@@ -2,6 +2,7 @@
 //! pdf). Las renderiza el propio typst (`engine::render_image`) en un hilo
 //! aparte, así se ve exactamente lo que dibujaría `#image`.
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::app::State;
 use crate::engine::{self, ImageRender};
@@ -120,7 +121,7 @@ impl Images {
             .stack_size(16 << 20)
             .spawn(move || {
                 let out = std::panic::catch_unwind(|| engine::render_image(&path, MAX_PX))
-                    .unwrap_or_else(|_| Err("fallo interno al leer la imagen".into()));
+                    .unwrap_or_else(|_| Err(tr("fallo interno al leer la imagen").into()));
                 let _ = tx.send((id, out));
                 ctx.request_repaint();
             })
@@ -175,20 +176,20 @@ pub fn tab(st: &mut State, ui: &mut egui::Ui, id: ImageId) {
 
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
-            if widgets::icon_button(ui, icon::MAGNIFYING_GLASS_MINUS, "Alejar  (Ctrl+rueda)")
+            if widgets::icon_button(ui, icon::MAGNIFYING_GLASS_MINUS, tr("Alejar  (Ctrl+rueda)"))
                 .clicked()
             {
                 t.zoom = Some((zoom / 1.25).max(ZOOM_MIN));
             }
             let label = match t.zoom {
-                None => format!("{}  Ajustar", icon::FRAME_CORNERS),
+                None => trf!("{}  Ajustar", icon::FRAME_CORNERS),
                 Some(z) => format!("{}  {:.0} %", icon::MAGNIFYING_GLASS, z * 100.0),
             };
             ui.menu_button(egui::RichText::new(label).monospace(), |ui| {
                 ui.set_min_width(150.0);
                 if ui
                     .add(
-                        egui::Button::new(format!("{}  Ajustar", icon::FRAME_CORNERS))
+                        egui::Button::new(trf!("{}  Ajustar", icon::FRAME_CORNERS))
                             .selected(t.zoom.is_none()),
                     )
                     .clicked()
@@ -208,22 +209,22 @@ pub fn tab(st: &mut State, ui: &mut egui::Ui, id: ImageId) {
                     }
                 }
             });
-            if widgets::icon_button(ui, icon::MAGNIFYING_GLASS_PLUS, "Acercar  (Ctrl+rueda)")
+            if widgets::icon_button(ui, icon::MAGNIFYING_GLASS_PLUS, tr("Acercar  (Ctrl+rueda)"))
                 .clicked()
             {
                 t.zoom = Some((zoom * 1.25).min(ZOOM_MAX));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, "Volver a leer del disco")
+                if widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, tr("Volver a leer del disco"))
                     .clicked()
                 {
                     reload = true;
                 }
-                if widgets::icon_button(ui, icon::COPY, "Copiar ruta").clicked() {
+                if widgets::icon_button(ui, icon::COPY, tr("Copiar ruta")).clicked() {
                     ui.ctx().copy_text(t.path.display().to_string());
                 }
-                if widgets::accent_button(ui, &pal, &format!("{}  Insertar", icon::PLUS))
-                    .on_hover_text("Inserta #image(\"…\") en el documento actual, en el cursor")
+                if widgets::accent_button(ui, &pal, &trf!("{}  Insertar", icon::PLUS))
+                    .on_hover_text(tr("Inserta #image(\"…\") en el documento actual, en el cursor"))
                     .clicked()
                 {
                     st.actions.push(Action::InsertImage(t.path.clone()));
@@ -243,7 +244,7 @@ pub fn tab(st: &mut State, ui: &mut egui::Ui, id: ImageId) {
     });
 
     if let Some(e) = &t.error {
-        message(ui, &pal, icon::FILE_X, "No se pudo mostrar la imagen", e);
+        message(ui, &pal, icon::FILE_X, tr("No se pudo mostrar la imagen"), e);
     } else if let Some(tex) = &t.tex {
         let size = natural * zoom;
         let out = egui::ScrollArea::both()
@@ -267,7 +268,7 @@ pub fn tab(st: &mut State, ui: &mut egui::Ui, id: ImageId) {
             t.zoom = Some((zoom * dz).clamp(ZOOM_MIN, ZOOM_MAX));
         }
     } else {
-        message(ui, &pal, icon::HOURGLASS_MEDIUM, "Cargando…", "");
+        message(ui, &pal, icon::HOURGLASS_MEDIUM, tr("Cargando…"), "");
     }
 
     if reload {

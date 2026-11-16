@@ -4,6 +4,7 @@
 //! `sym.<nombre>` existe y produce ese carácter): ver la prueba
 //! `plantillas_y_simbolos_compilan` en `ui_tests.rs`.
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::app::State;
 use crate::theme::{self, Palette};
@@ -265,10 +266,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
             ui.add(
                 egui::TextEdit::singleline(&mut st.symbol_query)
                     .id_salt("symbol-query")
-                    .hint_text(format!(
-                        "{}  Buscar símbolo (alpha, flecha…)",
-                        egui_phosphor::regular::MAGNIFYING_GLASS
-                    ))
+                    .hint_text(trf!("{}  Buscar símbolo (alpha, flecha…)", egui_phosphor::regular::MAGNIFYING_GLASS))
                     .desired_width(f32::INFINITY),
             );
         });
@@ -287,31 +285,31 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     let q = st.symbol_query.trim().to_lowercase();
                     if !q.is_empty() {
                         let hits: Vec<&Sym> = all()
-                            .filter(|s| s.name.to_lowercase().contains(&q) || s.label == q)
+                            .filter(|s| (s.name.to_lowercase().contains(&q) || tr(s.name).to_lowercase().contains(&q)) || s.label == q)
                             .collect();
                         if hits.is_empty() {
-                            ui.label(RichText::new("Sin resultados.").color(pal.text_dim));
+                            ui.label(RichText::new(tr("Sin resultados.")).color(pal.text_dim));
                         }
                         grid(ui, &pal, hits.into_iter(), &mut pick);
                     } else {
                         let recent: Vec<&Sym> =
                             st.recent_symbols.iter().filter_map(|r| find(r)).collect();
                         if !recent.is_empty() {
-                            widgets::section_label(ui, &pal, "Recientes");
+                            widgets::section_label(ui, &pal, tr("Recientes"));
                             grid(ui, &pal, recent.into_iter(), &mut pick);
                             ui.add_space(6.0);
                         }
                         for cat in std::iter::once(&STRUCTURES).chain(CATEGORIES.iter()) {
-                            egui::CollapsingHeader::new(RichText::new(cat.name).color(pal.text))
+                            egui::CollapsingHeader::new(RichText::new(tr(cat.name)).color(pal.text))
                                 .default_open(true)
                                 .show(ui, |ui| grid(ui, &pal, cat.items.iter(), &mut pick));
                         }
                     }
                     ui.add_space(8.0);
                     let hint = if in_math {
-                        "El cursor está en una ecuación: se inserta el nombre."
+                        tr("El cursor está en una ecuación: se inserta el nombre.")
                     } else {
-                        "Fuera de una ecuación se inserta como $…$."
+                        tr("Fuera de una ecuación se inserta como $…$.")
                     };
                     ui.label(RichText::new(hint).small().color(pal.text_faint));
                 });
@@ -351,7 +349,7 @@ fn grid(
                         .min_size(egui::vec2(36.0, 32.0)),
                 )
                 .on_hover_ui(|ui| {
-                    ui.label(RichText::new(s.name).monospace().color(pal.text));
+                    ui.label(RichText::new(tr(s.name)).monospace().color(pal.text));
                     if s.insert != s.name {
                         ui.label(
                             RichText::new(crate::snippets::expand(s.insert, "").0)

@@ -1,5 +1,6 @@
 //! Pestañas del dock, paneles y diseños predefinidos.
 
+use crate::i18n::tr;
 use crate::doc::DocId;
 use egui_dock::{DockState, Node, NodeIndex, NodePath, Split, SurfaceIndex};
 use serde::{Deserialize, Serialize};
@@ -40,29 +41,29 @@ impl Panel {
 
     pub fn title(self) -> &'static str {
         match self {
-            Panel::Preview => "Vista previa",
-            Panel::Outline => "Esquema",
-            Panel::Problems => "Problemas",
-            Panel::Symbols => "Símbolos",
+            Panel::Preview => tr("Vista previa"),
+            Panel::Outline => tr("Esquema"),
+            Panel::Problems => tr("Problemas"),
+            Panel::Symbols => tr("Símbolos"),
             Panel::Snippets => "Snippets",
-            Panel::Templates => "Plantillas",
-            Panel::Files => "Archivos",
-            Panel::Scratch => "Borrador",
+            Panel::Templates => tr("Plantillas"),
+            Panel::Files => tr("Archivos"),
+            Panel::Scratch => tr("Borrador"),
             Panel::Plugins => "Plugins",
         }
     }
 
     pub fn shortcut(self) -> &'static str {
         match self {
-            Panel::Preview => "Ctrl+Mayús+V",
-            Panel::Outline => "Ctrl+Mayús+O",
-            Panel::Problems => "Ctrl+Mayús+M",
-            Panel::Symbols => "Ctrl+Mayús+Y",
-            Panel::Snippets => "Ctrl+Mayús+I",
-            Panel::Templates => "Ctrl+Mayús+T",
-            Panel::Files => "Ctrl+Mayús+F",
-            Panel::Scratch => "Ctrl+Mayús+B",
-            Panel::Plugins => "Ctrl+Mayús+U",
+            Panel::Preview => tr("Ctrl+Mayús+V"),
+            Panel::Outline => tr("Ctrl+Mayús+O"),
+            Panel::Problems => tr("Ctrl+Mayús+M"),
+            Panel::Symbols => tr("Ctrl+Mayús+Y"),
+            Panel::Snippets => tr("Ctrl+Mayús+I"),
+            Panel::Templates => tr("Ctrl+Mayús+T"),
+            Panel::Files => tr("Ctrl+Mayús+F"),
+            Panel::Scratch => tr("Ctrl+Mayús+B"),
+            Panel::Plugins => tr("Ctrl+Mayús+U"),
         }
     }
 
@@ -118,10 +119,10 @@ impl Preset {
 
     pub fn label(self) -> &'static str {
         match self {
-            Preset::Classic => "Clásico (esquema · editor · vista previa)",
-            Preset::SideBySide => "Editor y vista previa",
-            Preset::PreviewFocus => "Vista previa amplia",
-            Preset::Writing => "Solo escritura",
+            Preset::Classic => tr("Clásico (esquema · editor · vista previa)"),
+            Preset::SideBySide => tr("Editor y vista previa"),
+            Preset::PreviewFocus => tr("Vista previa amplia"),
+            Preset::Writing => tr("Solo escritura"),
         }
     }
 

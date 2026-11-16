@@ -9,6 +9,8 @@ use egui::{Event, Key, Modifiers};
 use egui_kittest::Harness;
 
 fn harness() -> Harness<'static, App> {
+    // Las pruebas buscan textos en español, sea cual sea el idioma del sistema.
+    crate::i18n::set(crate::i18n::Lang::Es);
     Harness::builder()
         .with_size(egui::vec2(1360.0, 840.0))
         .wgpu()

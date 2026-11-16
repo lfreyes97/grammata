@@ -7,6 +7,7 @@
 //! - `${x}`: texto de relleno `x`; el primero queda seleccionado para escribir encima.
 //! - `${}`: posición del cursor.
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::app::State;
 use crate::theme;
@@ -463,7 +464,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     }
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
-            if widgets::icon_button(ui, icon::PLUS, "Nuevo snippet (con la selección actual)")
+            if widgets::icon_button(ui, icon::PLUS, tr("Nuevo snippet (con la selección actual)"))
                 .clicked()
             {
                 st.actions.push(Action::NewSnippet);
@@ -471,7 +472,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
             ui.add(
                 egui::TextEdit::singleline(&mut st.snippet_query)
                     .id_salt("snippet-query")
-                    .hint_text(format!("{}  Buscar snippets", icon::MAGNIFYING_GLASS))
+                    .hint_text(trf!("{}  Buscar snippets", icon::MAGNIFYING_GLASS))
                     .desired_width(f32::INFINITY),
             );
         });
@@ -487,12 +488,12 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
             // Propios.
             let mine: Vec<(usize, &UserSnippet)> =
                 st.user_snippets.iter().enumerate().filter(|(_, s)| matches(&s.name, &s.body)).collect();
-            egui::CollapsingHeader::new(RichText::new(format!("{}  Mis snippets", icon::STAR)).color(pal.text))
+            egui::CollapsingHeader::new(RichText::new(trf!("{}  Mis snippets", icon::STAR)).color(pal.text))
                 .default_open(true)
                 .show(ui, |ui| {
                     if st.user_snippets.is_empty() {
                         ui.label(
-                            RichText::new("Selecciona texto en el editor y pulsa + para guardarlo como snippet.")
+                            RichText::new(tr("Selecciona texto en el editor y pulsa + para guardarlo como snippet."))
                                 .small()
                                 .color(pal.text_faint),
                         );
@@ -500,10 +501,10 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     for (i, s) in mine {
                         let size = egui::vec2(ui.available_width(), 24.0);
                         ui.allocate_ui_with_layout(size, egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if widgets::icon_button(ui, icon::TRASH, "Eliminar").clicked() {
+                            if widgets::icon_button(ui, icon::TRASH, tr("Eliminar")).clicked() {
                                 act = Some(Action::DeleteSnippet(i));
                             }
-                            if widgets::icon_button(ui, icon::PENCIL_SIMPLE, "Editar").clicked() {
+                            if widgets::icon_button(ui, icon::PENCIL_SIMPLE, tr("Editar")).clicked() {
                                 act = Some(Action::EditSnippet(i));
                             }
                             let w = ui.available_width();
@@ -515,7 +516,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                 });
             // Bibliotecas en typst: global y del proyecto.
             let libs = &st.snippet_libs;
-            lib_section(ui, &pal, &libs.global, "Biblioteca", &matches, &st.docs, &mut act);
+            lib_section(ui, &pal, &libs.global, tr("Biblioteca"), &matches, &st.docs, &mut act);
             if let Some(p) = &libs.project {
                 let dir = p
                     .path
@@ -523,15 +524,12 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
                     .and_then(|d| d.file_name())
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                lib_section(ui, &pal, p, &format!("Proyecto: {dir}"), &matches, &st.docs, &mut act);
+                lib_section(ui, &pal, p, &trf!("Proyecto: {}", dir), &matches, &st.docs, &mut act);
             } else if let Some(dir) = st.docs.cur().path.as_deref().and_then(std::path::Path::parent)
                 && q.is_empty()
                 && ui
-                    .small_button(format!("{}  Crear snippets.typ del proyecto", icon::FOLDER_PLUS))
-                    .on_hover_text(format!(
-                        "Crea {} con ejemplos; sus funciones se importan en los documentos de esa carpeta",
-                        dir.join(crate::snippet_lib::FILE).display()
-                    ))
+                    .small_button(trf!("{}  Crear snippets.typ del proyecto", icon::FOLDER_PLUS))
+                    .on_hover_text(trf!("Crea {} con ejemplos; sus funciones se importan en los documentos de esa carpeta", dir.join(crate::snippet_lib::FILE).display()))
                     .clicked()
             {
                 act = Some(Action::CreateSnippetLib(dir.join(crate::snippet_lib::FILE)));
@@ -539,22 +537,22 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
             // De los plugins activos.
             for p in st.plugins.list.iter().filter(|p| p.active()) {
                 for lib in &p.snippets {
-                    let title = format!("Plugin: {}", p.manifest.name);
+                    let title = trf!("Plugin: {}", p.manifest.name);
                     lib_section(ui, &pal, lib, &title, &matches, &st.docs, &mut act);
                 }
             }
             // De serie.
             for g in BUILTIN {
-                let items: Vec<&Snippet> = g.items.iter().filter(|s| matches(s.name, s.body)).collect();
+                let items: Vec<&Snippet> = g.items.iter().filter(|s| matches(s.name, s.body) || matches(tr(s.name), s.body)).collect();
                 if items.is_empty() {
                     continue;
                 }
-                egui::CollapsingHeader::new(RichText::new(format!("{}  {}", g.icon, g.name)).color(pal.text))
+                egui::CollapsingHeader::new(RichText::new(format!("{}  {}", g.icon, tr(g.name))).color(pal.text))
                     .default_open(!q.is_empty())
                     .show(ui, |ui| {
                         for s in items {
                             let w = ui.available_width();
-                            if row(ui, &pal, s.name, s.body, "", w).clicked() {
+                            if row(ui, &pal, tr(s.name), s.body, "", w).clicked() {
                                 act = Some(Action::InsertSnippet(s.body.to_string()));
                             }
                         }
@@ -563,7 +561,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
             ui.add_space(8.0);
             ui.add(
                 egui::Label::new(
-                    RichText::new("Clic para insertar en el cursor. Los que usan la selección la envuelven.")
+                    RichText::new(tr("Clic para insertar en el cursor. Los que usan la selección la envuelven."))
                         .small()
                         .color(pal.text_faint),
                 )
@@ -606,12 +604,12 @@ fn lib_section(
         .show(ui, |ui| {
             if !lib.exists() {
                 ui.label(
-                    RichText::new("Snippets escritos en typst: cada #let es uno.")
+                    RichText::new(tr("Snippets escritos en typst: cada #let es uno."))
                         .small()
                         .color(pal.text_faint),
                 );
                 if ui
-                    .small_button(format!("{}  Crear con ejemplos", icon::FILE_PLUS))
+                    .small_button(trf!("{}  Crear con ejemplos", icon::FILE_PLUS))
                     .on_hover_text(lib.path.display().to_string())
                     .clicked()
                 {
@@ -621,7 +619,7 @@ fn lib_section(
             }
             ui.horizontal(|ui| {
                 if ui
-                    .small_button(format!("{}  Abrir {}", icon::PENCIL_SIMPLE, sl::FILE))
+                    .small_button(trf!("{}  Abrir {}", icon::PENCIL_SIMPLE, sl::FILE))
                     .on_hover_text(lib.path.display().to_string())
                     .clicked()
                 {
@@ -633,12 +631,12 @@ fn lib_section(
                             .small()
                             .color(pal.err),
                     )
-                    .on_hover_text("Los #let con errores de sintaxis no aparecen");
+                    .on_hover_text(tr("Los #let con errores de sintaxis no aparecen"));
                 }
             });
             if lib.items.is_empty() {
                 ui.label(
-                    RichText::new("Sin #let públicos todavía.")
+                    RichText::new(tr("Sin #let públicos todavía."))
                         .small()
                         .color(pal.text_faint),
                 );
@@ -704,7 +702,7 @@ fn row(
             ui.label(RichText::new(desc).color(pal.text_dim));
         }
         ui.label(
-            RichText::new(expand(body, "⟨selección⟩").0)
+            RichText::new(expand(body, tr("⟨selección⟩")).0)
                 .monospace()
                 .color(pal.text),
         );
@@ -717,26 +715,26 @@ pub fn edit_modal(ctx: &egui::Context, e: &mut Editing) -> Option<bool> {
     let mut done = None;
     widgets::modal(ctx, "edit-snippet", 480.0, |ui| {
         let title = if e.index.is_some() {
-            "Editar snippet"
+            tr("Editar snippet")
         } else {
-            "Nuevo snippet"
+            tr("Nuevo snippet")
         };
         widgets::modal_header(
             ui,
             &pal,
             icon::BRACKETS_CURLY,
             title,
-            Some("Se inserta desde el panel de snippets o el autocompletado."),
+            Some(tr("Se inserta desde el panel de snippets o el autocompletado.")),
         );
-        widgets::section_label(ui, &pal, "Nombre");
+        widgets::section_label(ui, &pal, tr("Nombre"));
         ui.add(
             egui::TextEdit::singleline(&mut e.name)
-                .hint_text("Mi snippet")
+                .hint_text(tr("Mi snippet"))
                 .margin(widgets::FIELD_MARGIN)
                 .desired_width(f32::INFINITY),
         );
         ui.add_space(6.0);
-        widgets::section_label(ui, &pal, "Contenido");
+        widgets::section_label(ui, &pal, tr("Contenido"));
         egui::ScrollArea::vertical()
             .max_height(260.0)
             .show(ui, |ui| {
@@ -749,17 +747,17 @@ pub fn edit_modal(ctx: &egui::Context, e: &mut Editing) -> Option<bool> {
                 );
             });
         ui.label(
-            RichText::new("${sel} selección · ${sel:x} selección o x · ${x} relleno · ${} cursor")
+            RichText::new(tr("${sel} selección · ${sel:x} selección o x · ${x} relleno · ${} cursor"))
                 .small()
                 .monospace()
                 .color(pal.text_dim),
         );
         widgets::modal_footer(ui, |ui| {
             let ok = !e.name.trim().is_empty() && !e.body.is_empty();
-            if widgets::primary_button(ui, &pal, "Guardar", ok).clicked() {
+            if widgets::primary_button(ui, &pal, tr("Guardar"), ok).clicked() {
                 done = Some(true);
             }
-            if widgets::secondary_button(ui, &pal, "Cancelar").clicked()
+            if widgets::secondary_button(ui, &pal, tr("Cancelar")).clicked()
                 || ui.input(|i| i.key_pressed(egui::Key::Escape))
             {
                 done = Some(false);

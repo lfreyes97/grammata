@@ -4,6 +4,7 @@
 //! antes (carpeta del documento para rutas relativas). El hilo usa stack
 //! generoso y `catch_unwind`: un fallo del compilador no tumba la app.
 
+use crate::i18n::tr;
 use crate::diagnostics::Diagnostic;
 use crate::doc::DocId;
 use crate::engine::SyncEntry;
@@ -172,7 +173,7 @@ fn run(job: &Job) -> Output {
                 file: None,
                 line: None,
                 col: None,
-                message: "error interno del compilador (panic)".to_string(),
+                message: tr("error interno del compilador (panic)").to_string(),
                 hints: Vec::new(),
             }];
             Output {
@@ -188,5 +189,5 @@ fn run(job: &Job) -> Output {
 
 /// Versión del compilador embebido (fijada en Cargo.toml, sin deriva CLI).
 pub fn typst_version() -> Option<String> {
-    Some("typst 0.15.1 (embebido)".to_string())
+    Some(tr("typst 0.15.1 (embebido)").to_string())
 }

@@ -17,6 +17,7 @@
 //! editor): el editor guarda la clave que escribe el usuario y se la pasa
 //! a los programas con `protocol = "json"`.
 
+use crate::i18n::trf;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Component, Path, PathBuf};
 
@@ -327,7 +328,7 @@ fn package_meta(dir: &Path) -> Result<(String, String), String> {
             .and_then(|p| p.get(k))
             .and_then(|v| v.as_str())
             .map(str::to_string)
-            .ok_or(format!("typst.toml: falta `package.{k}`"))
+            .ok_or(trf!("typst.toml: falta `package.{}`", k))
     };
     Ok((get("name")?, get("version")?))
 }
@@ -390,14 +391,14 @@ impl Plugin {
         for rel in &m.fonts {
             match inside(&self.dir, rel) {
                 Ok(d) if d.is_dir() => self.font_dirs.push(d),
-                Ok(d) => self.errors.push(format!("no existe la carpeta de fuentes {}", d.display())),
+                Ok(d) => self.errors.push(trf!("no existe la carpeta de fuentes {}", d.display())),
                 Err(e) => self.errors.push(e),
             }
         }
         for rel in &m.snippets {
             match inside(&self.dir, rel) {
                 Ok(f) if f.is_file() => self.snippets.push(Library::new(f)),
-                Ok(f) => self.errors.push(format!("no existe {}", f.display())),
+                Ok(f) => self.errors.push(trf!("no existe {}", f.display())),
                 Err(e) => self.errors.push(e),
             }
         }
@@ -421,7 +422,7 @@ impl Plugin {
                 }
                 if kind != Kind::Command && t.extensions.is_empty() {
                     self.errors
-                        .push(format!("herramienta {}: faltan las `extensions`", t.id));
+                        .push(trf!("herramienta {}: faltan las `extensions`", t.id));
                 }
             }
         }
@@ -433,7 +434,7 @@ impl Plugin {
             for f in &t.fields {
                 if f.kind == FieldKind::Choice && f.options.is_empty() {
                     self.errors
-                        .push(format!("plantilla {}: el campo {} no tiene `options`", t.id, f.key));
+                        .push(trf!("plantilla {}: el campo {} no tiene `options`", t.id, f.key));
                 }
             }
         }
@@ -557,7 +558,7 @@ impl Plugins {
             p.allowed = self.saved.allowed.get(p.id()) == Some(&p.manifest.programs());
             if self.list.iter().any(|o| o.id() == p.id()) {
                 p.broken = true;
-                p.errors.push(format!("id repetido: {}", p.id()));
+                p.errors.push(trf!("id repetido: {}", p.id()));
             }
             self.list.push(p);
         }
@@ -681,10 +682,7 @@ impl Plugins {
             // No se autoriza lo que no es el plugin de serie.
             let bundled = files.iter().find(|(rel, _)| *rel == MANIFEST).map(|(_, t)| *t);
             if std::fs::read_to_string(&manifest).ok().as_deref() != bundled {
-                return Err(std::io::Error::other(format!(
-                    "ya hay otro plugin en {}: bórralo para instalar el de serie",
-                    dir.display()
-                )));
+                return Err(std::io::Error::other(trf!("ya hay otro plugin en {}: bórralo para instalar el de serie", dir.display())));
             }
         } else {
             for (rel, text) in files {

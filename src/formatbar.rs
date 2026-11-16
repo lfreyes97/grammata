@@ -10,6 +10,7 @@
 //! `Action::InsertSnippet` (envuelve la selección vía `${sel}`) y
 //! `Action::PrefixLines` (prefijos de línea con toggle).
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::app::{State, StatusKind};
 use crate::theme;
@@ -453,43 +454,43 @@ fn inline_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Actio
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         if !floating {
-            if widgets::icon_button(ui, icon::PUSH_PIN_SLASH, "Desfijar (flotante)").clicked() {
+            if widgets::icon_button(ui, icon::PUSH_PIN_SLASH, tr("Desfijar (flotante)")).clicked() {
                 st.prefs.inline_pinned = false;
                 st.needs_persist = true;
             }
             widgets::vsep(ui, &pal);
         }
-        if widgets::icon_button(ui, icon::TEXT_BOLDER, "Negrita  (Ctrl+B)").clicked() {
+        if widgets::icon_button(ui, icon::TEXT_BOLDER, tr("Negrita  (Ctrl+B)")).clicked() {
             act = Some(Action::ToggleMark(Mark::Bold));
         }
-        if widgets::icon_button(ui, icon::TEXT_ITALIC, "Cursiva  (Ctrl+I)").clicked() {
+        if widgets::icon_button(ui, icon::TEXT_ITALIC, tr("Cursiva  (Ctrl+I)")).clicked() {
             act = Some(Action::ToggleMark(Mark::Italic));
         }
-        if widgets::icon_button(ui, icon::TEXT_UNDERLINE, "Subrayado  (Ctrl+U)").clicked() {
+        if widgets::icon_button(ui, icon::TEXT_UNDERLINE, tr("Subrayado  (Ctrl+U)")).clicked() {
             act = Some(Action::ToggleMark(Mark::Underline));
         }
-        if widgets::icon_button(ui, icon::TEXT_STRIKETHROUGH, "Tachado").clicked() {
+        if widgets::icon_button(ui, icon::TEXT_STRIKETHROUGH, tr("Tachado")).clicked() {
             act = Some(Action::ToggleMark(Mark::Strike));
         }
         widgets::vsep(ui, &pal);
         // Enlace (despliega campo URL).
-        if widgets::icon_button(ui, icon::LINK, "Enlace").clicked() {
+        if widgets::icon_button(ui, icon::LINK, tr("Enlace")).clicked() {
             st.fmt.link_open = !st.fmt.link_open;
         }
         // Código en línea.
-        if widgets::icon_button(ui, icon::CODE_SIMPLE, "Código").clicked() {
+        if widgets::icon_button(ui, icon::CODE_SIMPLE, tr("Código")).clicked() {
             act = Some(Action::ToggleMark(Mark::Code));
         }
         widgets::vsep(ui, &pal);
-        if widgets::icon_button(ui, "//", "Comentar línea/selección  (Ctrl+/)").clicked() {
+        if widgets::icon_button(ui, "//", tr("Comentar línea/selección  (Ctrl+/)")).clicked() {
             act = Some(Action::PrefixLines("// ".into()));
         }
-        if widgets::icon_button(ui, icon::FILE_PDF, "Ir al PDF").clicked() {
+        if widgets::icon_button(ui, icon::FILE_PDF, tr("Ir al PDF")).clicked() {
             act = Some(Action::SyncToPdf);
         }
         if floating {
             widgets::vsep(ui, &pal);
-            if widgets::icon_button(ui, icon::PUSH_PIN, "Fijar en la barra de formato").clicked() {
+            if widgets::icon_button(ui, icon::PUSH_PIN, tr("Fijar en la barra de formato")).clicked() {
                 st.prefs.inline_pinned = true;
                 // Fijar en una fila oculta la haría desaparecer.
                 st.prefs.format_bar = true;
@@ -507,7 +508,7 @@ fn inline_row(st: &mut State, ui: &mut egui::Ui, floating: bool) -> Option<Actio
                     .hint_text("https://…")
                     .desired_width(220.0),
             );
-            let go = ui.small_button("Aplicar").clicked()
+            let go = ui.small_button(tr("Aplicar")).clicked()
                 || (r.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
             if go && !st.fmt.url.trim().is_empty() {
                 let u = st.fmt.url.trim().replace('\\', "\\\\").replace('"', "\\\"");
@@ -547,17 +548,17 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             _ => icon::TEXT_H,
         };
         let cur_label = match level {
-            0 => "Encabezado".to_string(),
-            1..=4 => format!("Encabezado {level}"),
+            0 => tr("Encabezado").to_string(),
+            1..=4 => trf!("Encabezado {}", level),
             // Nivel 5+: typst lo acepta, se muestra sin entrada propia.
-            _ => format!("Encabezado {level}"),
+            _ => trf!("Encabezado {}", level),
         };
         widgets::combo(
             ui,
             &pal,
             RichText::new(format!("{cur_icon}  {cur_label}")).small(),
             128.0,
-            "Encabezado",
+            tr("Encabezado"),
             |ui| {
                 ui.set_min_width(180.0);
                 for (i, mark) in HEADING_MARKS.iter().enumerate() {
@@ -568,7 +569,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                         3 => icon::TEXT_H_THREE,
                         _ => icon::TEXT_H_FOUR,
                     };
-                    let text = format!("{ic}  Encabezado {n}  ({})", mark.trim_end());
+                    let text = trf!("{}  Encabezado {}  ({})", ic, n, mark.trim_end());
                     if ui.selectable_label(level == n, text).clicked() {
                         act = Some(Action::PrefixLines(mark.to_string()));
                         ui.close();
@@ -582,7 +583,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             ui,
             st.fmt.set_mode,
             icon::TEXT_AA,
-            "Tipografía como #set desde el cursor (no solo la selección)",
+            tr("Tipografía como #set desde el cursor (no solo la selección)"),
         )
         .clicked()
         {
@@ -598,7 +599,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
         };
         // Tamaño de fuente.
         let size = RichText::new(format!("{} pt", fmt_pt(st.fmt.size_pt))).small();
-        widgets::combo(ui, &pal, size, 64.0, "Tamaño", |ui| {
+        widgets::combo(ui, &pal, size, 64.0, tr("Tamaño"), |ui| {
             ui.set_min_width(120.0);
             for s in SIZES_PT {
                 if ui
@@ -616,7 +617,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
         });
         // Familia (precargada en un hilo al arrancar).
         let family = if st.fmt.font.is_empty() {
-            "Fuente".to_string()
+            tr("Fuente").to_string()
         } else {
             ellipsize(&st.fmt.font, 16)
         };
@@ -625,23 +626,23 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             &pal,
             RichText::new(format!("{}  {family}", icon::TEXT_AA)).small(),
             132.0,
-            "Familia de fuente",
+            tr("Familia de fuente"),
             |ui| {
                 ui.set_min_width(240.0);
                 let Some(fonts) = &st.fmt.fonts else {
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label(RichText::new("Cargando fuentes…").small());
+                        ui.label(RichText::new(tr("Cargando fuentes…")).small());
                     });
                     return;
                 };
                 if fonts.is_empty() {
-                    ui.label(RichText::new("Sin fuentes del sistema").small());
+                    ui.label(RichText::new(tr("Sin fuentes del sistema")).small());
                     return;
                 }
                 ui.add(
                     egui::TextEdit::singleline(&mut st.fmt.font_filter)
-                        .hint_text("Filtrar…")
+                        .hint_text(tr("Filtrar…"))
                         .desired_width(f32::INFINITY),
                 );
                 let q = st.fmt.font_filter.to_lowercase();
@@ -672,7 +673,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             &pal,
             RichText::new("A").strong(),
             44.0,
-            "Color del texto",
+            tr("Color del texto"),
             |ui| {
                 ui.set_min_width(150.0);
                 egui::Grid::new("fmt-colors")
@@ -706,7 +707,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                 ui.separator();
                 ui.horizontal(|ui| {
                     ui.color_edit_button_srgba(&mut st.fmt.custom);
-                    if ui.small_button("Aplicar").clicked() {
+                    if ui.small_button(tr("Aplicar")).clicked() {
                         let h = color_to_hex(st.fmt.custom);
                         st.fmt.color_hex = h.clone();
                         st.fmt.custom = hex_to_color(&h).unwrap_or(st.fmt.custom);
@@ -730,7 +731,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
         );
         widgets::vsep(ui, &pal);
         // Alineación.
-        widgets::icon_menu(ui, icon::TEXT_ALIGN_LEFT, "Alineación", |ui| {
+        widgets::icon_menu(ui, icon::TEXT_ALIGN_LEFT, tr("Alineación"), |ui| {
             ui.set_min_width(160.0);
             for (ic, name) in [
                 (icon::TEXT_ALIGN_LEFT, "left"),
@@ -753,23 +754,23 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             }
         });
         // Listas.
-        widgets::icon_menu(ui, icon::LIST_BULLETS, "Listas", |ui| {
+        widgets::icon_menu(ui, icon::LIST_BULLETS, tr("Listas"), |ui| {
             ui.set_min_width(180.0);
-            if ui.button("Viñetas (- )").clicked() {
+            if ui.button(tr("Viñetas (- )")).clicked() {
                 act = Some(Action::PrefixLines("- ".into()));
                 ui.close();
             }
-            if ui.button("Numerada (+ )").clicked() {
+            if ui.button(tr("Numerada (+ )")).clicked() {
                 act = Some(Action::PrefixLines("+ ".into()));
                 ui.close();
             }
-            if ui.button("Término (/ …:)").clicked() {
+            if ui.button(tr("Término (/ …:)")).clicked() {
                 act = Some(Action::InsertSnippet("/ ${sel:término}: definición".into()));
                 ui.close();
             }
         });
         // Imagen (diálogo; se inserta tras la selección sin borrarla).
-        if widgets::icon_button(ui, icon::IMAGE, "Imagen…").clicked()
+        if widgets::icon_button(ui, icon::IMAGE, tr("Imagen…")).clicked()
             && let Some(body) = pick_image(st)
         {
             collapse_to_end(st);
@@ -777,7 +778,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
         }
         widgets::vsep(ui, &pal);
         // Tabla: N columnas × 2 filas; la selección va a la primera celda.
-        widgets::icon_menu(ui, icon::TABLE, "Tabla", |ui| {
+        widgets::icon_menu(ui, icon::TABLE, tr("Tabla"), |ui| {
             ui.set_min_width(160.0);
             for n in 2..=5 {
                 if ui.button(format!("{n} columnas")).clicked() {
@@ -787,26 +788,26 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             }
         });
         // Ecuación (envuelve la selección).
-        widgets::icon_menu(ui, icon::SIGMA, "Ecuación", |ui| {
+        widgets::icon_menu(ui, icon::SIGMA, tr("Ecuación"), |ui| {
             ui.set_min_width(180.0);
-            if ui.button("En línea   $x$").clicked() {
+            if ui.button(tr("En línea   $x$")).clicked() {
                 act = Some(Action::InsertSnippet("$${sel:x}$".into()));
                 ui.close();
             }
-            if ui.button("En bloque   $ x $").clicked() {
+            if ui.button(tr("En bloque   $ x $")).clicked() {
                 act = Some(Action::InsertSnippet("$ ${sel:x} $".into()));
                 ui.close();
             }
         });
         // Nota al pie y referencias a etiquetas del documento.
-        widgets::icon_menu(ui, icon::AT, "Nota y referencia", |ui| {
+        widgets::icon_menu(ui, icon::AT, tr("Nota y referencia"), |ui| {
             ui.set_min_width(200.0);
-            if ui.button("Nota al pie").clicked() {
+            if ui.button(tr("Nota al pie")).clicked() {
                 collapse_to_end(st);
                 act = Some(Action::InsertSnippet("#footnote[${nota}]".into()));
                 ui.close();
             }
-            if ui.button("Etiqueta  <…>").clicked() {
+            if ui.button(tr("Etiqueta  <…>")).clicked() {
                 collapse_to_end(st);
                 act = Some(Action::InsertSnippet(" <${etiqueta}>".into()));
                 ui.close();
@@ -814,7 +815,7 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
             ui.separator();
             let labels = doc_labels(&st.docs.cur().text);
             if labels.is_empty() {
-                ui.label(RichText::new("Sin etiquetas que referenciar").small());
+                ui.label(RichText::new(tr("Sin etiquetas que referenciar")).small());
             }
             egui::ScrollArea::vertical()
                 .max_height(220.0)
@@ -829,13 +830,13 @@ fn block_row(st: &mut State, ui: &mut egui::Ui) -> Option<Action> {
                 });
         });
         // Página.
-        widgets::icon_menu(ui, icon::FILE_TEXT, "Página", |ui| {
+        widgets::icon_menu(ui, icon::FILE_TEXT, tr("Página"), |ui| {
             ui.set_min_width(200.0);
             for (label, body) in [
-                ("Salto de página", "#pagebreak()\n"),
-                ("Salto de columna", "#colbreak()\n"),
-                ("Dos columnas", "#columns(2)[${sel}]"),
-                ("Espacio vertical", "#v(${1em})"),
+                (tr("Salto de página"), "#pagebreak()\n"),
+                (tr("Salto de columna"), "#colbreak()\n"),
+                (tr("Dos columnas"), "#columns(2)[${sel}]"),
+                (tr("Espacio vertical"), "#v(${1em})"),
             ] {
                 if ui.button(label).clicked() {
                     act = Some(Action::InsertSnippet(body.into()));
@@ -897,7 +898,7 @@ fn pick_image(st: &mut State) -> Option<String> {
     // Typst solo lee dentro de la raíz efectiva de compilación.
     let Some(path) = image_path(&root, &p) else {
         st.set_status(
-            "La imagen debe estar dentro de la carpeta raíz",
+            tr("La imagen debe estar dentro de la carpeta raíz"),
             StatusKind::Err,
         );
         return None;

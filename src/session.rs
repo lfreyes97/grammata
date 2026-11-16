@@ -38,6 +38,8 @@ pub struct Prefs {
     pub dark: bool,
     /// Tema de un plugin (`plugin/nombre`); manda sobre `dark`.
     pub theme: Option<String>,
+    /// Idioma de la interfaz (`es`, `en`); `None` sigue al sistema.
+    pub lang: Option<String>,
     pub font_size: f32,
     pub wrap: bool,
     pub auto_compile: bool,
@@ -64,6 +66,7 @@ impl Default for Prefs {
         Self {
             dark: true,
             theme: None,
+            lang: None,
             font_size: 14.0,
             wrap: true,
             auto_compile: true,

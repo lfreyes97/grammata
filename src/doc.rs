@@ -22,7 +22,7 @@ impl Doc {
             .as_ref()
             .and_then(|p| p.file_name())
             .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "sin título.typ".into())
+            .unwrap_or_else(|| crate::i18n::tr("sin título.typ").into())
     }
 
     pub fn modified(&self) -> bool {

@@ -8,6 +8,7 @@
 
 mod codegen;
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::app::State;
 use crate::theme;
@@ -57,27 +58,27 @@ impl Kind {
 
     pub fn name(self) -> &'static str {
         match self {
-            Kind::Article => "Artículo",
-            Kind::Report => "Informe",
-            Kind::Book => "Libro",
-            Kind::Notes => "Apuntes",
-            Kind::Slides => "Presentación",
+            Kind::Article => tr("Artículo"),
+            Kind::Report => tr("Informe"),
+            Kind::Book => tr("Libro"),
+            Kind::Notes => tr("Apuntes"),
+            Kind::Slides => tr("Presentación"),
         }
     }
 
     pub fn desc(self) -> &'static str {
         match self {
-            Kind::Article => "Portada en la primera página; resumen e índice opcionales.",
+            Kind::Article => tr("Portada en la primera página; resumen e índice opcionales."),
             Kind::Report => {
-                "Informe o monografía: portada a página completa, resumen, índice y capítulos en página nueva."
+                tr("Informe o monografía: portada a página completa, resumen, índice y capítulos en página nueva.")
             }
             Kind::Book => {
-                "Portada, índice en romanos, capítulos en página impar y márgenes a doble cara."
+                tr("Portada, índice en romanos, capítulos en página impar y márgenes a doble cara.")
             }
             Kind::Notes => {
-                "Apuntes u hoja de ejercicios: cajas de definición, teorema, ejemplo, ejercicio y solución."
+                tr("Apuntes u hoja de ejercicios: cajas de definición, teorema, ejemplo, ejercicio y solución.")
             }
-            Kind::Slides => "Diapositivas 16:9: «=» abre una sección y «==» una diapositiva.",
+            Kind::Slides => tr("Diapositivas 16:9: «=» abre una sección y «==» una diapositiva."),
         }
     }
 
@@ -155,7 +156,7 @@ macro_rules! choice {
         impl Choice for $t {
             const ALL: &'static [Self] = &[$($t::$v),+];
             fn label(self) -> &'static str {
-                match self { $($t::$v => $l),+ }
+                match self { $($t::$v => $crate::i18n::tr($l)),+ }
             }
         }
     };
@@ -423,11 +424,7 @@ impl Options {
             .copied()
             .collect();
         if !taken.is_empty() {
-            return Err(format!(
-                "Ya existe {} en {}",
-                taken.join(" y "),
-                dir.display()
-            ));
+            return Err(trf!("Ya existe {} en {}", taken.join(" y "), dir.display()));
         }
         let mut written = Vec::new();
         for name in names {
@@ -441,7 +438,7 @@ impl Options {
                 for w in written {
                     let _ = std::fs::remove_file(w);
                 }
-                return Err(format!("No se pudo escribir {}: {e}", p.display()));
+                return Err(trf!("No se pudo escribir {}: {}", p.display(), e));
             }
             written.push(p);
         }
@@ -478,7 +475,7 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     let pal = theme::palette(ui.ctx());
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
-            widgets::section_label(ui, &pal, "Plantillas");
+            widgets::section_label(ui, &pal, tr("Plantillas"));
         });
     });
     egui::ScrollArea::vertical()
@@ -503,7 +500,7 @@ fn form(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
         pal,
         RichText::new(format!("{}  {}", kind.icon(), kind.name())).small(),
         160.0,
-        "Tipo de plantilla",
+        tr("Tipo de plantilla"),
         |ui| {
             ui.set_min_width(220.0);
             for k in Kind::ALL {
@@ -541,7 +538,7 @@ fn form(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
             .on_hover_text(dir.display().to_string());
             unlink = ui
                 .small_button(icon::X)
-                .on_hover_text("Desvincular: Crear preguntará la carpeta")
+                .on_hover_text(tr("Desvincular: Crear preguntará la carpeta"))
                 .clicked();
         });
     }
@@ -556,50 +553,50 @@ fn form(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
 
     // Datos.
     ui.separator();
-    widgets::section_label(ui, pal, "Datos");
-    field(ui, pal, "Título", &mut f.title, "Título del trabajo");
+    widgets::section_label(ui, pal, tr("Datos"));
+    field(ui, pal, tr("Título"), &mut f.title, tr("Título del trabajo"));
     if has(Field::Subtitle) {
         field(
             ui,
             pal,
-            "Subtítulo",
+            tr("Subtítulo"),
             &mut f.subtitle,
-            "Vacío = sin subtítulo",
+            tr("Vacío = sin subtítulo"),
         );
     }
     if has(Field::Course) {
-        field(ui, pal, "Asignatura", &mut f.course, "Cálculo I, tema 3…");
+        field(ui, pal, tr("Asignatura"), &mut f.course, tr("Cálculo I, tema 3…"));
     }
     let who = if kind == Kind::Notes {
-        "Profesor"
+        tr("Profesor")
     } else {
-        "Autor"
+        tr("Autor")
     };
-    field(ui, pal, who, &mut f.author, "Nombre");
+    field(ui, pal, who, &mut f.author, tr("Nombre"));
     if has(Field::Institution) {
         let hint = if kind == Kind::Book {
-            "Editorial o institución"
+            tr("Editorial o institución")
         } else {
-            "Universidad, colegio, iglesia…"
+            tr("Universidad, colegio, iglesia…")
         };
-        field(ui, pal, "Institución", &mut f.institution, hint);
+        field(ui, pal, tr("Institución"), &mut f.institution, hint);
     }
     ui.columns(2, |c| {
-        pick(&mut c[0], pal, "Fecha", &mut f.date);
-        pick(&mut c[1], pal, "Idioma", &mut f.lang);
+        pick(&mut c[0], pal, tr("Fecha"), &mut f.date);
+        pick(&mut c[1], pal, tr("Idioma"), &mut f.lang);
     });
     if f.date == DateMode::Custom {
         ui.add(
             egui::TextEdit::singleline(&mut f.custom_date)
-                .hint_text("9 de octubre de 2026")
+                .hint_text(tr("9 de octubre de 2026"))
                 .desired_width(f32::INFINITY),
         );
     }
     if has(Field::Abstract) {
-        ui.label(RichText::new("Resumen").small().color(pal.text_dim));
+        ui.label(RichText::new(tr("Resumen")).small().color(pal.text_dim));
         ui.add(
             egui::TextEdit::multiline(&mut f.abstract_text)
-                .hint_text("Vacío = sin resumen")
+                .hint_text(tr("Vacío = sin resumen"))
                 .desired_rows(3)
                 .desired_width(f32::INFINITY),
         );
@@ -608,15 +605,15 @@ fn form(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
     // Página.
     if has(Field::Page) || has(Field::Columns) {
         ui.separator();
-        widgets::section_label(ui, pal, "Página");
+        widgets::section_label(ui, pal, tr("Página"));
         if has(Field::Page) {
             ui.columns(2, |c| {
-                pick(&mut c[0], pal, "Papel", &mut f.paper);
-                pick(&mut c[1], pal, "Márgenes", &mut f.margins);
+                pick(&mut c[0], pal, tr("Papel"), &mut f.paper);
+                pick(&mut c[1], pal, tr("Márgenes"), &mut f.margins);
             });
         }
         if has(Field::Columns) {
-            ui.label(RichText::new("Columnas").small().color(pal.text_dim));
+            ui.label(RichText::new(tr("Columnas")).small().color(pal.text_dim));
             ui.horizontal(|ui| {
                 for n in [1u8, 2] {
                     ui.selectable_value(&mut f.columns, n, n.to_string());
@@ -627,12 +624,12 @@ fn form(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
 
     // Texto.
     ui.separator();
-    widgets::section_label(ui, pal, "Texto");
-    ui.label(RichText::new("Fuente").small().color(pal.text_dim));
+    widgets::section_label(ui, pal, tr("Texto"));
+    ui.label(RichText::new(tr("Fuente")).small().color(pal.text_dim));
     font_combo(ui, pal, fonts, font_filter, &mut f.font);
     ui.columns(2, |c| {
         let size = format!("{} pt", fmt_pt(f.font_size));
-        combo_row(&mut c[0], pal, "Tamaño", &size, 110.0, |ui| {
+        combo_row(&mut c[0], pal, tr("Tamaño"), &size, 110.0, |ui| {
             for &s in kind.font_sizes() {
                 if ui
                     .selectable_label(f.font_size == s, format!("{} pt", fmt_pt(s)))
@@ -643,66 +640,66 @@ fn form(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
                 }
             }
         });
-        pick(&mut c[1], pal, "Interlineado", &mut f.leading);
+        pick(&mut c[1], pal, tr("Interlineado"), &mut f.leading);
     });
     if has(Field::Justify) || has(Field::Numbering) {
         ui.columns(2, |c| {
             if has(Field::Justify) {
-                c[0].checkbox(&mut f.justify, "Justificar");
+                c[0].checkbox(&mut f.justify, tr("Justificar"));
             }
             if has(Field::Numbering) {
-                c[1].checkbox(&mut f.numbering, "Numerar apartados");
+                c[1].checkbox(&mut f.numbering, tr("Numerar apartados"));
             }
         });
     }
 
     // Encabezado y pie.
     ui.separator();
-    widgets::section_label(ui, pal, "Encabezado y pie");
+    widgets::section_label(ui, pal, tr("Encabezado y pie"));
     if has(Field::Header) {
         let modes: Vec<HeaderMode> = HeaderMode::ALL
             .iter()
             .copied()
             .filter(|m| *m != HeaderMode::Chapter || has(Field::Chapter))
             .collect();
-        ui.label(RichText::new("Encabezado").small().color(pal.text_dim));
-        pick_from(ui, pal, "Encabezado", &mut f.header, &modes);
+        ui.label(RichText::new(tr("Encabezado")).small().color(pal.text_dim));
+        pick_from(ui, pal, tr("Encabezado"), &mut f.header, &modes);
         if f.header == HeaderMode::Custom {
             ui.add(
                 egui::TextEdit::singleline(&mut f.header_text)
-                    .hint_text("Texto del encabezado")
+                    .hint_text(tr("Texto del encabezado"))
                     .desired_width(f32::INFINITY),
             );
         }
     }
     ui.columns(2, |c| {
-        pick(&mut c[0], pal, "Nº de página", &mut f.page_num);
+        pick(&mut c[0], pal, tr("Nº de página"), &mut f.page_num);
         if f.page_num != PageNum::None {
-            pick(&mut c[1], pal, "Formato", &mut f.page_fmt);
+            pick(&mut c[1], pal, tr("Formato"), &mut f.page_fmt);
         }
     });
 
     // Estructura.
     ui.separator();
-    widgets::section_label(ui, pal, "Estructura");
+    widgets::section_label(ui, pal, tr("Estructura"));
     if has(Field::Toc) {
         let label = if kind == Kind::Slides {
-            "Diapositiva de contenido"
+            tr("Diapositiva de contenido")
         } else {
-            "Índice"
+            tr("Índice")
         };
         ui.checkbox(&mut f.toc, label);
     }
     if has(Field::Solutions) {
-        ui.checkbox(&mut f.solutions, "Mostrar soluciones")
-            .on_hover_text("Se puede cambiar luego en main.typ (soluciones: true/false)");
+        ui.checkbox(&mut f.solutions, tr("Mostrar soluciones"))
+            .on_hover_text(tr("Se puede cambiar luego en main.typ (soluciones: true/false)"));
     }
     if has(Field::Bib) {
-        ui.label(RichText::new("Bibliografía").small().color(pal.text_dim));
+        ui.label(RichText::new(tr("Bibliografía")).small().color(pal.text_dim));
         pick_from(
             ui,
             pal,
-            "Estilo de citas; crea refs.bib con una entrada de ejemplo",
+            tr("Estilo de citas; crea refs.bib con una entrada de ejemplo"),
             &mut f.bib,
             BibStyle::ALL,
         );
@@ -710,11 +707,11 @@ fn form(st: &mut State, ui: &mut egui::Ui, pal: &theme::Palette) {
 
     ui.separator();
     let files = f.files().join(", ");
-    if widgets::accent_button(ui, pal, &format!("{}  Crear documento", icon::FILE_PLUS))
+    if widgets::accent_button(ui, pal, &trf!("{}  Crear documento", icon::FILE_PLUS))
         .on_hover_text(if linked {
-            format!("Crea {files} en el proyecto y abre {MAIN_FILE}")
+            trf!("Crea {} en el proyecto y abre {}", files, MAIN_FILE)
         } else {
-            format!("Elige una carpeta: crea {files} y abre {MAIN_FILE}")
+            trf!("Elige una carpeta: crea {} y abre {}", files, MAIN_FILE)
         })
         .clicked()
     {
@@ -733,7 +730,7 @@ fn font_combo(
     font: &mut String,
 ) {
     let shown = if font.is_empty() {
-        "Predeterminada (Libertinus Serif)"
+        tr("Predeterminada (Libertinus Serif)")
     } else {
         font.as_str()
     };
@@ -742,23 +739,23 @@ fn font_combo(
         pal,
         RichText::new(format!("{}  {shown}", icon::TEXT_AA)).small(),
         200.0,
-        "Familia de fuente",
+        tr("Familia de fuente"),
         |ui| {
             ui.set_min_width(240.0);
             let Some(fonts) = fonts else {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new("Cargando fuentes…").small());
+                    ui.label(RichText::new(tr("Cargando fuentes…")).small());
                 });
                 return;
             };
             ui.add(
                 egui::TextEdit::singleline(filter)
-                    .hint_text("Filtrar…")
+                    .hint_text(tr("Filtrar…"))
                     .desired_width(f32::INFINITY),
             );
             if ui
-                .selectable_label(font.is_empty(), "Predeterminada (Libertinus Serif)")
+                .selectable_label(font.is_empty(), tr("Predeterminada (Libertinus Serif)"))
                 .clicked()
             {
                 font.clear();

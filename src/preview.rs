@@ -5,6 +5,7 @@
 //! render nuevo se dibuja la textura anterior escalada, así que recompilar o
 //! hacer zoom no parpadea.
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::compile::Key;
 use crate::engine::SyncEntry;
@@ -318,7 +319,7 @@ impl Preview {
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 8.0;
-                            if crate::widgets::icon_button(ui, icon::X, "Salir  (Esc)").clicked() {
+                            if crate::widgets::icon_button(ui, icon::X, tr("Salir  (Esc)")).clicked() {
                                 let ctx = ui.ctx().clone();
                                 self.set_presentation(&ctx, false);
                             }
@@ -326,7 +327,7 @@ impl Preview {
                                 if crate::widgets::icon_button(
                                     ui,
                                     icon::CARET_UP,
-                                    "Página anterior",
+                                    tr("Página anterior"),
                                 )
                                 .clicked()
                                 {
@@ -341,7 +342,7 @@ impl Preview {
                                 if crate::widgets::icon_button(
                                     ui,
                                     icon::CARET_DOWN,
-                                    "Página siguiente",
+                                    tr("Página siguiente"),
                                 )
                                 .clicked()
                                 {
@@ -357,7 +358,7 @@ impl Preview {
                                 .small()
                                 .color(pal.text_dim),
                             )
-                            .on_hover_text("Zoom (Ctrl+rueda)");
+                            .on_hover_text(tr("Zoom (Ctrl+rueda)"));
                         });
                     });
             });
@@ -481,7 +482,7 @@ impl Preview {
                             })
                             .response
                             .interact(Sense::click())
-                            .on_hover_text(format!("Ir a la página {}", i + 1));
+                            .on_hover_text(trf!("Ir a la página {}", i + 1));
                         if r.clicked() {
                             go = Some(i);
                         }
@@ -508,7 +509,7 @@ impl Preview {
                 if crate::widgets::icon_button(
                     ui,
                     icon::MAGNIFYING_GLASS_MINUS,
-                    "Alejar  (Ctrl+rueda)",
+                    tr("Alejar  (Ctrl+rueda)"),
                 )
                 .clicked()
                 {
@@ -516,18 +517,15 @@ impl Preview {
                     prefs.zoom = step_zoom(z, -1);
                 }
                 let label = match prefs.fit {
-                    FitMode::Width => format!("{}  Ancho", icon::ARROWS_OUT_LINE_HORIZONTAL),
-                    FitMode::Page => format!("{}  Página", icon::FRAME_CORNERS),
+                    FitMode::Width => trf!("{}  Ancho", icon::ARROWS_OUT_LINE_HORIZONTAL),
+                    FitMode::Page => trf!("{}  Página", icon::FRAME_CORNERS),
                     FitMode::Manual => format!("{}  {:.0} %", icon::MAGNIFYING_GLASS, z * 100.0),
                 };
                 ui.menu_button(egui::RichText::new(label).monospace(), |ui| {
                     ui.set_min_width(170.0);
                     if ui
                         .add(
-                            egui::Button::new(format!(
-                                "{}  Ajustar al ancho",
-                                icon::ARROWS_OUT_LINE_HORIZONTAL
-                            ))
+                            egui::Button::new(trf!("{}  Ajustar al ancho", icon::ARROWS_OUT_LINE_HORIZONTAL))
                             .selected(prefs.fit == FitMode::Width),
                         )
                         .clicked()
@@ -537,7 +535,7 @@ impl Preview {
                     }
                     if ui
                         .add(
-                            egui::Button::new(format!("{}  Página completa", icon::FRAME_CORNERS))
+                            egui::Button::new(trf!("{}  Página completa", icon::FRAME_CORNERS))
                                 .selected(prefs.fit == FitMode::Page),
                         )
                         .clicked()
@@ -562,7 +560,7 @@ impl Preview {
                 if crate::widgets::icon_button(
                     ui,
                     icon::MAGNIFYING_GLASS_PLUS,
-                    "Acercar  (Ctrl+rueda)",
+                    tr("Acercar  (Ctrl+rueda)"),
                 )
                 .clicked()
                 {
@@ -574,7 +572,7 @@ impl Preview {
 
                 let n = self.sizes.len();
                 ui.add_enabled_ui(n > 0, |ui| {
-                    if crate::widgets::icon_button(ui, icon::CARET_UP, "Página anterior  (RePág)")
+                    if crate::widgets::icon_button(ui, icon::CARET_UP, tr("Página anterior  (RePág)"))
                         .clicked()
                     {
                         self.goto_page(self.current_page.saturating_sub(1));
@@ -592,7 +590,7 @@ impl Preview {
                     if crate::widgets::icon_button(
                         ui,
                         icon::CARET_DOWN,
-                        "Página siguiente  (AvPág)",
+                        tr("Página siguiente  (AvPág)"),
                     )
                     .clicked()
                     {
@@ -601,7 +599,7 @@ impl Preview {
                 });
 
                 ui.add_enabled_ui(n > 1, |ui| {
-                    if crate::widgets::icon_toggle(ui, self.show_thumbs, icon::IMAGES, "Miniaturas")
+                    if crate::widgets::icon_toggle(ui, self.show_thumbs, icon::IMAGES, tr("Miniaturas"))
                         .clicked()
                     {
                         self.show_thumbs = !self.show_thumbs;
@@ -619,7 +617,7 @@ impl Preview {
                         ui,
                         self.lens,
                         icon::MAGNIFYING_GLASS,
-                        "Lupa (aumenta la zona del cursor)",
+                        tr("Lupa (aumenta la zona del cursor)"),
                     )
                     .clicked()
                     {
@@ -635,7 +633,7 @@ impl Preview {
                 });
 
                 ui.add_enabled_ui(n > 0, |ui| {
-                    if crate::widgets::icon_button(ui, icon::PRESENTATION, "Presentación  (F11)")
+                    if crate::widgets::icon_button(ui, icon::PRESENTATION, tr("Presentación  (F11)"))
                         .clicked()
                     {
                         let ctx = ui.ctx().clone();
@@ -644,17 +642,17 @@ impl Preview {
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if crate::widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, "Compilar  (F5)")
+                    if crate::widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, tr("Compilar  (F5)"))
                         .clicked()
                     {
                         actions.push(Action::Compile);
                     }
                     let tip = match &info.pinned {
-                        Some(n) => format!("Fijado en {n}: clic para seguir al documento actual"),
+                        Some(n) => trf!("Fijado en {}: clic para seguir al documento actual", n),
                         None if info.can_pin => {
-                            "Fijar la vista previa en este documento".to_string()
+                            tr("Fijar la vista previa en este documento").to_string()
                         }
-                        None => "Guarda el documento para poder fijarlo".to_string(),
+                        None => tr("Guarda el documento para poder fijarlo").to_string(),
                     };
                     ui.add_enabled_ui(info.pinned.is_some() || info.can_pin, |ui| {
                         let ic = if info.pinned.is_some() {
@@ -686,18 +684,18 @@ impl Preview {
                             )
                             .sense(Sense::click()),
                         );
-                        if r.on_hover_text("Errores de compilación — ver Problemas")
+                        if r.on_hover_text(tr("Errores de compilación — ver Problemas"))
                             .clicked()
                         {
                             actions.push(Action::ShowPanel(Panel::Problems));
                         }
                     } else if info.stale && !info.auto {
                         ui.label(
-                            egui::RichText::new(format!("{} desactualizado", icon::WARNING))
+                            egui::RichText::new(trf!("{} desactualizado", icon::WARNING))
                                 .small()
                                 .color(pal.warn),
                         )
-                        .on_hover_text("Autocompilar está desactivado: pulsa F5");
+                        .on_hover_text(tr("Autocompilar está desactivado: pulsa F5"));
                     }
                 });
             });
@@ -716,21 +714,21 @@ impl Preview {
             let (ic, title, sub) = if info.compiling {
                 (icon::HOURGLASS_MEDIUM, "Compilando…", "")
             } else if let Some(e) = &self.load_error {
-                (icon::FILE_X, "No se pudo mostrar el PDF", e.as_str())
+                (icon::FILE_X, tr("No se pudo mostrar el PDF"), e.as_str())
             } else if info.errors > 0 {
                 (
                     icon::WARNING_CIRCLE,
-                    "La compilación falló",
-                    "Revisa el panel Problemas para ver qué falla.",
+                    tr("La compilación falló"),
+                    tr("Revisa el panel Problemas para ver qué falla."),
                 )
             } else if !info.has_build {
                 (
                     icon::FILE_PDF,
-                    "Sin vista previa todavía",
-                    "Compila el documento para verlo aquí.",
+                    tr("Sin vista previa todavía"),
+                    tr("Compila el documento para verlo aquí."),
                 )
             } else {
-                (icon::FILE_DASHED, "El documento no tiene páginas", "")
+                (icon::FILE_DASHED, tr("El documento no tiene páginas"), "")
             };
             ui.label(egui::RichText::new(ic).size(44.0).color(pal.text_faint));
             ui.add_space(6.0);
@@ -741,14 +739,14 @@ impl Preview {
             ui.add_space(10.0);
             if info.errors > 0 && !info.compiling {
                 if ui
-                    .button(format!("{}  Ver problemas", icon::LIST_MAGNIFYING_GLASS))
+                    .button(trf!("{}  Ver problemas", icon::LIST_MAGNIFYING_GLASS))
                     .clicked()
                 {
                     actions.push(Action::ShowPanel(Panel::Problems));
                 }
             } else if !info.compiling
                 && ui
-                    .button(format!("{}  Compilar  (F5)", icon::PLAY))
+                    .button(trf!("{}  Compilar  (F5)", icon::PLAY))
                     .clicked()
             {
                 actions.push(Action::Compile);
@@ -1073,12 +1071,7 @@ fn page_badge(painter: &egui::Painter, rect: Rect, n: usize, pal: &Palette) {
 
 fn error_banner(ui: &mut egui::Ui, pal: &Palette, errors: usize, actions: &mut Vec<Action>) {
     let rect = ui.max_rect();
-    let text = format!(
-        "{}  {} {} — mostrando la última versión válida",
-        icon::WARNING_CIRCLE,
-        errors,
-        if errors == 1 { "error" } else { "errores" }
-    );
+    let text = trf!("{}  {} {} — mostrando la última versión válida", icon::WARNING_CIRCLE, errors, if errors == 1 { tr("error") } else { tr("errores") });
     egui::Area::new(ui.id().with("err-banner"))
         .fixed_pos(rect.center_top() + vec2(0.0, 12.0))
         .pivot(Align2::CENTER_TOP)
@@ -1094,7 +1087,7 @@ fn error_banner(ui: &mut egui::Ui, pal: &Palette, errors: usize, actions: &mut V
                 .response
                 .interact(Sense::click())
                 .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .on_hover_text("Ver problemas");
+                .on_hover_text(tr("Ver problemas"));
             if r.clicked() {
                 actions.push(Action::ShowPanel(Panel::Problems));
             }

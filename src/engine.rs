@@ -7,6 +7,7 @@
 //! - Las fuentes se cargan una vez por proceso (`shared_fonts`) y se calientan
 //!   en el hilo de precarga de la barra de formato.
 
+use crate::i18n::{tr, trf};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
@@ -386,7 +387,7 @@ pub fn render_preview(src: &str, root: &Path, scale: f32) -> Result<egui::ColorI
                 )
             });
             pix.map(|p| pixmap_to_image(&p))
-                .ok_or_else(|| "página vacía".to_string())
+                .ok_or_else(|| tr("página vacía").to_string())
         }
         Err(errors) => {
             let mut d = diagnostics::from_source(&world, world.main_id, &errors);
@@ -394,7 +395,7 @@ pub fn render_preview(src: &str, root: &Path, scale: f32) -> Result<egui::ColorI
             Err(diags
                 .first()
                 .and_then(|d| d.message.lines().next())
-                .unwrap_or("no compila")
+                .unwrap_or(tr("no compila"))
                 .to_string())
         }
     };
@@ -419,27 +420,25 @@ pub struct ImageRender {
 /// webp, svg, pdf) con el propio typst, así se ve igual que en el
 /// documento. El lado mayor queda en `max_px` como mucho.
 pub fn render_image(path: &Path, max_px: f32) -> Result<ImageRender, String> {
-    let root = path.parent().ok_or("ruta sin carpeta")?;
+    let root = path.parent().ok_or(tr("ruta sin carpeta"))?;
     let name = path
         .file_name()
-        .ok_or("ruta sin nombre")?
+        .ok_or(tr("ruta sin nombre"))?
         .to_string_lossy()
         .replace('\\', "\\\\")
         .replace('"', "\\\"");
-    let src = format!(
-        "#set page(width: auto, height: auto, margin: 0pt, fill: none)\n#image(\"{name}\")\n"
-    );
+    let src = format!("#set page(width: auto, height: auto, margin: 0pt, fill: none)\n#image(\"{}\")\n", name);
     let world = EngineWorld::new(root.to_path_buf(), "__visor__.typ", src);
     let doc = compile::<PagedDocument>(&world).output.map_err(|errors| {
         diagnostics::from_source(&world, world.main_id, &errors)
             .first()
             .and_then(|d| d.message.lines().next().map(str::to_string))
-            .unwrap_or_else(|| "no se pudo leer la imagen".into())
+            .unwrap_or_else(|| tr("no se pudo leer la imagen").into())
     })?;
-    let page = doc.pages().first().ok_or("sin página")?;
+    let page = doc.pages().first().ok_or(tr("sin página"))?;
     let size = page.frame.size();
     let size_pt = egui::vec2(size.x.to_pt() as f32, size.y.to_pt() as f32);
-    let img = find_image(&page.frame).ok_or("sin imagen")?;
+    let img = find_image(&page.frame).ok_or(tr("sin imagen"))?;
     let px = (img.width(), img.height());
     // `Vector(Svg)`, `Raster(Exchange(Png))`… → «svg», «png».
     let format = format!("{:?}", img.format()).to_lowercase();
@@ -647,16 +646,13 @@ pub fn export_pages(
             .into_iter()
             .next()
             .map(|d| d.message)
-            .unwrap_or_else(|| "falló la compilación".to_string())
+            .unwrap_or_else(|| tr("falló la compilación").to_string())
     })?;
     if doc.pages().is_empty() {
-        return Err("el documento no tiene páginas".to_string());
+        return Err(tr("el documento no tiene páginas").to_string());
     }
     if let Some(&p) = pages.iter().find(|&&p| p > doc.pages().len()) {
-        return Err(format!(
-            "la página {p} no existe: el documento tiene {}",
-            doc.pages().len()
-        ));
+        return Err(trf!("la página {} no existe: el documento tiene {}", p, doc.pages().len()));
     }
     if fmt == "pdf" || fmt == "pdfa" {
         let mut opts = typst_pdf::PdfOptions::default();
@@ -679,10 +675,10 @@ pub fn export_pages(
             errors
                 .first()
                 .map(|e| e.message.to_string())
-                .unwrap_or_else(|| "falló la exportación a PDF".to_string())
+                .unwrap_or_else(|| tr("falló la exportación a PDF").to_string())
         })?;
         return std::fs::write(dest_template, bytes)
-            .map_err(|e| format!("no se pudo escribir {}: {e}", dest_template.display()));
+            .map_err(|e| trf!("no se pudo escribir {}: {}", dest_template.display(), e));
     }
     // Los archivos conservan el número de página original (`doc-5.png`).
     let multi = if pages.is_empty() {
@@ -706,7 +702,7 @@ pub fn export_pages(
                     },
                 );
                 pix.encode_png()
-                    .map_err(|e| format!("no se pudo codificar PNG: {e}"))?
+                    .map_err(|e| trf!("no se pudo codificar PNG: {}", e))?
             }
         };
         let dest = expand_dest(dest_template, fmt, multi, i + 1);
@@ -714,7 +710,7 @@ pub fn export_pages(
             std::fs::create_dir_all(dir).map_err(|e| format!("no se pudo crear {dir:?}: {e}"))?;
         }
         std::fs::write(&dest, bytes)
-            .map_err(|e| format!("no se pudo escribir {}: {e}", dest.display()))?;
+            .map_err(|e| trf!("no se pudo escribir {}: {}", dest.display(), e))?;
     }
     Ok(())
 }
@@ -729,9 +725,9 @@ pub fn parse_pages(spec: &str, total: usize) -> Result<Vec<usize>, String> {
     }
     let num = |t: &str| -> Result<usize, String> {
         match t.trim().parse::<usize>() {
-            Ok(0) => Err("las páginas empiezan en 1".to_string()),
+            Ok(0) => Err(tr("las páginas empiezan en 1").to_string()),
             Ok(n) => Ok(n),
-            Err(_) => Err(format!("«{}» no es un número de página", t.trim())),
+            Err(_) => Err(trf!("«{}» no es un número de página", t.trim())),
         }
     };
     let mut out = Vec::new();
@@ -749,7 +745,7 @@ pub fn parse_pages(spec: &str, total: usize) -> Result<Vec<usize>, String> {
                 let a = if a.trim().is_empty() { 1 } else { num(a)? };
                 let b = if b.trim().is_empty() {
                     if total == 0 {
-                        return Err("«8-» necesita saber cuántas páginas hay".to_string());
+                        return Err(tr("«8-» necesita saber cuántas páginas hay").to_string());
                     }
                     total
                 } else {
@@ -759,12 +755,10 @@ pub fn parse_pages(spec: &str, total: usize) -> Result<Vec<usize>, String> {
             }
         };
         if a > b {
-            return Err(format!("el rango {a}-{b} está al revés"));
+            return Err(trf!("el rango {}-{} está al revés", a, b));
         }
         if total > 0 && b > total {
-            return Err(format!(
-                "la página {b} no existe: el documento tiene {total}"
-            ));
+            return Err(trf!("la página {} no existe: el documento tiene {}", b, total));
         }
         out.extend(a..=b);
     }

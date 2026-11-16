@@ -1,5 +1,6 @@
 //! Estado de la app, bucle por frame y ejecución de acciones.
 
+use crate::i18n::{tr, trf};
 use crate::actions::Action;
 use crate::chrome;
 use crate::compile::{self, Compiler, Key};
@@ -307,6 +308,7 @@ impl App {
             session.prefs.scratch_block,
         );
         let mut prefs = session.prefs;
+        crate::i18n::init(prefs.lang.as_deref());
         // Antes de tocar las fuentes del motor: los plugins aportan las suyas.
         let plugins = crate::plugins::Plugins::load();
         match prefs.theme.as_deref().map(|t| plugins.theme(t)) {
@@ -412,7 +414,7 @@ impl App {
         match session::save(&s) {
             Ok(()) => self.st.needs_persist = false,
             Err(e) => self.st.set_status(
-                format!("No se pudo guardar la sesión: {e}"),
+                trf!("No se pudo guardar la sesión: {}", e),
                 StatusKind::Err,
             ),
         }
@@ -599,11 +601,11 @@ impl App {
             match rx.try_recv() {
                 Ok(Ok(p)) => {
                     st.export_rx = None;
-                    st.set_status(format!("Exportado {}", p.display()), StatusKind::Ok);
+                    st.set_status(trf!("Exportado {}", p.display()), StatusKind::Ok);
                 }
                 Ok(Err(e)) => {
                     st.export_rx = None;
-                    st.set_status(format!("Falló la exportación: {e}"), StatusKind::Err);
+                    st.set_status(trf!("Falló la exportación: {}", e), StatusKind::Err);
                 }
                 Err(TryRecvError::Disconnected) => st.export_rx = None,
                 Err(TryRecvError::Empty) => {}
@@ -685,7 +687,7 @@ impl App {
                 }
                 Err(e) => self
                     .st
-                    .set_status(format!("No se pudo crear el plugin: {e}"), StatusKind::Err),
+                    .set_status(trf!("No se pudo crear el plugin: {}", e), StatusKind::Err),
             },
             Action::PluginAllow(id, on) => self.st.plugins.set_allowed(&id, on),
             Action::Import => self.import_dialog(),
@@ -714,7 +716,7 @@ impl App {
                 // Con proyecto vinculado escribe ahí; si no, pide carpeta.
                 let dir = self.st.template_dir.clone().or_else(|| {
                     let mut dlg = rfd::FileDialog::new()
-                        .set_title(format!("Carpeta del documento ({})", opts.kind.name()));
+                        .set_title(trf!("Carpeta del documento ({})", opts.kind.name()));
                     let start = self.st.prefs.files_root.clone().or_else(|| {
                         self.st
                             .docs
@@ -735,11 +737,7 @@ impl App {
                             self.st.template_dir = None;
                             if self.open_path(main) {
                                 self.st.set_status(
-                                    format!(
-                                        "Creados {} en {}",
-                                        opts.files().join(", "),
-                                        dir.display()
-                                    ),
+                                    trf!("Creados {} en {}", opts.files().join(", "), dir.display()),
                                     StatusKind::Ok,
                                 );
                             }
@@ -855,7 +853,7 @@ impl App {
                         self.st.preview.goto_position(page, y);
                     }
                     None => self.st.set_status(
-                        "Sin posición en el PDF: compila el documento primero",
+                        tr("Sin posición en el PDF: compila el documento primero"),
                         StatusKind::Info,
                     ),
                 }
@@ -877,6 +875,15 @@ impl App {
                     .collect();
                 self.dock = p.build(tabs);
                 layout::focus_doc(&mut self.dock, cur);
+                self.st.needs_persist = true;
+            }
+            Action::ToggleLang => {
+                let next = match crate::i18n::current() {
+                    crate::i18n::Lang::Es => crate::i18n::Lang::En,
+                    crate::i18n::Lang::En => crate::i18n::Lang::Es,
+                };
+                crate::i18n::set(next);
+                self.st.prefs.lang = Some(next.code().to_string());
                 self.st.needs_persist = true;
             }
             Action::ToggleTheme => {
@@ -939,7 +946,7 @@ impl App {
                         layout::focus_doc(&mut self.dock, cur);
                     }
                     None => self.st.set_status(
-                        "La imagen está fuera de la carpeta del proyecto: typst no puede leerla",
+                        tr("La imagen está fuera de la carpeta del proyecto: typst no puede leerla"),
                         StatusKind::Err,
                     ),
                 }
@@ -958,7 +965,7 @@ impl App {
                         .and_then(|_| std::fs::write(&path, crate::snippet_lib::starter()));
                     if let Err(e) = made {
                         self.st.set_status(
-                            format!("No se pudo crear {}: {e}", path.display()),
+                            trf!("No se pudo crear {}: {}", path.display(), e),
                             StatusKind::Err,
                         );
                         return;
@@ -1001,7 +1008,7 @@ impl App {
                     let s = self.st.user_snippets.remove(i);
                     self.save_snippets();
                     self.st
-                        .set_status(format!("Snippet «{}» eliminado", s.name), StatusKind::Info);
+                        .set_status(trf!("Snippet «{}» eliminado", s.name), StatusKind::Info);
                 }
             }
         }
@@ -1174,9 +1181,9 @@ impl App {
             .and_then(|d| text::nearest_occurrence(&d.text, expect, start));
         let Some(start) = found else {
             let msg = if self.st.scratch.editing.take().is_some() {
-                "La ecuación ya no está en el documento: el borrador deja de editarla"
+                tr("La ecuación ya no está en el documento: el borrador deja de editarla")
             } else {
-                "El texto cambió mientras tanto: no se reemplazó"
+                tr("El texto cambió mientras tanto: no se reemplazó")
             };
             self.st.set_status(msg, StatusKind::Info);
             return;
@@ -1214,7 +1221,7 @@ impl App {
     fn save_snippets(&mut self) {
         if let Err(e) = snippets::save_user(&self.st.user_snippets) {
             self.st.set_status(
-                format!("No se pudieron guardar los snippets: {e}"),
+                trf!("No se pudieron guardar los snippets: {}", e),
                 StatusKind::Err,
             );
         }
@@ -1236,7 +1243,7 @@ impl App {
         }
         self.save_snippets();
         self.st
-            .set_status(format!("Snippet «{name}» guardado"), StatusKind::Ok);
+            .set_status(trf!("Snippet «{}» guardado", name), StatusKind::Ok);
     }
 
     fn switch_to_id(&mut self, id: DocId) {
@@ -1287,7 +1294,7 @@ impl App {
         }
         if std::fs::metadata(&p).is_ok_and(|m| m.len() > MAX_OPEN_BYTES) {
             self.st.set_status(
-                format!("{} es demasiado grande (> 5 MB)", p.display()),
+                trf!("{} es demasiado grande (> 5 MB)", p.display()),
                 StatusKind::Err,
             );
             return false;
@@ -1296,7 +1303,7 @@ impl App {
             Ok(t) => t,
             Err(e) => {
                 self.st.set_status(
-                    format!("No se pudo abrir {}: {e}", p.display()),
+                    trf!("No se pudo abrir {}: {}", p.display(), e),
                     StatusKind::Err,
                 );
                 return false;
@@ -1320,7 +1327,7 @@ impl App {
             self.switch_to_id(id);
         }
         self.st
-            .set_status(format!("Abierto {}", p.display()), StatusKind::Info);
+            .set_status(trf!("Abierto {}", p.display()), StatusKind::Info);
         self.st.needs_persist = true;
         true
     }
@@ -1345,12 +1352,12 @@ impl App {
         match self.write_doc(id, &dest) {
             Ok(()) => {
                 self.st
-                    .set_status(format!("Guardado {}", dest.display()), StatusKind::Ok);
+                    .set_status(trf!("Guardado {}", dest.display()), StatusKind::Ok);
                 true
             }
             Err(e) => {
                 self.st
-                    .set_status(format!("No se pudo guardar: {e}"), StatusKind::Err);
+                    .set_status(trf!("No se pudo guardar: {}", e), StatusKind::Err);
                 false
             }
         }
@@ -1401,7 +1408,7 @@ impl App {
             }
             if let Err(e) = self.write_doc(id, &path) {
                 self.st.set_status(
-                    format!("No se pudo autoguardar {}: {e}", path.display()),
+                    trf!("No se pudo autoguardar {}: {}", path.display(), e),
                     StatusKind::Err,
                 );
             }
@@ -1437,7 +1444,7 @@ impl App {
     fn export_with(&mut self, ctx: &egui::Context, fmt: &str, ppi: Option<u32>, pages: &[usize]) {
         if self.st.export_rx.is_some() {
             self.st
-                .set_status("Ya hay una exportación en curso", StatusKind::Info);
+                .set_status(tr("Ya hay una exportación en curso"), StatusKind::Info);
             return;
         }
         let ext = if fmt == "pdfa" { "pdf" } else { fmt };
@@ -1500,10 +1507,10 @@ impl App {
             match std::fs::write(&dest, data.as_slice()) {
                 Ok(()) => self
                     .st
-                    .set_status(format!("Exportado {}", dest.display()), StatusKind::Ok),
+                    .set_status(trf!("Exportado {}", dest.display()), StatusKind::Ok),
                 Err(e) => self
                     .st
-                    .set_status(format!("No se pudo exportar: {e}"), StatusKind::Err),
+                    .set_status(trf!("No se pudo exportar: {}", e), StatusKind::Err),
             }
             return;
         }
@@ -1529,11 +1536,11 @@ impl App {
         match spawned {
             Ok(_) => {
                 self.st.export_rx = Some(rx);
-                self.st.set_status("Exportando…", StatusKind::Info);
+                self.st.set_status(tr("Exportando…"), StatusKind::Info);
             }
             Err(e) => self
                 .st
-                .set_status(format!("Falló la exportación: {e}"), StatusKind::Err),
+                .set_status(trf!("Falló la exportación: {}", e), StatusKind::Err),
         }
     }
 
@@ -1549,7 +1556,7 @@ impl App {
         }
         if !any {
             self.st.set_status(
-                "Ningún plugin activo sabe importar: añade el de Pandoc en el panel Plugins",
+                tr("Ningún plugin activo sabe importar: añade el de Pandoc en el panel Plugins"),
                 StatusKind::Err,
             );
             self.st.actions.push(Action::ShowPanel(Panel::Plugins));
@@ -1568,7 +1575,7 @@ impl App {
         let plugins = &self.st.plugins;
         let Some((plugin, tool)) = plugins.importer(&path) else {
             self.st.set_status(
-                format!("Ningún plugin activo importa {}", path.display()),
+                trf!("Ningún plugin activo importa {}", path.display()),
                 StatusKind::Err,
             );
             return;
@@ -1579,14 +1586,14 @@ impl App {
         } else {
             std::fs::read_to_string(&path)
         };
-        let label = format!("Importar {}", tool.name);
+        let label = trf!("Importar {}", tool.name);
         match text {
             Ok(text) => {
                 let job = plugins.job(plugin.id(), Kind::Import, &tool.id, text, Some(path), None);
                 self.start_job(ctx, job, Then::NewDoc, label);
             }
             Err(e) => self.st.set_status(
-                format!("No se pudo leer {}: {e}", path.display()),
+                trf!("No se pudo leer {}: {}", path.display(), e),
                 StatusKind::Err,
             ),
         }
@@ -1634,7 +1641,7 @@ impl App {
             };
             let text = self.st.docs.cur().text.clone();
             let job = self.st.plugins.job(plugin, kind, id, text, doc_path, Some(out));
-            self.start_job(ctx, job, then, format!("Exportar {}", tool.name));
+            self.start_job(ctx, job, then, trf!("Exportar {}", tool.name));
             return;
         }
         let selected = self.selected_text();
@@ -1668,7 +1675,7 @@ impl App {
         };
         if self.st.plugin_job.is_some() {
             self.st
-                .set_status("Hay otro plugin trabajando: espera a que termine", StatusKind::Err);
+                .set_status(tr("Hay otro plugin trabajando: espera a que termine"), StatusKind::Err);
             return;
         }
         let (tx, rx) = std::sync::mpsc::channel();
@@ -1680,7 +1687,7 @@ impl App {
                 ctx.request_repaint();
             })
             .expect("hilo plugin");
-        self.st.set_status(format!("{label}…"), StatusKind::Info);
+        self.st.set_status(format!("{}…", label), StatusKind::Info);
         self.st.plugin_job = Some(PluginJob { rx, then, label });
     }
 
@@ -1694,7 +1701,7 @@ impl App {
         let result = match job.rx.try_recv() {
             Ok(r) => r,
             Err(TryRecvError::Empty) => return,
-            Err(TryRecvError::Disconnected) => Err("el programa se interrumpió".to_string()),
+            Err(TryRecvError::Disconnected) => Err(tr("el programa se interrumpió").to_string()),
         };
         let PluginJob { then, label, .. } = st.plugin_job.take().expect("trabajo");
         let done = match result {
@@ -1704,7 +1711,7 @@ impl App {
                 return;
             }
         };
-        let mut status = done.message.unwrap_or_else(|| format!("{label}: hecho"));
+        let mut status = done.message.unwrap_or_else(|| trf!("{}: hecho", label));
         match then {
             Then::NewDoc => st.actions.push(Action::NewDocWith(done.text)),
             Then::Replace { doc, start, expect } => st.actions.push(Action::ReplaceText {
@@ -1713,12 +1720,12 @@ impl App {
                 expect,
                 text: done.text,
             }),
-            Then::Wrote(path) => status = format!("Exportado {}", path.display()),
+            Then::Wrote(path) => status = trf!("Exportado {}", path.display()),
             Then::Write(path) => match std::fs::write(&path, done.text) {
-                Ok(()) => status = format!("Exportado {}", path.display()),
+                Ok(()) => status = trf!("Exportado {}", path.display()),
                 Err(e) => {
                     st.set_status(
-                        format!("No se pudo escribir {}: {e}", path.display()),
+                        trf!("No se pudo escribir {}: {}", path.display(), e),
                         StatusKind::Err,
                     );
                     return;
@@ -1887,11 +1894,7 @@ impl eframe::App for App {
         self.run_actions(&ctx);
 
         let doc = self.st.docs.cur();
-        let title = format!(
-            "{}{} — Typst Editor",
-            doc.fname(),
-            if doc.modified() { " •" } else { "" }
-        );
+        let title = format!("{}{} — Typst Editor", doc.fname(), if doc.modified() { " •" } else { "" });
         if title != self.title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
             self.title = title;
@@ -1929,7 +1932,7 @@ impl TabViewer for Viewer<'_> {
                     let dot = if d.modified() { "  ●" } else { "" };
                     format!("{} {}{dot}", icon::FILE_TEXT, d.fname()).into()
                 }
-                None => "(cerrado)".into(),
+                None => tr("(cerrado)").into(),
             },
             Tab::Panel(Panel::Problems) => {
                 let main = self.st.main_doc().id;
@@ -1950,7 +1953,7 @@ impl TabViewer for Viewer<'_> {
             Tab::Panel(p) => format!("{} {}", p.icon(), p.title()).into(),
             Tab::Image(id) => match self.st.images.get(id) {
                 Some(t) => format!("{} {}", icon::IMAGE, t.name()).into(),
-                None => "(cerrada)".into(),
+                None => tr("(cerrada)").into(),
             },
         }
     }
@@ -1982,7 +1985,7 @@ impl TabViewer for Viewer<'_> {
             };
             let path = d.path.clone();
             if ui
-                .button(format!("{}  Guardar", icon::FLOPPY_DISK))
+                .button(trf!("{}  Guardar", icon::FLOPPY_DISK))
                 .clicked()
             {
                 self.st
@@ -1992,13 +1995,13 @@ impl TabViewer for Viewer<'_> {
                 ui.close();
             }
             if let Some(p) = path
-                && ui.button(format!("{}  Copiar ruta", icon::COPY)).clicked()
+                && ui.button(trf!("{}  Copiar ruta", icon::COPY)).clicked()
             {
                 ui.ctx().copy_text(p.display().to_string());
                 ui.close();
             }
             ui.separator();
-            if ui.button(format!("{}  Cerrar", icon::X)).clicked() {
+            if ui.button(trf!("{}  Cerrar", icon::X)).clicked() {
                 self.st.actions.push(Action::Close(id));
                 ui.close();
             }
