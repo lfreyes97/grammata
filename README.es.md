@@ -58,6 +58,10 @@ cd grammata
 cargo run
 ```
 
+Una vez instalado, `grammata archivo.typ carpeta/ otro.typ` abre los archivos
+como pestañas y la carpeta en el panel de archivos (`--help` y `--version`
+funcionan como siempre).
+
 Sin dependencias externas: el compilador typst 0.15.1 va embebido
 (no hace falta el CLI en el PATH).
 

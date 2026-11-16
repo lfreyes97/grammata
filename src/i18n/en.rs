@@ -312,6 +312,7 @@ pub const ENTRIES: &[(&str, &str)] = &[
     ("Nuevo  (Ctrl+N)", "New  (Ctrl+N)"),
     ("Nuevo archivo", "New file"),
     ("Nuevo archivo aquí", "New file here"),
+    ("Nuevo archivo {}", "New file {}"),
     ("Nuevo desde plantilla…", "New from template…"),
     ("Nuevo proyecto", "New project"),
     ("Nuevo proyecto…", "New project…"),

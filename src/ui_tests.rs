@@ -1172,3 +1172,35 @@ fn pdf_junto_al_fuente() {
     h.run_steps(30);
     assert!(!tmp.join("informe.pdf").exists());
 }
+
+/// Paths from the command line open on top of the session: a file as a tab,
+/// a folder as the file panel root, a missing file as a new empty tab.
+#[test]
+#[ignore = "needs a GPU"]
+fn command_line_paths() {
+    let tmp = std::env::temp_dir().join(format!("grammata-cli-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let proj = tmp.join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    let existing = proj.join("a.typ");
+    std::fs::write(&existing, "= Existing\n").unwrap();
+    let missing = proj.join("new.typ");
+    // SAFETY: like the other UI tests, isolates the session before creating the app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    crate::i18n::set(crate::i18n::Lang::Es);
+    let paths = vec![proj.clone(), existing.clone(), missing.clone()];
+    let mut h = Harness::builder()
+        .with_size(egui::vec2(1360.0, 840.0))
+        .wgpu()
+        .build_eframe(move |cc| App::with_paths(cc, paths));
+    h.run_steps(5);
+    let st = &h.state().st;
+    assert_eq!(st.prefs.files_root.as_deref(), Some(proj.as_path()));
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or(p.to_path_buf());
+    let docs: Vec<_> = st.docs.list.iter().filter_map(|d| d.path.clone()).collect();
+    assert!(docs.contains(&canon(&existing)), "{docs:?}");
+    let new = st.docs.list.iter().find(|d| d.path.as_deref() == Some(missing.as_path()));
+    assert!(new.is_some_and(|d| d.text.is_empty()), "{docs:?}");
+    // The last path given is the one in front.
+    assert_eq!(st.docs.cur().path.as_deref(), Some(missing.as_path()));
+}

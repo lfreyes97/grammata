@@ -7,7 +7,7 @@ Actualizado el 2026-11-16. Marcar con `[x]` al terminar.
 - [ ] Reinstalar en `~/.local` el binario con el arreglo (`packaging/build-linux.sh` y `install.sh`).
 
 ## 2. Para poder publicar
-- [ ] **Argumentos de línea de comandos**: abrir archivos y carpetas, `--version`, `--help`. Hoy se ignoran, así que `Exec=grammata %F` del `.desktop` no abre el archivo.
+- [x] **Argumentos de línea de comandos** (`src/cli.rs`): archivos como pestañas, carpeta como raíz del gestor, ruta inexistente como archivo nuevo, `--version`, `--help`; `Exec=grammata %F` ya abre el archivo. Sin instancia única: abrir otro archivo lanza otra ventana con la misma sesión.
 - [x] Repositorio en GitHub (`lfreyes97/grammata`), con `OWNER` sustituido y `repository` en `Cargo.toml`.
 - [ ] Workflow de GitHub Actions al subir una etiqueta `v*`: compilar Linux y Windows, y adjuntar los binarios a la release.
   - [ ] Linux: `.tar.gz` (ya existe el script), `.deb` y AppImage.
@@ -19,7 +19,7 @@ Actualizado el 2026-11-16. Marcar con `[x]` al terminar.
 - [ ] Cabeceras de licencia o aviso `GPL-3.0-or-later` en el código fuente (decidir si hacen falta).
 
 ## 3. Nix
-- [ ] Probar el flake (`nix build`, `nix run`, `nix develop`): no hay `nix` en esta máquina; puede hacerse en el CI.
+- [x] `nix run` del flake probado en NixOS (con `--no-write-lock-file`, porque aún no hay `flake.lock`). Sin probar: `nix build` y `nix develop`; no hay `nix` en esta máquina, puede hacerse en el CI.
 - [ ] Generar y commitear `flake.lock` (`nix flake lock`); recordar que un flake solo ve archivos que ya están en git.
 - [ ] Añadir `aarch64-darwin` como **experimental**: condicionar con `lib.optionals stdenv.hostPlatform.isLinux` el `patchelf`, el RPATH, `fontconfig`, el `.desktop` y los iconos. Comprobar antes si `x86_64-darwin` sigue soportado en `nixpkgs`.
 
@@ -74,13 +74,14 @@ Criterio propuesto: sin pérdida de datos, formatos compatibles hacia atrás y s
 
 ## Hito 0.2 (objetivo: 2026-11-30)
 Lo que entra: la primera versión que se pueda usar a diario en Linux. Memoria del editor, `--compile-worker` y `typst-ide` quedan fuera.
-- [ ] Argumentos de línea de comandos: abrir archivos y carpetas, `--version`, `--help` (sección 2). Días 1–4.
+- [x] Argumentos de línea de comandos (sección 2).
 - [ ] Recorte de 200 KB de la sesión: comprobar y corregir o avisar antes de guardar (sección 10). Días 1–4.
 - [ ] Límites de plugins: tope de tamaño de la salida y matar el grupo de procesos al vencer el tiempo (sección 9). Días 5–8.
 - [ ] Prueba de ida y vuelta de la sesión sin GPU, ejecutada en el CI (sección 10). Días 5–8.
 - [ ] Medir la memoria del editor con un libro grande y documentarla como límite conocido en las notas de la versión. Días 9–11.
 - [ ] Instalar a mano el `.deb` (AppImage probado) y comprobar que abre, y que el icono y el lanzador aparecen. Días 9–11.
 - [ ] Cierre: `Cargo.toml` a 0.2.0 (el workflow exige que coincida con la etiqueta), `CHANGELOG`, README y la web con la versión nueva. Días 12–13; dos días de colchón.
+- [ ] **Antes de etiquetar la 0.2:** generar y commitear `flake.lock` (en pausa por decisión tuya). Desde la raíz: `docker run --rm -v "$PWD":/w -w /w nixos/nix sh -c 'git config --global --add safe.directory /w && nix --extra-experimental-features "nix-command flakes" flake lock'` y luego `sudo chown "$USER": flake.lock`. Después, probar `nix run .` en NixOS sin `--no-write-lock-file`.
 - [x] Interfaz en inglés y español (`src/i18n.rs`; idioma en Ver o por `LANG`). Quedan sin traducir los cuerpos de los snippets y las descripciones de los `plugin.toml`.
 - [x] Barras que no se montan en ventanas y paneles estrechos (barra superior, vista previa, gestor de archivos y barra de estado).
 - [ ] Exportar PDF: se dijo que no dejaba archivo, pero no se pudo reproducir (las pruebas del motor pasan y los portales funcionan). Si vuelve a pasar, anotar el mensaje de la barra de estado.

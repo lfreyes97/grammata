@@ -58,6 +58,9 @@ cd grammata
 cargo run
 ```
 
+Once installed, `grammata file.typ folder/ other.typ` opens the files as tabs
+and the folder in the file panel (`--help` and `--version` work as usual).
+
 No external dependencies: the Typst 0.15.1 compiler is embedded
 (the CLI doesn't need to be on your `PATH`).
 

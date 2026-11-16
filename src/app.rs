@@ -273,6 +273,29 @@ pub struct App {
 }
 
 impl App {
+    /// Starts the app and opens the paths given on the command line, on top of
+    /// the restored session.
+    pub fn with_paths(cc: &eframe::CreationContext, paths: Vec<PathBuf>) -> Self {
+        let mut app = Self::new(cc);
+        for p in paths {
+            if p.is_dir() {
+                files::set_root(&mut app.st, p);
+                app.st.actions.push(Action::ShowPanel(Panel::Files));
+            } else if p.exists() || !p.parent().is_some_and(Path::is_dir) {
+                app.open_path(p);
+            } else {
+                // Doesn't exist yet: an empty tab that saves to that path.
+                let cur = app.st.docs.cur_id();
+                let id = app.st.docs.push(Some(p.clone()), String::new());
+                layout::add_doc(&mut app.dock, id, cur);
+                app.switch_to_id(id);
+                app.st
+                    .set_status(trf!("Nuevo archivo {}", p.display()), StatusKind::Info);
+            }
+        }
+        app
+    }
+
     pub fn new(cc: &eframe::CreationContext) -> Self {
         let ctx = cc.egui_ctx.clone();
         theme::install_fonts(&ctx);
