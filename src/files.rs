@@ -322,13 +322,16 @@ pub fn panel(st: &mut State, ui: &mut egui::Ui) {
     // Barra: actualizar, cambiar de carpeta, crear.
     widgets::toolbar_frame(&pal).show(ui, |ui| {
         ui.horizontal(|ui| {
-            widgets::section_label(
+            // El nombre de la carpeta cede el sitio a los cinco botones.
+            let buttons = 5.0 * (26.0 + ui.spacing().item_spacing.x);
+            widgets::section_label_fit(
                 ui,
                 &pal,
                 &root
                     .file_name()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_else(|| root.display().to_string()),
+                ui.available_width() - buttons,
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, tr("Actualizar")).clicked() {

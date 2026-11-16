@@ -65,6 +65,11 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
         .map(|(p, t)| (p.id().to_string(), t.id.clone(), t.name.clone()))
         .collect();
     let a = &mut st.actions;
+    // Con poco ancho los iconos pasan a menús: primero los paneles, luego los
+    // atajos de archivo (que siguen en el menú Archivo).
+    let width = ui.available_width();
+    let compact = width < 1060.0;
+    let tiny = width < 790.0;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         ui.label(RichText::new("typst").strong().size(15.0).color(pal.accent));
@@ -179,20 +184,22 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
 
         widgets::vsep(ui, &pal);
 
-        if widgets::icon_button(ui, icon::FILE_PLUS, tr("Nuevo  (Ctrl+N)")).clicked() {
-            a.push(Action::NewDoc)
-        }
-        if widgets::icon_button(ui, icon::FOLDER_OPEN, tr("Abrir  (Ctrl+O)")).clicked() {
-            a.push(Action::Open)
-        }
-        let modified = st.docs.cur().modified();
-        ui.add_enabled_ui(modified || st.docs.cur().path.is_none(), |ui| {
-            if widgets::icon_button(ui, icon::FLOPPY_DISK, tr("Guardar  (Ctrl+S)")).clicked() {
-                a.push(Action::Save)
+        if !tiny {
+            if widgets::icon_button(ui, icon::FILE_PLUS, tr("Nuevo  (Ctrl+N)")).clicked() {
+                a.push(Action::NewDoc)
             }
-        });
+            if widgets::icon_button(ui, icon::FOLDER_OPEN, tr("Abrir  (Ctrl+O)")).clicked() {
+                a.push(Action::Open)
+            }
+            let modified = st.docs.cur().modified();
+            ui.add_enabled_ui(modified || st.docs.cur().path.is_none(), |ui| {
+                if widgets::icon_button(ui, icon::FLOPPY_DISK, tr("Guardar  (Ctrl+S)")).clicked() {
+                    a.push(Action::Save)
+                }
+            });
 
-        widgets::vsep(ui, &pal);
+            widgets::vsep(ui, &pal);
+        }
 
         if widgets::accent_button(ui, &pal, &trf!("{}  Compilar", icon::PLAY))
             .on_hover_text("F5")
@@ -200,13 +207,14 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
         {
             a.push(Action::Compile);
         }
-        if widgets::icon_toggle(
-            ui,
-            st.prefs.auto_compile,
-            icon::LIGHTNING,
-            tr("Compilar al escribir"),
-        )
-        .clicked()
+        if !tiny
+            && widgets::icon_toggle(
+                ui,
+                st.prefs.auto_compile,
+                icon::LIGHTNING,
+                tr("Compilar al escribir"),
+            )
+            .clicked()
         {
             a.push(Action::ToggleAuto);
         }
@@ -232,7 +240,7 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
             .response
             .on_hover_text(tr("Diseño de paneles"));
             widgets::vsep(ui, &pal);
-            for p in [
+            let panels = [
                 Panel::Problems,
                 Panel::Preview,
                 Panel::Snippets,
@@ -242,10 +250,22 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                 Panel::Plugins,
                 Panel::Symbols,
                 Panel::Outline,
-            ] {
-                let on = layout::has_panel(dock, p);
-                if widgets::icon_toggle(ui, on, p.icon(), p.title()).clicked() {
-                    a.push(Action::TogglePanel(p));
+            ];
+            if compact {
+                widgets::icon_menu(ui, icon::SQUARES_FOUR, tr("Paneles"), |ui| {
+                    ui.set_min_width(240.0);
+                    for p in panels {
+                        if menu_check(ui, layout::has_panel(dock, p), p.title(), p.shortcut()) {
+                            a.push(Action::TogglePanel(p));
+                        }
+                    }
+                });
+            } else {
+                for p in panels {
+                    let on = layout::has_panel(dock, p);
+                    if widgets::icon_toggle(ui, on, p.icon(), p.title()).clicked() {
+                        a.push(Action::TogglePanel(p));
+                    }
                 }
             }
             widgets::vsep(ui, &pal);
@@ -328,7 +348,16 @@ pub fn status_bar(st: &mut State, ui: &mut egui::Ui) {
                 StatusKind::Err => pal.err,
                 StatusKind::Info => pal.text_dim,
             };
-            ui.label(RichText::new(msg).small().color(color));
+            // Deja sitio a los controles de la derecha; el texto entero, en el tooltip.
+            let width = (ui.available_width() - 470.0).max(0.0);
+            ui.allocate_ui_with_layout(
+                egui::vec2(width, 18.0),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.add(egui::Label::new(RichText::new(msg).small().color(color)).truncate())
+                        .on_hover_text(msg);
+                },
+            );
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

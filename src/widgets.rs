@@ -101,6 +101,26 @@ pub fn section_label(ui: &mut Ui, pal: &Palette, text: &str) {
     );
 }
 
+/// Como `section_label`, pero en `width` como máximo: si no cabe se corta con «…»
+/// y el texto completo queda en el tooltip.
+pub fn section_label_fit(ui: &mut Ui, pal: &Palette, text: &str, width: f32) {
+    ui.allocate_ui_with_layout(
+        vec2(width.max(0.0), 24.0),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.add(
+                egui::Label::new(
+                    RichText::new(text.to_uppercase())
+                        .small()
+                        .color(pal.text_faint),
+                )
+                .truncate(),
+            )
+            .on_hover_text(text);
+        },
+    );
+}
+
 // ---------- Diálogos modales (estilo común) ----------
 
 /// Modal con el marco común (márgenes amplios, esquinas suaves) y ancho fijo.

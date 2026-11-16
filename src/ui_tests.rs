@@ -1111,3 +1111,36 @@ fn capturas_web() {
     }
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+/// Con la ventana estrecha, el nombre del documento fijado y el de la carpeta
+/// del gestor se cortan en vez de montarse sobre los botones.
+#[test]
+#[ignore = "necesita GPU"]
+fn barras_en_ventana_estrecha() {
+    let tmp = std::env::temp_dir().join(format!("grammata-estrecha-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    let dir = tmp.join("una-carpeta-con-un-nombre-bastante-largo");
+    std::fs::create_dir_all(&dir).unwrap();
+    let doc = dir.join("documento-con-un-nombre-muy-largo-para-la-prueba.typ");
+    std::fs::write(&doc, "= Título\n").unwrap();
+    // SAFETY: como los demás tests de UI, aísla la sesión antes de crear la app.
+    unsafe { std::env::set_var("XDG_CONFIG_HOME", tmp.join("cfg")) };
+    crate::i18n::set(crate::i18n::Lang::Es);
+    for ancho in [1200.0, 900.0, 700.0] {
+        let mut h = Harness::builder()
+            .with_size(egui::vec2(ancho, 600.0))
+            .wgpu()
+            .build_eframe(|cc| App::new(cc));
+        h.run_steps(5);
+        h.state_mut().st.prefs.files_root = Some(dir.clone());
+        h.state_mut().st.actions.push(Action::OpenPath(doc.clone()));
+        h.run_steps(3);
+        h.state_mut().st.actions.push(Action::TogglePin);
+        h.state_mut()
+            .st
+            .actions
+            .push(Action::ShowPanel(Panel::Files));
+        h.run_steps(5);
+        shot(&mut h, &format!("barras-{ancho}"));
+    }
+}

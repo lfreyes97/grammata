@@ -504,7 +504,9 @@ impl Preview {
         actions: &mut Vec<Action>,
     ) {
         crate::widgets::toolbar_frame(pal).show(ui, |ui| {
-            ui.horizontal(|ui| {
+            // En un panel estrecho la fila se parte en dos en vez de salirse.
+            let wide = ui.available_width() > 560.0;
+            ui.horizontal_wrapped(|ui| {
                 let z = self.effective_zoom;
                 if crate::widgets::icon_button(
                     ui,
@@ -598,6 +600,9 @@ impl Preview {
                     }
                 });
 
+                if !wide {
+                    ui.end_row();
+                }
                 ui.add_enabled_ui(n > 1, |ui| {
                     if crate::widgets::icon_toggle(ui, self.show_thumbs, icon::IMAGES, tr("Miniaturas"))
                         .clicked()
@@ -641,7 +646,7 @@ impl Preview {
                     }
                 });
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let mut right = |ui: &mut egui::Ui| {
                     if crate::widgets::icon_button(ui, icon::ARROWS_CLOCKWISE, tr("Compilar  (F5)"))
                         .clicked()
                     {
@@ -666,10 +671,6 @@ impl Preview {
                             actions.push(Action::TogglePin);
                         }
                     });
-                    if let Some(n) = &info.pinned {
-                        ui.label(egui::RichText::new(n).small().color(pal.accent))
-                            .on_hover_text(&tip);
-                    }
                     if info.compiling {
                         ui.add(egui::Spinner::new().size(14.0).color(pal.accent));
                     } else if info.errors > 0 {
@@ -697,7 +698,22 @@ impl Preview {
                         )
                         .on_hover_text(tr("Autocompilar está desactivado: pulsa F5"));
                     }
-                });
+                    // Lo último que se coloca, para que ocupe solo lo que sobra.
+                    if let Some(n) = &info.pinned
+                        && ui.available_width() > 40.0
+                    {
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(n).small().color(pal.accent))
+                                .truncate(),
+                        )
+                        .on_hover_text(&tip);
+                    }
+                };
+                if wide {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), right);
+                } else {
+                    right(ui);
+                }
             });
         });
     }

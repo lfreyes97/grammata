@@ -324,6 +324,7 @@ pub const ENTRIES: &[(&str, &str)] = &[
     ("Otros", "Other"),
     ("PDF/A-2b (archivo)…", "PDF/A-2b (archive)…"),
     ("Pandoc: importar y exportar Markdown", "Pandoc: import and export Markdown"),
+    ("Paneles", "Panels"),
     ("Papel", "Paper"),
     ("Para copiarlo y hacer el tuyo", "To copy and make your own"),
     ("Pega aquí tu clave", "Paste your key here"),
