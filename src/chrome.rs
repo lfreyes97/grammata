@@ -181,6 +181,44 @@ pub fn top_bar(st: &mut State, dock: &DockState<Tab>, ui: &mut egui::Ui) {
                 a.push(Action::ToggleLang)
             }
         });
+        // Menú compuesto del design system: grupos, etiqueta y separador.
+        // Equivale al `DropdownMenu` de Radix/shadcn.
+        #[derive(Clone, Copy)]
+        enum LayoutChoice {
+            Preset(Preset),
+        }
+        let chosen = crate::menu::Menu::new("layout", tr("Diseño"))
+            .section(
+                Some("Edición"),
+                [
+                    (
+                        Preset::Classic.label(),
+                        LayoutChoice::Preset(Preset::Classic),
+                    ),
+                    (
+                        Preset::SideBySide.label(),
+                        LayoutChoice::Preset(Preset::SideBySide),
+                    ),
+                ],
+            )
+            .section(
+                Some("Lectura"),
+                [
+                    (
+                        Preset::PreviewFocus.label(),
+                        LayoutChoice::Preset(Preset::PreviewFocus),
+                    ),
+                    (
+                        Preset::Writing.label(),
+                        LayoutChoice::Preset(Preset::Writing),
+                    ),
+                ],
+            )
+            .show(ui);
+        if let Some(LayoutChoice::Preset(preset)) = chosen {
+            a.push(Action::ApplyPreset(preset));
+        }
+
         ui.menu_button(tr("Ayuda"), |ui| {
             ui.set_min_width(200.0);
             if menu_item(ui, icon::INFO, tr("Acerca de"), "") {

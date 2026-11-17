@@ -16,6 +16,7 @@ mod ide;
 mod image_view;
 mod instance;
 mod layout;
+mod menu;
 mod outline;
 mod panels;
 mod pdf_render;
